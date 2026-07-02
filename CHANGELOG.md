@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Adds the post-merge self-improve lane for bugfix-related main-branch merges.
+- Ships `config/env.jarvis-box.sample` in release artifacts and installer output.
+- Keeps public installation pinned through `JARVIS_VERSION=0.1.5` or latest metadata.
+
 ## 0.1.2
 
 jarvis-box 0.1.2 is the first public Host Runtime baseline.
