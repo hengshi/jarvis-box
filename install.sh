@@ -8,11 +8,11 @@ IMPLEMENTATION_URL="${JARVIS_INSTALLER_URL:-$PUBLIC_BASE/installer/jarvis-box-in
 usage() {
   printf '%s\n' "Usage:"
   printf '%s\n' "  curl -fsSL https://raw.githubusercontent.com/hengshi/jarvis-box/main/install.sh | sudo bash"
-  printf '%s\n' "  curl -fsSL https://raw.githubusercontent.com/hengshi/jarvis-box/main/install.sh | sudo JARVIS_VERSION=0.1.5 bash"
+  printf '%s\n' "  curl -fsSL https://raw.githubusercontent.com/hengshi/jarvis-box/main/install.sh | sudo JARVIS_VERSION=<version> bash"
   printf '%s\n' "  curl -fsSL https://download.hengshi.com/jarvis-box/install.sh | sudo bash"
   printf '%s\n' ""
   printf '%s\n' "Examples:"
-  printf '%s\n' "  JARVIS_VERSION=0.1.5 bash install.sh"
+  printf '%s\n' "  JARVIS_VERSION=<version> bash install.sh"
   printf '%s\n' "  JARVIS_PUBLIC_BASE_URL=https://download.example.com/jarvis-box bash install.sh"
   printf '%s\n' ""
   printf '%s\n' "Agent notes:"

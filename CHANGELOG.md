@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Clarifies that unqualified jarvis-box release requests publish both internal and public release surfaces.
+- Fixes maintenance runtime access for Codex-based maintenance paths.
+- Fixes chatbridge retry replies and runtime status handling.
+
 ## 0.1.5
 
 - Adds the post-merge self-improve lane for bugfix-related main-branch merges.
