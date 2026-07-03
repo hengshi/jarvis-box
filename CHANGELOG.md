@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- Adds runtime agent enable, disable, and fallback order controls.
+- Keeps agent selection in the canonical runtime config used by new work.
+- Fixes the release E2E gate for canonical runtime agent config.
+
 ## 0.1.6
 
 - Clarifies that unqualified jarvis-box release requests publish both internal and public release surfaces.
