@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.9
+
+- Fixes status log polling pressure for active work item aggregation.
+- Fixes agent session full log display in the status UI.
+- Fixes unattended cron contract to require explicit runtime delegation for repo-pre-push review and allow managed workspace metadata.
+- Documents the no-meaningless-wrapper review rule.
+
 ## 0.1.8
 
 - Adds runtime agent enable, disable, and fallback order controls.
