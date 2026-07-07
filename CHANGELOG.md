@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.14
+
+- Adds scoped runtime agent `prefix_args` so lanes can use supported agents with explicit model/runtime arguments.
+- Documents Codex `gpt-5.4-mini` high-reasoning MR review/followup configuration.
+- Preserves scoped prefix arguments across review, followup, issue execution, post-check, self-heal, and command lanes without leaking parent-lane settings into child runs.
+- Fixes MR review trigger/update handling around ready transitions and commit detection.
+- Improves ChatBridge runtime resume behavior for IM-driven work.
+
 ## 0.1.9
 
 - Fixes status log polling pressure for active work item aggregation.
