@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.16
+
+- Prevents ChatBridge startup from replaying stale WeCom or Lark chat-command tasks.
+- Persists UV IM connector cursor state and bootstraps missing cursors to the latest connector sequence.
+- Moves Docker deploy smoke release-gate execution to the dedicated m2 Docker runner.
+- Keeps Docker builds on configured Go proxy fallbacks so release gates do not depend on the publisher's local Docker Desktop.
+
 ## 0.1.14
 
 - Adds scoped runtime agent `prefix_args` so lanes can use supported agents with explicit model/runtime arguments.
