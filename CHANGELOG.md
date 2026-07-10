@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.18
+
+- Keeps installed app manifests in sync during `jarvis-box update` so binary and app metadata report the same version and commit.
+- Honors the formal `/usr/local/bin/jarvis-box` macOS CLI path during update and scheduled-job execution.
+- Splits GitHub command allowlists by provider and fixes GitHub command author matching.
+- Improves startup resume recovery while narrowing automatic stale-resume behavior.
+- Adds runtime self-improve review gates and clarifies startup resume proof signals.
+
 ## 0.1.17
 
 - Hardens GitHub issue and PR command triggers with immutable numeric GitHub user id allowlists.
