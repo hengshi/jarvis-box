@@ -1,12 +1,21 @@
 # Changelog
 
+## 0.1.19
+
+- Unifies provider, CLI, API, and Status behavior around Start Task, Continue With Agent, Stop Run, Recover Lost Run, and Retry Writeback.
+- Removes in-service update and restart activation so deployments remain external service operations.
+- Applies model-usage-limit cooldowns globally, fails the current Task over immediately, and restores the primary runtime agent after refresh.
+- Supports concurrent IM Tasks, quoted-message Task routing, Target-scoped `/stop <run-id>` and `/stop all`, and compact canonical Run IDs.
+- Keeps IM Target bindings as default Task pointers while Run state and AgentConversation state remain authoritative in each Task.
+- Serializes cross-process Run claims, publishes final output before Task completion, and prevents late delivery evidence from replacing a newer Run's projection.
+
 ## 0.1.18
 
-- Keeps installed app manifests in sync during `jarvis-box update` so binary and app metadata report the same version and commit.
-- Honors the formal `/usr/local/bin/jarvis-box` macOS CLI path during update and scheduled-job execution.
+- Keeps installed app manifests aligned with the packaged binary so app metadata reports the same version and commit.
+- Honors the formal `/usr/local/bin/jarvis-box` macOS CLI path during service and scheduled-job execution.
 - Splits GitHub command allowlists by provider and fixes GitHub command author matching.
-- Improves startup resume recovery while narrowing automatic stale-resume behavior.
-- Adds runtime self-improve review gates and clarifies startup resume proof signals.
+- Keeps stale Task recovery explicit and operator-selected.
+- Adds runtime self-improve review gates and clearer Task recovery evidence.
 
 ## 0.1.17
 
@@ -25,7 +34,7 @@
 
 ## 0.1.15
 
-- Fixes transient MR review workspace git recovery and task cancel controls.
+- Fixes transient MR review workspace git recovery and Stop Run controls.
 - Hardens Codex native session-handle capture across stdout/stderr stream ordering and user-marker boundaries.
 - Adds the scheduled session self-improve cron and fixes empty prefix-argument handling.
 - Hardens follow-up resume launch failure handling and removes automatic self-heal paths.
@@ -115,7 +124,7 @@ jarvis-box 0.1.2 is the first public Host Runtime baseline.
 - Uses the Target, Task, Run, AgentConversation, Workspace, and artifact lifecycle model.
 - Continues conversations through runtime-native resume handles instead of replaying old prompt history.
 - Supports the 0.1 adapter registry: Codex, Claude Code, Copilot CLI, Gemini, Opencode, Hermes, and OpenClaw.
-- Exposes operator commands for status, doctor, monitor, update, task inspection, task cancel, task recovery, and runtime agent checks.
+- Exposes operator commands for status, doctor, monitor, release checks, task inspection, Stop Run, Recover Lost Run, and runtime agent checks.
 
 ### Public Scope
 
