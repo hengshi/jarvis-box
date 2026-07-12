@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.22
+
+- Allows restart past old terminal `reaping_failed` records after their recorded process is no longer running.
+- Keeps live `reaping_failed` evidence as a hard restart blocker.
+
 ## 0.1.21
 
 - Narrows the restart guard to block live unsafe Run processes and `reaping_failed` evidence without blocking already-lost or terminal historical Task records.
