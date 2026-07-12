@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.21
+
+- Narrows the restart guard to block live unsafe Run processes and `reaping_failed` evidence without blocking already-lost or terminal historical Task records.
+- Keeps service restart safe for active Codex work while allowing release-gate and production restarts on long-lived reference boxes with retained Task history.
+
+## 0.1.20
+
+- Adds agent-aware Codex prefix-argument policy with a global default and a literal `bugfix` override.
+- Recomputes or clears Codex-specific prefix arguments across runtime-agent failover without losing Run recovery context.
+- Exposes effective runtime-agent policy through CLI and status surfaces.
+- Blocks `jarvis-box restart` while active, unsafe, or recovery-required Task runs are present.
+- Documents the canonical Codex model policy configuration for managed deployments.
+
 ## 0.1.19
 
 - Unifies provider, CLI, API, and Status behavior around Start Task, Continue With Agent, Stop Run, Recover Lost Run, and Retry Writeback.
