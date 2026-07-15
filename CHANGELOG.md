@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.24
+
+- Delivers agent-generated IM task files through capable uv-im-connector providers while keeping host-local paths and unverified delivery claims out of fallback replies.
+- Distinguishes the remote IM user, jarvis-box host, GitLab, and GitHub environments in agent delivery prompts.
+- Restores the explicit `jarvis-box update` command with active-Run safety and installer-owned restart behavior.
+- Cleans completed lane workspaces only after successful completion callbacks while preserving bugfix, jarvis-command, failed, and stopped workspaces.
+- Preserves active Runs and continuation state across service operations and strengthens feature-prework impact-evidence gating.
+
 ## 0.1.23
 
 - Recreates reclaimed workspaces during Continue while preserving recovery metadata if recreation fails.
