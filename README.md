@@ -4,7 +4,7 @@ jarvis-box is a host runtime for agent-driven engineering work. It receives GitL
 
 The 0.1 line is the Host Runtime release. It is not a full enterprise avatar platform and does not include customer memory bootstrap, connector marketplace packaging, or multi-node orchestration.
 
-Current public baseline: `v0.1.22 (v2026.7.12)`. Install pin: `JARVIS_VERSION=0.1.22`.
+Current public baseline: `v0.1.23 (v2026.7.15)`. Install pin: `JARVIS_VERSION=0.1.23`.
 
 ## Install
 
@@ -18,7 +18,7 @@ Pinned install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hengshi/jarvis-box/main/install.sh |
-  sudo JARVIS_VERSION=0.1.22 bash
+  sudo JARVIS_VERSION=0.1.23 bash
 ```
 
 The installer downloads a versioned release artifact, verifies `SHA256SUMS`, installs the `jarvis-box` CLI, writes a systemd service, and starts the service.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.23
+
+- Recreates reclaimed workspaces during Continue while preserving recovery metadata if recreation fails.
+- Removes competing age- and disk-based workspace deletion from jarvis-box and delegates cleanup to the canonical runtime path.
+- Captures Codex thread-started session handles across stdout and stderr event ordering.
+- Avoids full Task scans on Status progress hot paths.
+- Installs Mole through the Hengshi-managed macOS developer bootstrap while keeping public cross-platform installation independent of Homebrew.
+
 ## 0.1.22
 
 - Allows restart past old terminal `reaping_failed` records after their recorded process is no longer running.
