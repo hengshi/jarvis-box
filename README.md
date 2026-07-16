@@ -4,7 +4,7 @@ jarvis-box is a host runtime for agent-driven engineering work. It receives GitL
 
 The 0.1 line is the Host Runtime release. It is not a full enterprise avatar platform and does not include customer memory bootstrap, connector marketplace packaging, or multi-node orchestration.
 
-Current public baseline: `v0.1.24 (v2026.7.15)`. Install pin: `JARVIS_VERSION=0.1.24`.
+Current public baseline: `v0.1.25 (v2026.7.16)`. Install pin: `JARVIS_VERSION=0.1.25`.
 
 ## Install
 
@@ -18,7 +18,7 @@ Pinned install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hengshi/jarvis-box/main/install.sh |
-  sudo JARVIS_VERSION=0.1.24 bash
+  sudo JARVIS_VERSION=0.1.25 bash
 ```
 
 The installer downloads a versioned release artifact, verifies `SHA256SUMS`, installs the `jarvis-box` CLI, writes a systemd service, and starts the service.
@@ -57,7 +57,7 @@ Release artifacts include `config/env.jarvis-box.sample`; the installer copies i
 
 ## Runtime Agents
 
-jarvis-box is a thin orchestration layer. Runtime agents own reasoning, conversation history, native resume, and context compaction. jarvis-box records Task/Run state and artifacts; its five operations are Start Task, Continue With Agent, Stop Run, Recover Lost Run, and Retry Writeback. It does not replay old conversation turns into new prompts.
+jarvis-box is a thin orchestration layer. Runtime agents own reasoning, conversation history, native resume, and context compaction. jarvis-box records Task/Run state and artifacts; its Task lifecycle has exactly three operations: Start, Continue, and Cancel. Active-Run replacement, recovery, native resume, cross-agent continuation, and writeback retry are internal Continue/Cancel strategies rather than additional product operations. It does not replay old conversation turns into new prompts.
 
 The 0.1 adapter registry includes:
 

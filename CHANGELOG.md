@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.25
+
+- Reduces the public Task lifecycle to exactly Start, Continue, and Cancel across providers, CLI, API, Status, and IM.
+- Treats active-Run replacement, recovery, native resume, cross-agent continuation, and writeback retry as internal Continue/Cancel strategies.
+- Removes the durable Task `waiting` transition after an operator stop; a stopped Run leaves its Task in `needs-attention` until Continue or Cancel.
+- Preserves long-running IM and GitLab Issue completion writebacks across reply expiry, process recovery, and incomplete delivery retries.
+- Uses uv-im-connector provider capabilities for proactive fallback, including safe recovery after a single-use reply token has already been consumed.
+- Cleans completed disposable-lane workspaces after completion callbacks while retaining protected, failed, stopped, and explicitly persistent workspaces.
+- Keeps the Status agent selector synchronized with the agent session that actually executes the Run.
+
 ## 0.1.24
 
 - Delivers agent-generated IM task files through capable uv-im-connector providers while keeping host-local paths and unverified delivery claims out of fallback replies.
