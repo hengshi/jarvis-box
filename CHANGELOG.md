@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.26
+
+- Recovers provider targets correctly after Continue so follow-up execution and writeback stay attached to the intended IM, GitLab, or GitHub surface.
+- Fixes task-owned workspace lifecycle cleanup and MR review writeback fencing after completion callbacks.
+- Improves storage-wait recovery by using a 10 GB default threshold and automatically admitting work once storage pressure clears.
+- Classifies terminal and waiting status items more accurately, including legacy terminal results and stop-safety cases.
+- Extends runtime agent wall timeout handling for longer-running agent work.
+
 ## 0.1.25
 
 - Reduces the public Task lifecycle to exactly Start, Continue, and Cancel across providers, CLI, API, Status, and IM.
