@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.28
+
+- Recovers stale legacy IM task bindings safely and adds `/new` to reset the current chat session without routing back into invalid pre-registry task state.
+- Preserves registered Task Workspaces for three hours after a Run ends so Continue can reuse worktrees, while Cancel and provider close/merge events still clean them immediately.
+- Restricts execution workspace repositories to the Task's declared project set and keeps Workspace ownership, delayed cleanup, and recovery state durable across service restarts.
+- Routes merge-request review writeback retries through the Task-scoped launcher and preserves canonical `storage-wait` results after post-claim capacity failures.
+- Starts a new Task from the latest immutable Run context so declared project routing stays current while traversal-shaped Run identifiers remain contained.
+- Migrates stale macOS `JARVIS_CLI` overrides to the canonical runtime binary so scheduled self-improvement remains runnable after upgrades.
+
 ## 0.1.27
 
 - Cleans installer, glab fallback, release-gate, deploy-smoke, and macOS developer bootstrap temporary files without removing protected runtime paths.
