@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.27
+
+- Cleans installer, glab fallback, release-gate, deploy-smoke, and macOS developer bootstrap temporary files without removing protected runtime paths.
+- Preserves downloaded release artifacts across retryable install preflight failures, then removes the install download cache after a successful install.
+- Canonicalizes GitLab merge-request and GitHub pull-request command workspace and dedupe paths while still recognizing legacy dedupe records.
+
 ## 0.1.26
 
 - Recovers provider targets correctly after Continue so follow-up execution and writeback stay attached to the intended IM, GitLab, or GitHub surface.
