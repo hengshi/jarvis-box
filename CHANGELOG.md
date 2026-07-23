@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.31
+
+- Aligns status filter E2E coverage with the simplified status summary/metrics UI (`历史受理记录` + `正在处理`) and current user/task search flows.
+
+## 0.1.30
+
+- Ensures `stop --force` ends runtime sessions and closes agent-browser children for terminal cleanup paths, so resources are not left behind.
+- Closes task-scoped `agent-browser` sessions when a task enters terminal transition, and records closure failure with a dedicated reason.
+- Preserves immediate cleanup for completed tasks while keeping completed-workspace retention for continue use configurable (now default 60 minutes).
+- Adds status-page support for one-click cleanup of completed workspaces and a leaner `historical_accepted`/`processing` metric surface.
+- Exposes real continuation/cancellation failure details on status pages to avoid generic “conflict” messages.
+
 ## 0.1.29
 
 - Cleans due Task Workspaces when persisted PID or process-group evidence is stale, while still deferring cleanup for live process identities.
