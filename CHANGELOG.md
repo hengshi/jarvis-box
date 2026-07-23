@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.29
+
+- Cleans due Task Workspaces when persisted PID or process-group evidence is stale, while still deferring cleanup for live process identities.
+- Makes the post-Run Task Workspace retention window configurable in minutes with a 60-minute default, while Continue still reuses retained worktrees and Cancel remains immediate.
+- Shows the specific structured failure when Continue cannot safely replace an active Run instead of collapsing it into a generic HTTP conflict.
+- Surfaces the actual redacted runtime launch failure in Status progress so operators can diagnose missing runtime prerequisites directly.
+
 ## 0.1.28
 
 - Recovers stale legacy IM task bindings safely and adds `/new` to reset the current chat session without routing back into invalid pre-registry task state.
