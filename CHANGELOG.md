@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.32
+
+- Adds installed `jarvis-box runtime start` and `runtime shell` customer entrypoints, so customers construct their Company Jarvis and repository-local skills without cloning the jarvis-box source repository.
+- Ships source-free Runtime build assets and the matching Linux Runtime binary in every Linux and macOS release artifact.
+- Runs the customer Runtime as the invoking user, mounts only the explicitly selected customer workspace, keeps host service secrets out of the Runtime, and reports Docker or filesystem permission failures before Agent work starts.
+
 ## 0.1.31
 
 - Aligns status filter E2E coverage with the simplified status summary/metrics UI (`历史受理记录` + `正在处理`) and current user/task search flows.

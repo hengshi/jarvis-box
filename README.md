@@ -2,9 +2,9 @@
 
 jarvis-box is a host runtime for agent-driven engineering work. It receives GitLab webhooks, Jira issue events, IM messages, status actions, CLI requests, and scheduled maintenance jobs; launches configured runtime agents; stores task artifacts; and exposes operator controls for service health and task lifecycle.
 
-The 0.1 line is the Host Runtime release. It is not a full enterprise avatar platform and does not include customer memory bootstrap, connector marketplace packaging, or multi-node orchestration.
+The 0.1 line is the Host Runtime release. It includes an isolated customer construction Runtime, but it is not a full enterprise avatar platform and does not include connector marketplace packaging or multi-node orchestration.
 
-Current public baseline: `v0.1.31 (v2026.7.23)`. Install pin: `JARVIS_VERSION=0.1.31`.
+Current public baseline: `v0.1.32 (v2026.7.27)`. Install pin: `JARVIS_VERSION=0.1.32`.
 
 ## Install
 
@@ -18,12 +18,33 @@ Pinned install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hengshi/jarvis-box/main/install.sh |
-  sudo JARVIS_VERSION=0.1.31 bash
+  sudo JARVIS_VERSION=0.1.32 bash
 ```
 
 The installer downloads a versioned release artifact, verifies `SHA256SUMS`, installs the `jarvis-box` CLI, writes a systemd service, and starts the service.
 
 macOS launchd artifacts exist for Hengshi-managed reference boxes. Public 0.1 installs target Ubuntu systemd.
+
+## Construct a Customer Jarvis
+
+The release contains the customer Runtime assets. Customers install jarvis-box; they do not clone the jarvis-box source repository or run scripts from it.
+
+Run the Runtime as the customer's ordinary user, never with `sudo`:
+
+```bash
+mkdir -p "$HOME/customer-jarvis-workspace"
+jarvis-box runtime start "$HOME/customer-jarvis-workspace"
+```
+
+The command builds the isolated Docker workspace and opens Codex with the Jarvis Preparation request. Use `--agent claude` to select Claude or `--engine apple` on a managed macOS host with Apple Container 1.0+.
+
+After Preparation generates the Company Jarvis construction and Repository learning commands, enter the same Runtime from two terminals and run one generated command in each:
+
+```bash
+jarvis-box runtime shell "$HOME/customer-jarvis-workspace"
+```
+
+Only the explicit customer workspace is mounted from the host. Agent and Git provider authentication belongs to the customer and persists in the Runtime data volumes.
 
 ## Basic Commands
 
