@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.33
+
+- Uses a regular empty Compose environment file for customer Runtime startup and deploy checks, including Docker Compose implementations that reject `/dev/null` as an env file.
+
 ## 0.1.32
 
 - Adds installed `jarvis-box runtime start` and `runtime shell` customer entrypoints, so customers construct their Company Jarvis and repository-local skills without cloning the jarvis-box source repository.
