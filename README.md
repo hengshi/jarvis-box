@@ -6,7 +6,7 @@ immutable Docker Compose deployment. The container intentionally runs the
 Agent as root inside the container; the Docker socket is a separate,
 host-root-equivalent opt-in capability.
 
-Current public baseline: `v0.1.34 (v2026.7.28)`. Production image pin:
+Current public baseline: `v0.1.35 (v2026.7.29)`. Production image pin:
 `JARVIS_IMAGE=<registry>/jarvis-box@sha256:<digest>`.
 
 ## New-customer path
@@ -15,7 +15,7 @@ Customer construction is not a jarvis-box installation step. Give the
 customer's Host Agent one instruction:
 
 ```text
-阅读 https://github.com/hengshi/create-jarvis 并帮我构建属于我们公司的 Jarvis。
+请先运行 git clone https://github.com/hengshi/create-jarvis create-jarvis，读取本地 create-jarvis/SKILL.md，然后帮我构建属于我们公司的 Jarvis。
 ```
 
 That journey constructs the Company Jarvis, learns each selected repository
@@ -40,11 +40,23 @@ the Host Agent prepares a private deployment home containing:
 Use the released Compose bundle and a digest-pinned image:
 
 ```bash
-scripts/deploy-production.sh /srv/acme-jarvis start
-scripts/deploy-production.sh /srv/acme-jarvis shell
+release_dir=/absolute/path/to/extracted-release
+"$release_dir/scripts/deploy-production.sh" /srv/acme-jarvis start
+"$release_dir/scripts/deploy-production.sh" /srv/acme-jarvis shell
 # complete provider-native login in the shell
-scripts/deploy-production.sh /srv/acme-jarvis verify
+"$release_dir/scripts/deploy-production.sh" /srv/acme-jarvis verify
 ```
+
+The [客户部署与运维指南](CUSTOMER-OPERATIONS.md) is also included in every
+release bundle. It explains the full
+Jarvis ecosystem, release download, first deployment, raw Docker Compose
+operations, upgrades, rollback, backup, credential rotation, diagnostics, and
+safe removal. Customers never need the private jarvis-box source repository.
+
+The single jarvis-box image contains both `jarvis-box` and a pinned
+`uv-im-connector` binary. Compose may run them as separate services for
+credential, health, log, and persistence isolation, but customers pull and pin
+only one image digest.
 
 `start` deliberately leaves the service in `deployment-not-ready`: health and
 login remain available, while business writes return `deployment_not_ready`.
@@ -57,8 +69,8 @@ overlay only when the Company's approved workflow requires host Docker control.
 
 ## Legacy migration installer
 
-The public `install.sh` wrapper is retained only for migration and recovery of
-pre-0.2 native installations. It fails closed unless
+The public `install.sh` wrapper is retained only for explicitly approved
+legacy native-v1 migration and recovery. It fails closed unless
 `JARVIS_ENABLE_LEGACY_NATIVE=1` is explicitly set. It is not the new-customer
 construction path and must not be used to create a second jarvis-box beside the
 formal Compose runtime.

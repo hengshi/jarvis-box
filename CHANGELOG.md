@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.35
+
+- Bundles the pinned `uv-im-connector` executable in the formal jarvis-box
+  image, so both Compose services use one customer-visible image digest.
+- Removes the separately selected `UVIM_IMAGE` deployment input while keeping
+  connector credentials, health, logs, and state isolated from the Agent.
+- Adds a customer operations manual to every release bundle, covering the
+  Jarvis ecosystem, first deployment, direct Docker Compose operations,
+  upgrades, rollback, backup, credential rotation, diagnostics, and removal.
+- Publishes the same customer documentation to the public GitHub version tag
+  and fails release verification when source, bundle, or GitHub content differs;
+  `latest.json` is promoted only after those checks and GitHub Release succeed.
+
 ## 0.1.34
 
 - Separates the customer's `create-jarvis` construction journey from formal
