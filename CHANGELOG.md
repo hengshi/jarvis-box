@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.1.37
+
+- Fixes GitHub command workspace creation so GitHub tasks always clone their
+  GitHub repository instead of falling back to a GitLab clone URL.
+- Adds closed-loop happy-path coverage for GitHub, GitLab, Jira and IM across
+  ingress, Task/Run, workspace semantics, Agent execution, provider writeback
+  and cleanup.
+- Certifies the WeCom, Lark and DingTalk adapters through one shared production
+  image while preserving each provider's native ingress and reply protocol.
+- Makes the DingTalk fixture compatible with Docker Compose 1.29 by injecting
+  fully scoped admission allowlists without nested interpolation defaults.
+- Prevents duplicate branch pipelines when an open merge request already has
+  an equivalent merge-request pipeline.
+
+## 0.1.36
+
+- Makes jarvis-box a customer-neutral Task/Run runtime: customer Jarvis
+  bootstrap, sync, discovery roots, maintenance and scheduler policy remain
+  owned by the customer Runtime Foundation instead of jarvis-box configuration.
+- Removes the Jarvis checkout mount, context manifest, deployment lock and
+  customer-specific workspace tool assumptions from the formal Docker runtime.
+- Adds the versioned Workflow Runtime Contract, with exact action grants,
+  validated provider writeback and explicit customer-owned workflow chaining.
+- Adds a real GitLab issue-to-Claude-to-MR Docker E2E and preserves its
+  completion evidence across Agent exit and workflow action delivery.
+- Hardens Task workspace ownership, process reaping and cleanup so service
+  lifecycle operations do not act on unrelated or ambiguously owned work.
+- Extends `doctor` to validate the writable Codex managed directories used by
+  system skills and process launch, with actionable ownership repair guidance.
+- Strengthens runtime-test guidance for Darwin/Linux process-table, permission
+  and signaling contracts with real host-platform evidence.
+- Hardens contract-workflow workspace handoff by sanitizing parent workspace
+  runtime fields (`path`, `task_id`) while preserving ownership identity
+  (`remote`, `project`), preventing nested workflow runs from reusing stale
+  or conflicting child paths.
+- Fixes release overlay baseline/version verification so Docker image and deploy
+  docs can ship together and still pass strict production release gates.
+- Documents the Monkey Test issue→Claude→MR real-issue smoke path in `docs/e2e.md`,
+  including fixture-variable extraction and provider evidence checks for
+  closed-loop behavior.
+- Ensures code-review workflow does not fail when repo-local `skills/code-review/SKILL.md`
+  is missing by using repo-cache fallback.
+- Preserves parent task workspace context when starting contract workflows so nested
+  bugfix/replay flows retain the same workspace and avoid workspace-conflict failure.
+- Consolidates runtime foundations to be Runtime-Agent-owned, with jarvis-box focused on
+  Task/Run, control plane, runtime-job transport, and workflow-contract validation.
+
 ## 0.1.35
 
 - Bundles the pinned `uv-im-connector` executable in the formal jarvis-box
