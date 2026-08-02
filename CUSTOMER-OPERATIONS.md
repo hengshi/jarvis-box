@@ -30,7 +30,7 @@ Runtime Agent 从持久 Agent HOME 的原生 discovery roots 发现 Jarvis skill
 - 如需客户 Jarvis，已发布的 Jarvis Runtime Foundation bootstrap/sync/doctor 合同；
 - 可选 host-root-equivalent Docker socket 授权。
 
-不要 clone 私有 jarvis-box 源码，不要用 legacy native installer 做新部署。
+不要 clone 私有 jarvis-box 源码。Native 安装使用当前 OS 用户；Docker 使用 release bundle 的认证导入与 Compose helper。
 
 ## 3. 下载 release bundle 并验证
 

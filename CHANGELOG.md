@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.38
+
+- Makes native installs and services run as the existing OS user, while Docker
+  deployments can import host `gh`, `glab`, Codex, and Claude authentication
+  into a private runtime auth directory without copying credentials into the
+  image.
+- Completes the production happy-path contract across GitHub, GitLab, unified
+  IM plus certified WeCom/Lark/DingTalk adapters, Jira, and Feishu Project,
+  including Task/Run identity, exact workspace checkout, provider writeback,
+  terminal lifecycle, and lease-aware cleanup.
+- Reuses the certified IM build image and external caches across adapter runs,
+  while retaining a portable cold-start path for supported Docker runners.
+
 ## 0.1.37
 
 - Fixes GitHub command workspace creation so GitHub tasks always clone their

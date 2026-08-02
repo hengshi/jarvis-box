@@ -2,7 +2,7 @@
 
 jarvis-box is the formal Task/Run and Agent execution runtime. Its production image is a high-authority, digest-pinned Docker artifact. Docker socket access remains a separate host-root-equivalent opt-in.
 
-Current public baseline: `v0.1.37 (v2026.8.1)`. Production image pin:
+Current public baseline: `v0.1.38 (v2026.8.2)`. Production image pin:
 `JARVIS_IMAGE=<registry>/jarvis-box@sha256:<digest>`.
 
 ## New-customer path
@@ -50,7 +50,7 @@ The single image contains jarvis-box, pinned uv-im-connector binary, Agent CLIs/
 
 See the [客户部署与运维指南](CUSTOMER-OPERATIONS.md) for installation, runtime-job, backup, upgrade and recovery procedures.
 
-The legacy `install.sh` wrapper is retained only for explicitly approved native-v1 migration/recovery with `JARVIS_ENABLE_LEGACY_NATIVE=1`.
+`install.sh` installs a Native system service as the existing installing OS user and reuses that user's HOME/authentication. It never creates a `jarvis` service user.
 
 ## License
 
