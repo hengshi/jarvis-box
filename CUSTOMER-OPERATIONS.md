@@ -56,7 +56,7 @@ grep -E "  (${artifact}|production-image.json)$" SHA256SUMS | shasum -a 256 -c -
 tar -xzf "$artifact"
 ```
 
-Docker 从 `production-image.json` 读取正式镜像，并使用 `repository@sha256:...`。不要使用 `latest` 或仅写版本 tag。
+Docker 客户不需要手工解析 `production-image.json` 或校验 checksum；公开加载脚本会自动完成这些步骤。
 
 ## 4. Native 上线
 
@@ -88,7 +88,13 @@ jarvis-box status
 
 ## 5. Docker 上线
 
-### 5.1 准备 deployment home
+### 5.1 一键加载镜像并准备 deployment home
+
+```bash
+curl -fsSL https://download.hengshi.com/jarvis-box/docker-load.sh | sh -s -- <version>
+```
+
+脚本自动识别 amd64/arm64、下载对应 archive、核验 release SHA-256、执行 `docker load`，并确认 `hengshi/jarvis-box:v<version>` 已存在。不要手工下载 checksum，也不需要登录任何镜像仓库。
 
 选择客户控制的私有绝对路径：
 
@@ -100,7 +106,7 @@ jarvis-box status
 └── connector.env      # 仅启用 IM connector 时存在
 ```
 
-`deployment.env` 保存镜像 digest、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 不保存 Company Jarvis checkout、Host HOME dump 或临时 context。
+`deployment.env` 保存已加载的本地 release tag、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 不保存 Company Jarvis checkout、Host HOME dump 或临时 context。
 
 首次 onboarding 在 `runtime.env` 保持：
 
@@ -257,11 +263,11 @@ jarvis-box status
 2. 停止正式服务；
 3. 备份 deployment config 和需要保留的 volumes；
 4. 下载并校验新 release；
-5. 将 `JARVIS_IMAGE` 更新为新 release 的 digest；
+5. 执行新版本的一键加载命令，并将 `JARVIS_IMAGE` 更新为脚本报告的 release tag；
 6. 执行 `deploy` 和 `verify`；
 7. 重跑一条真实业务链路。
 
-回滚时恢复旧 digest，并执行同样的部署、验证和真实链路检查。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
+回滚时一键加载目标旧版本、恢复对应 release tag，并执行同样的部署、验证和真实链路检查。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
 
 ## 10. 备份
 

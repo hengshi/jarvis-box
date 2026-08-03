@@ -1,5 +1,15 @@
 # 更新日志
 
+## 0.2.1
+
+- 修复 GitLab 合并请求与工作项使用相同编号时的标题、链接和制品错位，确保评审始终绑定正确的项目与合并请求。
+- 恢复自动评审跟进链路：识别标准 Jarvis bot 身份、避免终态交界重复启动，并在合并请求评论和 Status 页面持续展示跟进任务的执行状态。
+- 恢复合并后 self-skills-improve 任务，并将 followup、self-improve、external cleanup 和 dependency cache 纳入完整 Task/Run happy-path 证据。
+- Native 与 Docker 统一复用客户无关的标准依赖缓存，覆盖 Go、JavaScript、Python、Java、Rust、C/C++ 等常见生态；Docker 通过持久命名卷保留缓存，未知或项目特殊工具使用显式可选 hook。
+- 修复 Docker 中 GitLab 项目访问 Token 可调用 API 却无法 clone 的凭据用户名问题，并让 workspace cleanup 接受 Task 注册的规范 workspace ID。
+- 加固 release gate：企业微信使用无 GUI 协议 envelope，external resource cleanup 经过真实 Jarvis 二进制和 production finalizer，CI 镜像缓存与多架构 systemd/launchd 证据保持分层执行。
+- Docker 改为公网 archive 一键加载：客户无需访问内网 Registry、登录镜像仓库或手工校验 checksum。
+
 ## 0.2.0
 
 - 将 Jarvis Box 稳定为客户中立的 Task/Run、workspace、Agent 和 provider writeback 运行时；Company Jarvis 与 Runtime Foundation 独立拥有客户知识、workflow、maintenance 和 self-improve。

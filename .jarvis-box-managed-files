@@ -7,4 +7,5 @@ LICENSE
 README.md
 REPOSITORY-MODEL.md
 SECURITY.md
+docker-load.sh
 install.sh

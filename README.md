@@ -44,11 +44,13 @@ jarvis-box status
 
 ## Docker 安装
 
-Docker 必须使用 release 提供的 digest-pinned 正式镜像，不使用浮动 image tag：
+一条命令下载、自动校验并加载指定版本；脚本会自动识别 amd64/arm64：
 
-```dotenv
-JARVIS_IMAGE=<registry>/jarvis-box@sha256:<digest>
+```bash
+curl -fsSL https://download.hengshi.com/jarvis-box/docker-load.sh | sh -s -- <version>
 ```
+
+加载完成后，`deployment.env` 使用脚本报告的 `JARVIS_IMAGE=hengshi/jarvis-box:v<version>`。客户不需要登录镜像仓库，也不需要手工处理 checksum。
 
 解压 release bundle 后，准备私有 deployment home，并选择一种认证路径：
 
@@ -82,7 +84,7 @@ GitHub / GitLab / IM / Jira ingress
   → workspace cleanup
 ```
 
-同时记录当前 Jarvis Box 版本、Docker image digest（如适用）、部署模式、实际 runtime root 和 Runtime Foundation 状态命令，避免后续运维依赖猜测。
+同时记录当前 Jarvis Box 版本、Docker release tag（如适用）、部署模式、实际 runtime root 和 Runtime Foundation 状态命令，避免后续运维依赖猜测。
 
 ## 常用入口
 
