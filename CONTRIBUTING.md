@@ -1,22 +1,22 @@
-# Contributing
+# 参与贡献
 
-jarvis-box public releases are curated distribution releases. The public GitHub repository is used for release notes, installer distribution, issue intake, and selected documentation.
+jarvis-box 公开发布为精选发行版本。公开 GitHub 仓库用于发布 release notes、安装程序分发、issue 接收和部分文档。
 
-## Issues
+## Issue
 
-Use GitHub issues for:
+GitHub issue 用于：
 
-- installation failures
-- release artifact problems
-- documentation gaps
-- operator workflow questions
+- 安装失败
+- release artifact 问题
+- 文档缺口
+- 运维工作流疑问
 
-Do not include secrets, access tokens, private repository URLs, customer data, or raw agent session files in issues.
+请勿在 issue 中包含 secrets、access token、私有仓库 URL、客户数据或原始 agent session 文件。
 
-## Pull Requests
+## Pull Request
 
-The 0.1 public repository is not the source-of-truth development repository. Public pull requests may be used for documentation corrections only. Product code changes are reviewed in Hengshi's internal development workflow before selected releases are published.
+0.1 公开仓库不是 source-of-truth 开发仓库。公开 Pull Request 仅可用于文档修正。产品代码变更在衡石内部开发工作流中评审后，择选发布。
 
-## Support
+## 支持
 
-Commercial support and production usage require a written agreement with Beijing Hengshi Technology Co., Ltd.
+商业支持与生产使用需与北京衡石科技有限公司签署书面协议。
