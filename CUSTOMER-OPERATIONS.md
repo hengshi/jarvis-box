@@ -106,7 +106,7 @@ curl -fsSL https://download.hengshi.com/jarvis-box/docker-load.sh | sh -s -- <ve
 └── connector.env      # 仅启用 IM connector 时存在
 ```
 
-`deployment.env` 保存已加载的本地 release tag、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 不保存 Company Jarvis checkout、Host HOME dump 或临时 context。
+`deployment.env` 保存已加载的本地 release tag、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 必须位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外，不保存 Host HOME dump 或临时 context。
 
 首次 onboarding 在 `runtime.env` 保持：
 
@@ -273,14 +273,14 @@ jarvis-box status
 
 Native 备份安装器报告的实际 runtime root。不要假设客户使用某个历史目录，也不要只备份当前 shell 中 `which jarvis-box` 指向的位置。
 
-Docker 备份 deployment home 以及需要保留的 volumes：
+Docker 备份完整 deployment home；其中的持久数据目录包括：
 
-- `jarvis-agent-home`
-- `jarvis-workspaces`
-- `jarvis-state`
-- `jarvis-logs`
-- `jarvis-config`
-- `connector-state`（启用 IM 时）
+- `<deployment-home>/data/agent-home`
+- `<deployment-home>/data/workspaces`
+- `<deployment-home>/data/state`
+- `<deployment-home>/data/logs`
+- `<deployment-home>/data/config`
+- `<deployment-home>/data/connector-state`（启用 IM 时）
 
 备份可变数据前先规范停服，或使用客户批准的一致性方案。不要把备份写回 release bundle 或公共仓库。
 
@@ -306,3 +306,12 @@ Docker 备份 deployment home 以及需要保留的 volumes：
 - IM provider secret 只属于 connector，不传给 Agent child process。
 - Jarvis Box 不拥有客户知识和 workflow，不读取 Company Jarvis repo。
 - `/status` 是运行诊断面，不是客户业务知识源。
+
+## Docker 权限与备份原则
+
+- 只用负责长期运行服务的现有普通 OS 用户部署，禁止用 `root` 或 `sudo`。
+- 不创建 `jarvis` 系统用户；容器使用当前用户的数字 UID/GID。
+- 所有持久化目录都在 `$JARVIS_DEPLOYMENT_HOME/data/`，由部署脚本预创建并校验所有权。
+- 不使用 Docker named volume，也没有旧 volume 迁移步骤。
+- 使用 `JARVIS_DEPLOYMENT_HOME=/absolute/path scripts/backup-production.sh` 停服、归档整个 deployment home 并恢复服务。
+- Docker socket 是独立的高权限显式开关，默认关闭。

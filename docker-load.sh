@@ -41,20 +41,12 @@ else
   exit 1
 fi
 
-use_sudo=0
-if docker info >/dev/null 2>&1; then
-  :
-elif command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
-  use_sudo=1
-else
-  printf '%s\n' 'Docker is not running or the current user cannot access it.' >&2
+if ! docker info >/dev/null 2>&1; then
+  printf '%s\n' 'Docker must be usable by the current OS user; configure Docker access and rerun without sudo.' >&2
   exit 1
 fi
-run_docker() {
-  if [ "$use_sudo" -eq 1 ]; then sudo docker "$@"; else docker "$@"; fi
-}
 
-gzip -dc "$archive" | run_docker load
+gzip -dc "$archive" | docker load
 image="hengshi/jarvis-box:v${version}"
-run_docker image inspect "$image" >/dev/null
+docker image inspect "$image" >/dev/null
 printf 'Jarvis Box Docker image is ready: %s\n' "$image"

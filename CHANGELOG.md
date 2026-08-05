@@ -1,5 +1,16 @@
 # 更新日志
 
+## 0.2.2
+
+- 客户安装下载对临时 TLS、连接和 HTTP 错误执行有限重试，覆盖入口脚本、版本化安装器与发布包。
+- Native 安装不下载或替换 `gh`、`glab`、Codex、Claude 等 provider/Agent CLI，直接复用安装者当前 OS 用户已有的工具与认证；缺少某项工具不阻塞无关 provider 的安装。
+- Docker 默认以发起部署的当前 OS 用户 UID/GID 运行 Jarvis Box，不自行提权、不创建额外服务用户，也不使用 root 所有的客户数据目录。
+- 新部署将 state、Agent HOME、运行时认证和依赖缓存统一保存到宿主机当前用户拥有的 bind-mount 目录，容器重建后仍可直接复用。
+- 为任意宿主机 UID/GID 生成完整的容器用户身份，使 HOME、`getent`、Node.js 用户信息、SSH 和 Agent 工具在同一非 root 身份下闭环。
+- 加固部署配置与备份边界：加载配置前先校验物理路径和所有权，备份始终使用当前 deployment home 并以私有权限创建。
+- 拒绝把 Docker deployment home 放入任意 Git checkout，避免客户 Jarvis 源码、建设材料与 runtime state 混写。
+- 发布 provenance gate 同时支持 fast-forward 与 squash merge：必须定位已合并 MR 的成功 source pipeline，并且 source/tag Git tree 完全一致才允许发布。
+
 ## 0.2.1
 
 - 修复 GitLab 合并请求与工作项使用相同编号时的标题、链接和制品错位，确保评审始终绑定正确的项目与合并请求。
@@ -45,7 +56,7 @@
 - 以真实宿主平台证据加强 Darwin/Linux 进程表、权限和信号契约的 runtime-test 指引。
 - 加固 contract-workflow workspace 交接：清理父 workspace 运行时字段（`path`、`task_id`），保留所有权身份（`remote`、`project`），防止嵌套 workflow run 复用过期或冲突的子路径。
 - 修复 release overlay 基线/版本校验，使 Docker 镜像与部署文档可同时发布并仍然通过严格的生产发布门禁。
-- 在 `docs/e2e.md` 中记录 Monkey Test issue→Claude→MR 真实 issue 冒烟路径，包括 fixture 变量提取和闭环行为的 provider evidence 检查。
+- 补充 Monkey Test issue→Claude→MR 真实 issue 冒烟路径，包括 fixture 变量提取和闭环行为的 provider evidence 检查。
 - code-review workflow 按“源分支规则、目标分支规则、Agent 默认方法”的顺序选择评审方法；仓库没有 `skills/code-review/SKILL.md` 不再导致任务启动失败。
 - 启动 contract workflow 时保留父任务 workspace 上下文，使嵌套 bugfix/replay 流程保持同一 workspace，避免 workspace 冲突失败。
 - 将 runtime 基础能力收敛为 Runtime-Agent 所有，jarvis-box 聚焦于 Task/Run、控制面、runtime-job transport 和 workflow-contract 校验。

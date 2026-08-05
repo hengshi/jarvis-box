@@ -39,6 +39,28 @@ require_command curl
 require_command python3
 require_command bash
 
+curl_retry() {
+  local retries="${JARVIS_DOWNLOAD_RETRIES:-5}"
+  local delay="${JARVIS_DOWNLOAD_RETRY_DELAY:-2}"
+  local attempt=0
+  local stdout_file
+  stdout_file="$(mktemp)"
+  while true; do
+    if curl -fsSL "$@" >"$stdout_file"; then
+      cat "$stdout_file"
+      rm -f "$stdout_file"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -gt "$retries" ]; then
+      rm -f "$stdout_file"
+      return 1
+    fi
+    : >"$stdout_file"
+    sleep "$delay"
+  done
+}
+
 tmp_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_dir"
@@ -47,7 +69,7 @@ trap cleanup EXIT HUP INT TERM
 
 if [ -z "${JARVIS_VERSION:-}" ]; then
   latest_json="$tmp_dir/latest.json"
-  curl -fsSL "$PUBLIC_BASE/latest.json" -o "$latest_json"
+  curl_retry "$PUBLIC_BASE/latest.json" -o "$latest_json"
   JARVIS_VERSION="$(python3 -c 'import json, pathlib, sys; data=json.loads(pathlib.Path(sys.argv[1]).read_text()); version=str(data.get("version") or "").strip(); print(version) if version else sys.exit("latest.json missing version")' "$latest_json")"
   export JARVIS_VERSION
 fi
@@ -55,4 +77,4 @@ fi
 export JARVIS_RELEASE_BASE="${JARVIS_RELEASE_BASE:-$PUBLIC_BASE/releases}"
 export JARVIS_PUBLIC_INSTALL=1
 
-curl -fsSL "$IMPLEMENTATION_URL" | bash -s -- "$@"
+curl_retry "$IMPLEMENTATION_URL" | bash -s -- "$@"

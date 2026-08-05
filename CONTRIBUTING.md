@@ -1,6 +1,6 @@
 # 参与贡献
 
-jarvis-box 公开发布为精选发行版本。公开 GitHub 仓库用于发布 release notes、安装程序分发、issue 接收和部分文档。
+jarvis-box 公开发布为精选发行版本。公开 GitHub 仓库用于发布 release notes、安装程序分发、issue 接收和完整客户文档。
 
 ## Issue
 

@@ -52,7 +52,7 @@ curl -fsSL https://download.hengshi.com/jarvis-box/docker-load.sh | sh -s -- <ve
 
 加载完成后，`deployment.env` 使用脚本报告的 `JARVIS_IMAGE=hengshi/jarvis-box:v<version>`。客户不需要登录镜像仓库，也不需要手工处理 checksum。
 
-解压 release bundle 后，准备私有 deployment home，并选择一种认证路径：
+解压 release bundle 后，准备一个位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外的私有 dedicated deployment home，并选择一种认证路径：
 
 - 路径 A：从当前 Host 用户导入受支持的可移植身份；
 - 路径 B：Host 不保存身份，启动后直接在持久容器 Agent HOME 中登录。
@@ -88,6 +88,7 @@ GitHub / GitLab / IM / Jira ingress
 
 ## 常用入口
 
+- [完整使用文档](docs/README.md)：Provider 接入、配置、执行模型、状态和清理合同
 - [客户部署与运维指南](CUSTOMER-OPERATIONS.md)：上线、日常操作、升级、回滚、备份和诊断
 - [认证指南](AUTHENTICATION.md)：Native 身份以及 Docker 两种认证路径
 - [仓库与发布模型](REPOSITORY-MODEL.md)：create-jarvis、私有工程源码、公开发行仓库和 Company Jarvis 的职责
@@ -97,3 +98,9 @@ GitHub / GitLab / IM / Jira ingress
 ## 许可证
 
 Jarvis Box 依据 HENGSHI 商业许可证发行。
+
+## Docker 用户与数据目录
+
+请始终使用负责运行 Jarvis Box 的现有普通 OS 用户执行部署脚本，不要使用 `root` 或 `sudo`。Jarvis Box 不会创建专用系统用户；镜像以非 root 身份运行，并由部署脚本映射当前用户的 UID/GID。
+
+部署脚本会拒绝 Git checkout 内的 deployment home，然后在 `$JARVIS_DEPLOYMENT_HOME/data/` 下创建 Agent HOME、workspace、配置、Task/Run state、依赖缓存、日志和 connector state，随后以 bind mount 交给容器。所有目录都归当前用户所有，不使用 Docker named volume。需要备份时归档整个 deployment home。

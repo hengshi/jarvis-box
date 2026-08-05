@@ -8,7 +8,7 @@ Jarvis 使用多个独立仓库，因为构建方法、运行时实现和公开�
 | --- | --- | --- | --- |
 | [`hengshi/create-jarvis`](https://github.com/hengshi/create-jarvis) | 客户构建方法 | 已认证 Host Agent 用于构建客户自有 Company Jarvis、学习 repo-local skills、协调 workflow 并 onboarding 正式运行时的可恢复方法 | Jarvis Box 源码、控制面、运行时状态或客户凭据 |
 | 规范私有工程源码仓库 | Jarvis Box 工程真源 | 完整源码、测试、CI、镜像构建、规范 release artifact、生产门禁和内部部署 | 客户安装依赖或公开访问面 |
-| [`hengshi/jarvis-box`](https://github.com/hengshi/jarvis-box) | 公开产品与发行面 | 公开安装与运维合同、精选文档、tag、Release、checksum 和经验证的 artifact | 完整私有源码树或 release artifact 的独立构建 |
+| [`hengshi/jarvis-box`](https://github.com/hengshi/jarvis-box) | 公开产品与发行面 | 公开安装与运维合同、完整客户文档、tag、Release、checksum 和经验证的 artifact | 完整私有源码树或 release artifact 的独立构建 |
 | 客户 Company Jarvis 仓库 | 客户自有知识与策略 | 公司知识、workflow 定义、跨运行时治理和客户自有 skills | Jarvis Box 实现或 create-jarvis 方法内部 |
 
 ## 单向发布流

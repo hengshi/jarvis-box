@@ -79,3 +79,7 @@ claude auth login
 ## 完成检查
 
 单独的 `auth status` 是有用的诊断手段，但不是验收证据。投入生产使用前，运行一条真实任务，完成 ingress、Task/Run 创建、workspace 创建、Agent 执行、provider writeback 和 workspace cleanup。容器重建后重复能力检查，证明所选 Docker identity 是持久的。
+
+## Docker 内身份的持久化边界
+
+容器内执行 `gh auth login`、`glab auth login`、`codex login` 或 `claude login` 时，凭据写入 `/home/jarvis`；该目录由当前 OS 用户所有的 `$JARVIS_DEPLOYMENT_HOME/data/agent-home` bind mount 提供，因此重建容器后仍可复用。部署和登录都不要使用 `root` 或 `sudo`。
