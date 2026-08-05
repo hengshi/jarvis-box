@@ -56,6 +56,8 @@ Compose injects state/log/workspace paths, service manager and image reference. 
 
 uv-im-connector exclusively owns provider-native secrets. `UV_IM_AUTH_TOKEN` must match `JARVIS_UV_IM_CONNECTOR_TOKEN`. When profile is disabled, deployment helper may create an empty permission-restricted file for Compose compatibility.
 
+Native 安装同样由 Jarvis Box 管理 connector，但不会把 provider secret 混入主运行环境。发布制品内置 `uv-im-connector`；installer 将其安装到 `${JARVIS_BIN_DIR}/uv-im-connector`，读取 `${JARVIS_RUNTIME_ROOT}/envs/.env.uv-im-connector`，并使用 `${JARVIS_RUNTIME_ROOT}/state/uv-im-connector`。设置 `JARVIS_CONNECTOR_PROFILE=uvim` 后，systemd/launchd companion service 与 jarvis-box 一起受安装、升级和停用流程管理。
+
 ## `auth/`
 
 `scripts/deploy-production.sh ... auth-import` snapshots only approved portable credentials from the current Host user: selected `gh`/`glab` tokens, Codex `auth.json`, Claude `.credentials.json`, or explicit headless keys. It never mounts Host HOME, Keychain, SSH agent, or a whole credential store. The directory is mode `0700`, files are `0600`, and Compose mounts it read-only at `/run/jarvis-host-auth`; the entrypoint imports Agent files into persistent `/home/jarvis` and exposes provider tokens only to the runtime process.

@@ -204,6 +204,8 @@ onboarding 完成记录必须写明实际 Runtime Foundation root，以及当前
 
 IM 是可选能力。只在需要企业微信、飞书或钉钉等入口时设置 `JARVIS_CONNECTOR_PROFILE=uvim`，并按 release 中的 example 填写私有 `connector.env`。
 
+Native 安装包已内置并由 installer 管理 `uv-im-connector` companion service，不需要客户单独下载二进制。把 provider secret 写入 `${JARVIS_RUNTIME_ROOT}/envs/.env.uv-im-connector`；不要写入主 `.env.jarvis-box`。
+
 - provider-native secret 只属于 connector；
 - Jarvis Box 只持有 connector URL 和 shared verification token；
 - connector 不共享 Agent HOME、Git identity、Docker socket 或 Jarvis Box state；

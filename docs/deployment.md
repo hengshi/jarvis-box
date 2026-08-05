@@ -92,6 +92,8 @@ scripts/deploy-production.sh /absolute/deployment-home verify
 
 `JARVIS_CONNECTOR_PROFILE=uvim` 只写在 `runtime.env`。同一个 `JARVIS_IMAGE` 启动 connector service，但 connector 使用独立 env/state/credential boundary。
 
+Native 部署不要求客户另行下载或维护 connector。release archive 同时携带 `jarvis-box` 与 `uv-im-connector`，installer 以当前 OS 用户安装 companion systemd/launchd service；provider secret 只放在 `${JARVIS_RUNTIME_ROOT}/envs/.env.uv-im-connector`。主服务与 connector 分属不同进程和状态目录，但由同一 Jarvis Box 版本和 installer 共同管理。
+
 默认不挂 Docker socket。只有客户明确批准 host-root-equivalent capability 时在 `deployment.env` 设置 `JARVIS_ENABLE_DOCKER_SOCKET=1`。
 
 ## Upgrade and rollback
