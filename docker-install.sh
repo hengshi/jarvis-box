@@ -69,12 +69,22 @@ download() {
   local output="$2"
   local retries="${JARVIS_DOWNLOAD_RETRIES:-5}"
   local delay="${JARVIS_DOWNLOAD_RETRY_DELAY:-2}"
-  local attempt=1
-  while ! curl --fail --location --silent --show-error "$url" -o "$output"; do
-    [ "$attempt" -lt "$retries" ] || fail "download failed after $attempt attempt(s): $url"
-    printf 'Download failed; retrying in %ss (%s/%s): %s\n' "$delay" "$attempt" "$retries" "$url" >&2
-    sleep "$delay"
+  local connect_timeout="${JARVIS_DOWNLOAD_CONNECT_TIMEOUT:-20}"
+  local low_speed_time="${JARVIS_DOWNLOAD_LOW_SPEED_TIME:-60}"
+  local low_speed_limit="${JARVIS_DOWNLOAD_LOW_SPEED_LIMIT:-1024}"
+  local attempt=0
+  for value in "$retries" "$delay" "$connect_timeout" "$low_speed_time" "$low_speed_limit"; do
+    case "$value" in ''|*[!0-9]*) fail 'download retry settings must be non-negative integers' ;; esac
+  done
+  while ! curl --fail --location --silent --show-error \
+    --connect-timeout "$connect_timeout" \
+    --speed-time "$low_speed_time" \
+    --speed-limit "$low_speed_limit" \
+    "$url" -o "$output"; do
     attempt=$((attempt + 1))
+    [ "$attempt" -le "$retries" ] || fail "download failed after $attempt attempt(s): $url"
+    printf 'Download failed; retrying in %ss (retry %s/%s): %s\n' "$delay" "$attempt" "$retries" "$url" >&2
+    sleep "$delay"
   done
 }
 
