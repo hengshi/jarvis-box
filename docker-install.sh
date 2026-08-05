@@ -65,8 +65,17 @@ trap cleanup EXIT HUP INT TERM
 mkdir -m 0700 -p "$tmp" "$release_home/v$version"
 
 download() {
-  curl --fail --location --silent --show-error \
-    --retry 4 --retry-delay 2 --retry-all-errors "$1" -o "$2"
+  local url="$1"
+  local output="$2"
+  local retries="${JARVIS_DOWNLOAD_RETRIES:-5}"
+  local delay="${JARVIS_DOWNLOAD_RETRY_DELAY:-2}"
+  local attempt=1
+  while ! curl --fail --location --silent --show-error "$url" -o "$output"; do
+    [ "$attempt" -lt "$retries" ] || fail "download failed after $attempt attempt(s): $url"
+    printf 'Download failed; retrying in %ss (%s/%s): %s\n' "$delay" "$attempt" "$retries" "$url" >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
 }
 
 if [ ! -x "$release_dir/scripts/deploy-production.sh" ]; then
