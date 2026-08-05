@@ -44,15 +44,16 @@ jarvis-box status
 
 ## Docker 安装
 
-一条命令下载、自动校验并加载指定版本；脚本会自动识别 amd64/arm64：
+已有 deployment home 时，一条命令下载运维包和镜像、保留配置、升级并验证；脚本会自动识别系统和 amd64/arm64：
 
 ```bash
-curl -fsSL https://download.hengshi.com/jarvis-box/docker-load.sh | sh -s -- <version>
+curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
+  | bash -s -- <version> /absolute/deployment-home
 ```
 
-加载完成后，`deployment.env` 使用脚本报告的 `JARVIS_IMAGE=hengshi/jarvis-box:v<version>`。客户不需要登录镜像仓库，也不需要手工处理 checksum。
+全新 deployment home 首次运行会生成三个私有配置文件；填写后再次执行同一命令即可上线。客户不需要登录镜像仓库、下载第二份发布包、手工修改 `JARVIS_IMAGE` 或处理 checksum。只需要单独加载镜像时，才使用底层 `docker-load.sh`。
 
-解压 release bundle 后，准备一个位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外的私有 dedicated deployment home，并选择一种认证路径：
+配置一键安装器生成的私有 dedicated deployment home，并选择一种认证路径：
 
 - 路径 A：从当前 Host 用户导入受支持的可移植身份；
 - 路径 B：Host 不保存身份，启动后直接在持久容器 Agent HOME 中登录。

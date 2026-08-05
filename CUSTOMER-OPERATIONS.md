@@ -88,13 +88,14 @@ jarvis-box status
 
 ## 5. Docker 上线
 
-### 5.1 一键加载镜像并准备 deployment home
+### 5.1 一键安装或升级
 
 ```bash
-curl -fsSL https://download.hengshi.com/jarvis-box/docker-load.sh | sh -s -- <version>
+curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
+  | bash -s -- <version> /absolute/deployment-home
 ```
 
-脚本自动识别 amd64/arm64、下载对应 archive、核验 release SHA-256、执行 `docker load`，并确认 `hengshi/jarvis-box:v<version>` 已存在。不要手工下载 checksum，也不需要登录任何镜像仓库。
+脚本自动识别系统和 amd64/arm64，下载并校验该版本运维包和镜像。已有 deployment home 时，它会拒绝 active Task、保留客户配置、更新 `JARVIS_IMAGE`、重建服务并执行验证；全新目录首次运行只生成三个私有配置文件，填写后再次执行同一命令即可上线。不要手工下载 checksum，也不需要登录任何镜像仓库。底层 `docker-load.sh` 只用于仅加载镜像的特殊场景。
 
 选择客户控制的私有绝对路径：
 
@@ -259,13 +260,14 @@ jarvis-box status
 
 ### Docker
 
-1. 确认没有 active Task；
-2. 停止正式服务；
-3. 备份 deployment config 和需要保留的 volumes；
-4. 下载并校验新 release；
-5. 执行新版本的一键加载命令，并将 `JARVIS_IMAGE` 更新为脚本报告的 release tag；
-6. 执行 `deploy` 和 `verify`；
-7. 重跑一条真实业务链路。
+确认没有 active Task 后执行同一个安装命令：
+
+```bash
+curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
+  | bash -s -- <version> /absolute/deployment-home
+```
+
+安装器自动下载运维包和镜像、保留 deployment config、更新 `JARVIS_IMAGE`、重建服务并验证。最后重跑一条真实业务链路。发现 active Task、状态 API 不可用或配置属于其他 deployment home 时，安装器会拒绝升级。
 
 回滚时一键加载目标旧版本、恢复对应 release tag，并执行同样的部署、验证和真实链路检查。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
 

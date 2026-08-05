@@ -89,10 +89,12 @@ jarvis-box agent smoke
 
 ### Docker
 
-1. 确认没有正在执行的 Task，并保留当前 image digest；
-2. 下载并校验新 release bundle；
-3. 把 `deployment.env` 中的 `JARVIS_IMAGE` 改成新 digest；
-4. 执行部署和验证：
+确认没有正在执行的 Task，然后使用稳定公网入口完成运维包、镜像、配置更新、部署和验证：
+
+```bash
+curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
+  | bash -s -- <version> /absolute/deployment-home
+```
 
 ```bash
 "$ops" "$home" deploy
