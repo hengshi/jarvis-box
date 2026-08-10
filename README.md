@@ -6,10 +6,10 @@ Jarvis Box 是 Jarvis 的任务执行运行时。它接收 GitHub、GitLab、IM�
 
 ## 最快开始
 
-还没有 Company Jarvis 时，让一个已经授权的 Host Agent 从 create-jarvis 最新稳定 Release 开始：
+还没有 Company Jarvis 时，让一个已经授权的 Host Agent 从 create-jarvis 最新代码开始：
 
 ```text
-请打开 https://github.com/hengshi/create-jarvis/releases/latest，下载并校验最新稳定 Release，解压后读取其中的 SKILL.md，然后帮我构建一套 Jarvis。
+请用 git clone https://github.com/hengshi/create-jarvis 获取最新代码，记录 commit 和提交信息，读取其中的 SKILL.md，然后帮我构建一套 Jarvis。
 ```
 
 Host Agent 会引导你完成资料范围确认、Company Jarvis 构建、Runtime Foundation 安装和 Jarvis Box 正式部署。你只需要在部署阶段选择 Native 或 Docker，不需要自己编写 scheduler、maintenance 或 self-improve 脚本。

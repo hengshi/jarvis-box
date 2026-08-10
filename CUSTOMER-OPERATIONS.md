@@ -12,10 +12,10 @@
 6. 先以 read-only 或受监督方式运行一条完整真实链路。
 7. 记录版本、部署模式、实际 runtime root、Runtime Foundation root、状态命令和 Docker image digest（如适用）。
 
-没有 Company Jarvis 时，从 create-jarvis 最新稳定 Release 开始，不跟随浮动默认分支：
+没有 Company Jarvis 时，从 create-jarvis 最新代码开始：
 
 ```text
-https://github.com/hengshi/create-jarvis/releases/latest
+https://github.com/hengshi/create-jarvis
 ```
 
 ## 2. 选择部署模式
@@ -210,7 +210,7 @@ Native 安装包已内置并由 installer 管理 `uv-im-connector` companion ser
 - Jarvis Box 只持有 connector URL 和 shared verification token；
 - connector 不共享 Agent HOME、Git identity、Docker socket 或 Jarvis Box state；
 - 禁用 connector profile 时，同时移除对应 connector service；
-- 上线验收必须使用真实 IM ingress 和真实回复，不能用内部 transport stub 代替 provider 认证。
+- 上线验收必须从真实 IM 平台发送消息并确认收到真实回复；本地模拟请求不能代替 provider 认证。
 
 ## 8. 日常操作
 

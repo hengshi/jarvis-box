@@ -23,6 +23,7 @@ jarvis-box monitor
 ```
 
 Compose 配置 service mode、state/log/workspace 路径和 Agent 可执行文件。jarvis-box 不将 Jarvis root skill 注入 Run。
+`jarvis-box status` 始终输出 effective `runs_dir` 和 `workspace_root`；前者由 `JARVIS_RUN_DIR`（默认 `${JARVIS_STATE_DIR}/runs`）决定，后者由 `JARVIS_WORKSPACE_ROOT`（默认 `${JARVIS_RUNTIME_ROOT}/workspace`）决定。集成方必须读取这两个 effective 值，不得根据默认目录反推 Task 或 Workspace 根。
 
 ## Task workspace
 
@@ -31,7 +32,7 @@ jarvis-box workspace create --id <stable-id> --project <group/repo> --base-branc
 jarvis-box workspace create --id <stable-id> --remote <git-url> --base-branch <branch>
 ```
 
-该命令仅在 active 受管 Task 中可用。它在创建 workspace 之前原子地登记服务端分配的路径。
+该命令仅在 active 受管 Task 中可用。它在创建 workspace 之前原子地登记服务端分配的路径。zero-workspace Task 的第一个 Workspace 必须使用保留 id `primary`；非空 registry 的后续 Workspace 使用普通 stable id。
 
 ## Release helpers
 

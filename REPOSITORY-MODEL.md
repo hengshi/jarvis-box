@@ -32,7 +32,7 @@ GitLab 规范源码与 CI
 - GitLab tag 指向规范源码 commit。GitHub tag 指向精选公开 overlay commit，因此两个 Git commit ID 预期不同。
 - Release artifact 文件名与 SHA-256 digest 在 GitLab、GitHub 和公开下载服务上必须一致。
 - `production-image.json` 将 release 绑定到规范源码 commit、已通过门禁的内部 manifest digest，以及两个公网 Docker archive；客户只通过一键加载脚本消费它。
-- `create-jarvis` 拥有独立的方法版本。它记录 onboarding 时选择的精确 Jarvis Box release；不将运行时版本复用为自身版本。
+- `create-jarvis` 以 commit 为核心标识。它记录 onboarding 时选择的精确 Jarvis Box release；不将运行时版本复用为自身标识。
 
 ## 完成不变量
 

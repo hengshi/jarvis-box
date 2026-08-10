@@ -13,6 +13,12 @@ home=/absolute/deployment-home
 
 后续示例中的 `"$ops" "$home"` 始终使用同一个 release 和 deployment home。
 
+## Docker deployment 边界
+
+Jarvis Box 运维脚本只管理当前 deployment home 和对应 Compose project 明确登记的资源。它不会重启或重新配置 Docker daemon，不会修改宿主网络或 DNS，不会执行宿主级 `docker system prune`、`docker container prune`、`docker network prune` 或 `docker volume prune`，也不会操作其他 deployment 的容器、network 或 volume。
+
+Docker、DNS、网络或 registry 基础设施不可用时，运维脚本会停止并报告错误。客户的宿主机管理员负责在 Jarvis Box 之外诊断和恢复这些基础设施。
+
 ## 看状态
 
 ### Native

@@ -1,5 +1,7 @@
 # Jarvis Box 文档
 
+本目录随 Jarvis Box 公开发行同步，面向安装、使用和维护自己 Jarvis Box deployment 的客户。内容只描述客户可观察的产品行为和客户拥有的操作。
+
 ## 从这里开始
 
 - [开始使用](guide/getting-started.md)：新客户、Native 和 Docker 的最短路径

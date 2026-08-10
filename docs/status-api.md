@@ -92,7 +92,7 @@ Task response 的 `actions` 恰好使用以下 key：
 
 Task workspace 只有一条归属链：append-only 的 `task-state.workspaces[]`。一个 Task 可以登记多个仓库目录；每项有稳定的 Task-local `id`、服务端分配的绝对 `path` 和可选 repository metadata。已有项不可换 id、路径或仓库；恰好一个 `primary=true` 只负责选择 Run 的默认 `cwd`，不限制 Task 的工作区数量。
 
-TaskService 在首个 Run claim 之前一次登记 Task identity 和初始工作区，然后才检查容量并逐项创建、clone 或 checkout。容量不足时 Status 显示 `storage-wait / wait-for-storage`；此时可以 Cancel，但 Continue 由自动恢复取代。Runner 向每个 runtime agent 注入相同的 Workspace ownership contract；运行中的 Agent 如需增加仓库，必须调用 `jarvis-box workspace create`，不得绕过该命令创建、替换或物化 `JARVIS_WORKSPACE_ROOT` 的任何直接子项。该命令先验证当前 Run 仍持有 Task，并在原子 state mutation 中追加登记，登记落盘后才创建目录。Status detail、Continue、自动清理和手工清理都只读取 `task-state.workspaces[]`；`cwd`、`workdir`、`run-context.json`、artifact 文件和目录扫描都不是 workspace 归属来源。
+TaskService 在首个 Run claim 之前一次登记 Task identity 和初始工作区，然后才检查容量并逐项创建、clone 或 checkout。容量不足时 Status 显示 `storage-wait / wait-for-storage`；此时可以 Cancel，但 Continue 由自动恢复取代。Runner 向每个 runtime agent 注入相同的 Workspace ownership contract；运行中的 zero-workspace Task 必须以 `jarvis-box workspace create --id primary` 建立第一个仓库，非空 registry 后续增加仓库时使用普通 stable id。Agent 不得绕过该命令创建、替换或物化 `JARVIS_WORKSPACE_ROOT` 的任何直接子项。该命令先验证当前 Run 仍持有 Task，并在原子 state mutation 中追加登记，登记落盘后才创建目录。Status detail、Continue、自动清理和手工清理都只读取 `task-state.workspaces[]`；`cwd`、`workdir`、`run-context.json`、artifact 文件和目录扫描都不是 workspace 归属来源。
 
 所有 lane 使用同一规则，不设客户工作流白名单。Task 成功或取消时先持久化 terminalization intent，再遍历并清理全部登记项，最后发布 completed/cancelled。若最终状态写入或清理遇到 ENOSPC/瞬时故障，Status 显示 `finalizing` 和 `retry-finalization`；服务在磁盘恢复后按 intent 自动重放，并发 Continue 不能越过该边界。
 

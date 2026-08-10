@@ -1,5 +1,17 @@
 # 更新日志
 
+## 0.2.7
+
+- 新增 `jarvis-box tasks create` 命令，允许维护等定时任务通过 CLI 创建正式 Task 并在状态页可见。
+- 新增 `tasks start --in-place`，维护/自改进任务直接在源目录启动，不再每次执行产生冗余的 source+run 双任务。
+- 定时维护与自改进任务会按各自用途执行，不再误进入 issue 处理流程。
+- 正式支持 GitLab commit URL 触发 jarvis-command，状态页任务标题不再为空。
+- ChatBridge 批量取消不再误伤 workspace 已清理的已完成任务。
+- Jarvis Box 状态页面服务地址默认显示 `0.0.0.0`（此前无 WEBHOOK_HOST 时回退到 `127.0.0.1`）。
+- `tasks create` 会拒绝越出允许目录的路径和重复任务创建，减少错误任务与越界文件访问风险。
+- 无需代码仓库的定时维护与自改进任务现在可以正常运行；服务重启后任务状态会恢复为实际结果，不再长期停留在错误状态。
+- 任务结束后的资源回收更加可靠，减少残留进程及其导致的后续任务异常。
+
 ## 0.2.6
 
 - GitHub 真实交付发布门禁改用 GitHub webhook `ping` delivery 验证公网入站可达性，不再依赖 runner 回环访问临时 tunnel URL，避免有效公网链路被误判失败。
