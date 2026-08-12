@@ -41,6 +41,7 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | `JARVIS_UV_IM_CONNECTOR_URL/TOKEN` | jarvis-box → connector access when profile is `uvim` |
 | `JARVIS_TASK_STORE_MIN_FREE_GB` | workspace admission floor |
 | `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` | 可选的依赖准备程序；在 checkout 后、Agent 启动前调用 |
+| `GIT_LFS_SKIP_SMUDGE` | Jarvis workspace clone/checkout 默认 `1`，LFS 按需下载；显式设为 `0` 恢复全量 materialize |
 
 Native 默认把依赖缓存放在 `${JARVIS_RUNTIME_ROOT}/dependency-cache`。`JARVIS_DEPENDENCY_CACHE_ROOT` 可显式覆盖，但 Docker 中该路径由 Compose 固定为 `/var/cache/jarvis-box`，不要在 `runtime.env` 重定义。Jarvis Box 会在未被 Operator 覆盖时向 Agent 注入 Go、npm、Yarn、pnpm、pip、uv 和 Gradle 的标准缓存目录。
 

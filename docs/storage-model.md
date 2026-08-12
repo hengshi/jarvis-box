@@ -133,6 +133,8 @@ Native AgentSession jsonl 属于 runtime agent，不属于 Run Artifact。它保
 
 `repo-cache` 是 box-owned 的 bare mirror。缓存刷新使用 exclusive lease，local clone 全程持有 shared lease，避免另一个 Task 在 Git 读取 object 时改写同一 mirror。缓存刷新成功且 cache 与 Workspace 位于同一文件系统时，Workspace 通过 Git local clone 复用不可变 object 的硬链接，随后立即把 `origin` 恢复为权威远端；Workspace 不写 `objects/info/alternates`，所以 cache 删除或重建不会让已有 Workspace 失效。缓存刷新失败、本地 clone 不可用、lease 获取失败或跨文件系统时，创建流程退回权威远端 clone。这里共享的是 Git object 的物理块，不共享工作树、构建产物或可变运行数据；单独对一个 Workspace 执行 `du` 仍可能显示这些硬链接的完整逻辑大小。
 
+Workspace clone 和 Jarvis 执行的 checkout 默认设置 `GIT_LFS_SKIP_SMUDGE=1`，只检出 LFS pointer，不在 Task 启动路径自动下载图片、视频或其他 LFS 内容。这避免 cached clone 因 bare mirror 不是 LFS endpoint 而被误判失败，也避免与任务无关的 LFS 内容同时占用 `.git/lfs` 和工作树两份空间。确实需要二进制内容的任务应在已绑定权威 `origin` 的 Workspace 中用 `git lfs pull --include=<path>` 按路径 materialize；Operator 可以显式覆盖该环境变量恢复 Git LFS 的标准全量 checkout。Status 的 clone 进度会显示 `LFS 按需下载`，使该策略对操作者可见。
+
 Start 准入遇到 `low-disk`、`ENOSPC` 或 `EDQUOT` 时，Task 进入 `status=waiting`、`phase/monitor_status=storage-wait`、`next_action=wait-for-storage`。该状态持久化最小的 `pending_launch` 准入记录，保留 Task registration 和全部 Workspace registration，但没有 `current_run_id`。服务启动时及此后每 5 秒只扫描 canonical Task state；对应卷恢复后，恢复器重新调用原 lane launcher，由 TaskService 再次检查容量并用现有 owner/sequence CAS 创建第一个 Run。并发恢复最多一个调用取得 Run owner，服务重启不丢失等待状态，也不需要 Redis、全局 FIFO queue、Workspace 目录发现或进程内 callback。只有全新空状态或当前版本显式写出的 admission scaffold 可以取得首次 Task registration；未标记的历史 `accepted` 状态不会被猜测或迁移。无法持久化 Task registration 的硬 ENOSPC 不能伪装成已接收，必须向入口返回错误；权限错误、未知 `statfs` 错误等非容量故障进入 `admission-failed / needs-attention`，不做无限自动重试。
 
 Task-store 的一次 `ENOSPC`、权限或原子写失败是当前 persistence fault，不是只能随进程重启清除的配置状态。健康检查、Run 准入和周期 terminalization recovery 都走和正式状态写入相同的文件锁及 crash-durable 原子替换路径执行 create/write/file-fsync/rename/directory-fsync/delete 探测；探针若不完成文件和目录同步，不得解除 latch。同一时刻的并发检查合并为一次探测，探测本身失败不会覆盖原始业务写入的故障证据，成功也只解除它开始时观察到的错误 generation，期间出现的更新错误不能被旧探测误清除。多个终态 Task 采用 250 ms 到 5 s 的有界指数退避，不会在磁盘故障时形成固定频率的探测惊群。`JARVIS_TASK_STORE_MIN_FREE_GB` 只约束新 Run/clone 准入；终态恢复以实际可写为提交条件，不要求磁盘先回到新工作余量，也不提前删除当前 Task 的 Workspace。当前 fault 解除后，新 Run 或 finalization 清除 Task 的 `task_store_degraded` 并记录恢复时间；workspace 卷恢复后同样清除 `workspace_storage_degraded`。最后一次错误和恢复时间继续作为历史诊断信息保留，但不得继续阻塞调度。
@@ -224,7 +226,7 @@ Run 内的 runtime agent log 属于 Run Artifact。Service log tail 只能通过
 
 `JARVIS_DEPENDENCY_CACHE_ROOT` 保存跨 Task 复用的包管理器缓存，默认是 `${JARVIS_RUNTIME_ROOT}/dependency-cache`，Docker 为独立持久卷 `/var/cache/jarvis-box`。它不属于 `workspaces[]`，workspace cleanup 和 Task retention 都不得删除它。Jarvis Box 只注入标准缓存环境；如配置 `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER`，则在 lane 完成 checkout 后、Agent 启动前调用 Operator 提供的程序。该 hook 失败必须让 Run 启动失败，不能带着半配置 workspace 继续执行；hook 内容仍由客户 Runtime Foundation 负责。
 
-缓存根目录只承载工具原生的下载缓存和安全的内容寻址缓存。跨项目直接共享 `target/`、`node_modules`、`build/` 等编译结果不属于默认模型；需要编译缓存时，应使用 ccache/sccache 或由 workspace configurer 按 OS、架构、工具链和项目建立隔离键。缓存属于单个 Jarvis 安装的信任边界，不跨客户共享，清理由独立运维策略负责。
+缓存根目录只承载工具原生的下载缓存和安全的内容寻址缓存。它与 `repo-cache` 在 Workspace 准备流水线中协同，但不混用生命周期或目录：repo cache 复用 Git object，dependency cache 复用包管理器下载，LFS 内容默认按需 materialize。跨项目直接共享 `target/`、`node_modules`、`build/` 等编译结果不属于默认模型；需要编译缓存时，应使用 ccache/sccache 或由 workspace configurer 按 OS、架构、工具链和项目建立隔离键。缓存属于单个 Jarvis 安装的信任边界，不跨客户共享，清理由独立运维策略负责。
 
 `JARVIS_WORKSPACE_ROOT` 保存 Task Workspace。一个 Task 可以拥有零个到多个 Workspace；唯一归属记录是 append-only 的 `task-state.workspaces[]`。每项包含稳定的 Task-local id、服务端分配的绝对路径、可选 repository metadata 和 `primary` 标记。路径由 `task_id + task_instance_id + workspace_id` 共同派生；同一个 task id 被重新创建后也不会复用旧实例目录。非空集合恰好有一个 `primary=true`，只负责选择 Run 的默认 `cwd`；空集合不合成目录，Run 使用 launcher 的普通工作目录。
 

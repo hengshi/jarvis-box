@@ -18,6 +18,8 @@
 
 单 Task detail 的 `workspace_locations` 是主机路径规则的唯一例外，用于建立 Task 与可清理工作目录的明确关联。每项只包含服务端生成的 opaque id、显示标签、绝对目录、存在状态、删除资格和原因；其他任意 Workspace、Run 或日志路径仍不得进入 public projection。
 
+Run 从被 claim 到 Agent 进程真正启动之间，Task detail 公开准备进度：`preparation_started_at`、`preparation_elapsed_ms`、`current_operation`、`current_operation_started_at`、`current_operation_elapsed_ms`、`current_operation_attempt`、`current_operation_max_attempts` 和 `current_operation_detail`。Status 页面必须优先显示当前操作、已耗时和重试次数，不能只显示笼统的“Run created”或“执行中”。准备成功、失败、取消或进入 recovery 时清空 `current_operation`，并把 `preparation_elapsed_ms` 冻结为最终耗时；历史 Task 没有这些字段时保持兼容。
+
 长期在线约束：
 
 - 首屏读取一次 list/work-items，后续通过一条 SSE 连接接收变化。
@@ -121,6 +123,7 @@ Task 创建时会把 GitLab/GitHub/Jira 外部工作对象登记成规范化 `ta
 
 - safe Target key/hash、标题和 provider label
 - Task id、`current_run_id`、`latest_run_id`、Run sequence、状态、时间、safe agent name
+- Run 启动前的当前准备操作、实时/最终准备耗时、重试次数和 safe transport detail
 - `actions`、`safe_actions`、`inspect_actions`
 - safe lifecycle/blocker/action summary
 - opaque safe Artifact ref
