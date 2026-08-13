@@ -1,6 +1,6 @@
 # Jira 接入
 
-Jira provider loop 当前定位为 bug bridge：Jira 创建的 bug issue 进入 Jarvis Box，Jarvis Box 选择候选 GitLab 代码交付项目，再由 agent 判断复现、修复、更新 MR 或阻塞等待证据。
+Jira 是 work-item provider，与飞书项目、GitLab Issues 和 GitHub Issues 位于同一逻辑层。Jira issue 本身不隐含代码仓库所属；operator 可以为一个 Jira project 关联零个、一个或多个 GitLab/GitHub 仓库。
 
 ## 当前支持
 
@@ -10,9 +10,9 @@ Jira provider loop 当前定位为 bug bridge：Jira 创建的 bug issue 进入 
 | issue 状态进入 Done category / issue deleted | 先持久化创建时绑定到该 Jira issue 的精确 Task 快照，再终态化并清理登记 Workspace；retry 只重放该快照 |
 | 按 Jira project allowlist 过滤 | 已支持 |
 | 按 issue type 过滤 | 已支持 |
-| Jira project 到 GitLab project 映射 | 已支持 |
+| Jira project 到 GitLab/GitHub 仓库关联 | 已支持，可同时关联多个 |
 | Jira 评论写回 | 通过 `jira` CLI 可配置 |
-| Jira `@jarvis` command lane | 尚未内置 |
+| Jira `@jarvis` command lane | 已支持 `comment_created` 精确事件、评论去重、author allowlist 和 bot/self ignore |
 
 ## 配置运行时 env
 
@@ -20,13 +20,16 @@ Jira provider loop 当前定位为 bug bridge：Jira 创建的 bug issue 进入 
 JIRA_BASE_URL=https://jira.example.com
 JIRA_PROJECTS=APP,OPS
 JIRA_ISSUE_TYPES=Bug,故障
-JIRA_GITLAB_PROJECT_MAP=APP=group/frontend,OPS=group/backend
 JIRA_WEBHOOK_SECRET=<shared-secret>
 JIRA_CMD=jira
 JIRA_COMMENT_ARGS=issue,comment,add,{key},--body-file,{body_file}
+JARVIS_JIRA_COMMAND_ALLOWED_USERS=alice,bob
+
+# JSON 为 provider -> source scope -> repository[]。一个 work item 可同时关联 GitLab 和 GitHub。
+JARVIS_WORK_ITEM_REPOSITORIES={"jira":{"APP":[{"provider":"gitlab","project":"group/frontend","base_branch":"main"},{"provider":"github","project":"acme/mobile","base_branch":"main"}],"OPS":[{"provider":"gitlab","project":"group/backend"}]}}
 ```
 
-如果没有 `JIRA_GITLAB_PROJECT_MAP`，Jarvis Box 会使用 `GITLAB_PROJECTS` 作为候选代码交付项目。候选项目为空时，Jira webhook 会被跳过。
+JSON 中的 GitLab/GitHub repository 必须分别在 `GITLAB_PROJECTS` / `GITHUB_REPOSITORIES` allowlist 中；Jarvis Box 根据已配置 host 生成 clone URL，不接受配置传入任意 clone endpoint。没有仓库关联时，Jira create/command 仍可以作为 zero-workspace Task 运行和回写原 issue，不会猜测某个 GitLab 项目。旧的 `JIRA_DEFAULT_GITLAB_PROJECT` / `JIRA_GITLAB_PROJECT_MAP` 已移除，存在时服务拒绝启动并给出迁移提示。
 
 ## 配置 Jira webhook
 
@@ -65,11 +68,10 @@ jira issue comment add {key} --body-file {body_file}
 
 ## 验证
 
-1. 创建测试 Jira bug，例如 `APP-123`。
+1. 创建测试 Jira bug，例如 `APP-123`，确认只有 create 事件启动自动 post-check。
 2. 确认 webhook 返回 accepted 或 ignored reason。
-3. 在 `/status` 查看 Jira source 的 work item。
-4. 确认 agent 完成后 Jira issue 获得评论，或 artifact 中记录明确写回失败原因。
+3. 在 issue 评论 `@jarvis 汇总当前证据`，确认 `comment_created` 进入 command lane，而非再次自动 post-check。
+4. 在 `/status` 查看 Jira source 的 work item 及全部已关联 workspace。
+5. 确认 agent 完成后 Jira issue 获得评论，或 artifact 中记录明确写回失败原因。
 
-## 限制
-
-Jira 还不是通用 command provider。当前不会因为 Jira 评论里出现 `@jarvis` 就进入 command lane。要支持这个能力，需要新增 Jira comment webhook adapter、comment 去重、command parser 和 Jira comment writeback 的完整闭环。
+Jira 不是 repository host，因此不提供 PR/MR review、follow-up 或 branch 托管能力；这些能力由关联的 GitLab/GitHub 仓库提供。

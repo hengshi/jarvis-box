@@ -15,11 +15,11 @@ jarvis-box release
       └── optional uv-im-connector
 ```
 
-Jarvis repo 与 jarvis-box 是独立演进的产品。jarvis-box 不知道 Jarvis remote/path/ref，不 clone、pull、sync、mount、校验或注入 Jarvis，也不读取 `runtime-governance.md`。Runtime Agent 从持久 Agent HOME 下的原生 discovery roots 发现 Jarvis skills。
+Jarvis repo 与 jarvis-box 是独立演进的产品。jarvis-box 不知道 Jarvis remote/path/ref，不直接 clone、pull、sync、mount、校验或注入 Jarvis，也不读取 `runtime-governance.md`。Runtime Agent 从持久 Agent HOME 下的原生 discovery roots 发现 Jarvis skills。Operator 可以配置一个客户中立的 Agent runtime preparer 绝对路径；Jarvis Box 只在新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前执行并校验版本化结果，repo freshness 和 skill ownership 仍完全属于该客户 Runtime Foundation。
 
 ## Runtime Foundation 接缝
 
-客户 Jarvis repo 拥有 bootstrap、sync、doctor、Runtime Jobs 和 Scheduler Adapter。jarvis-box release 只提供通用 `runtime-job` transport：宿主 scheduler 通过它进入运行中的正式容器并执行一个内部命令。
+客户 Jarvis repo 拥有 bootstrap、sync、doctor、Agent runtime prepare、Runtime Jobs 和 Scheduler Adapter。jarvis-box release 提供通用 `runtime-job` transport，并提供可选的 task-start preparation seam；它不解释 Company repo 或 skill 包。
 
 ```text
 native scheduler ───────────────→ inner Runtime Job

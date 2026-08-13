@@ -35,12 +35,14 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | `REVIEW_GITHUB_REPOSITORIES` | GitHub review subset |
 | webhook secret variables | provider signature verification |
 | `JARVIS_ISSUE_POST_CHECK_ENABLED` | enable issue post-check lane after applicable workflow is available through Agent discovery |
-| `JARVIS_WORKFLOW_GITLAB_ALLOWED_LABELS` | exact comma-separated GitLab labels that a Contract action may add; empty grants none |
-| `JARVIS_WORKFLOW_GITLAB_ALLOWED_STATUSES` | exact comma-separated GitLab Work Item Status values that a Contract action may set; empty grants none |
-| `JARVIS_WORKFLOW_ALLOWED_START_TYPES` | exact comma-separated public workflow type IDs that `workflow.start` may request; empty grants none |
+| `JARVIS_PROVIDER_WRITEBACK_ENABLED` | global original-subject mutation switch; default `true`; set `false` during installation tests to retain local results without writing comments, labels, statuses, or review/follow-up updates to GitLab, GitHub, Jira, or Feishu Project. Upgrades from a runtime env containing the removed Workflow v1 grant variables fail closed to `false` until an operator explicitly sets this switch. |
+| `JARVIS_WORK_ITEM_REPOSITORIES` | provider-neutral JSON mapping from source provider + work-item scope to zero or more allowlisted GitLab/GitHub repositories; supports simultaneous cross-provider associations and never accepts caller-supplied clone endpoints |
+| `JARVIS_*_COMMAND_ALLOWED_USERS` | optional non-bot author allowlists for GitLab, GitHub, Jira, and Feishu Project command comments |
 | `JARVIS_UV_IM_CONNECTOR_URL/TOKEN` | jarvis-box → connector access when profile is `uvim` |
 | `JARVIS_TASK_STORE_MIN_FREE_GB` | workspace admission floor |
 | `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` | 可选的依赖准备程序；在 checkout 后、Agent 启动前调用 |
+| `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND` | 可选的绝对可执行路径；每次新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前调用 |
+| `JARVIS_AGENT_RUNTIME_PREPARE_TIMEOUT_SECONDS` | Agent runtime preparer 超时；默认 `120` |
 | `GIT_LFS_SKIP_SMUDGE` | Jarvis workspace clone/checkout 默认 `1`，LFS 按需下载；显式设为 `0` 恢复全量 materialize |
 
 Native 默认把依赖缓存放在 `${JARVIS_RUNTIME_ROOT}/dependency-cache`。`JARVIS_DEPENDENCY_CACHE_ROOT` 可显式覆盖，但 Docker 中该路径由 Compose 固定为 `/var/cache/jarvis-box`，不要在 `runtime.env` 重定义。Jarvis Box 会在未被 Operator 覆盖时向 Agent 注入 Go、npm、Yarn、pnpm、pip、uv 和 Gradle 的标准缓存目录。
@@ -48,6 +50,14 @@ Native 默认把依赖缓存放在 `${JARVIS_RUNTIME_ROOT}/dependency-cache`。`
 内置下载缓存覆盖 Go，npm/Yarn/pnpm，pip/uv/Poetry/PDM/Pipenv，Gradle/Maven，Cargo，ccache/sccache，Conan/vcpkg，NuGet、Composer 和 Bundler。Jarvis 只设置工具原生缓存变量，缓存格式、校验和锁仍由对应工具负责；客户已设置的路径优先。`CARGO_HOME` 会复用 crates registry/git 下载，但 Jarvis 不会全局共享 Cargo `target/`、`node_modules`、CMake build 等项目编译产物。未知或内部构建系统继续使用 `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` 在 checkout 后配置。
 
 可选依赖准备程序的调用格式为 `<program> <repo> --configure-existing <workspace> [--base-branch <branch>]`。客户 Runtime Foundation 可以提供该程序；Jarvis Box 不生成、不猜测项目专用安装命令。
+
+Agent runtime preparer 不带参数运行，必须只向 stdout 输出一个不超过 4096 bytes 的 JSON object：
+
+```json
+{"schema":"jarvis-agent-runtime-prepare/v1","status":"updated|unchanged|stale-valid","revision":"<opaque-revision>"}
+```
+
+Jarvis Box 在新 Task 的 Workspace/provider 和依赖准备完成后、Agent spawn 之前调用它，并为成功结果保存 Task receipt；普通 `Continue` 和同一 Run 内的 Agent failover 不重复调用。若首次 prepare 失败，或旧 Task 尚无成功 receipt，后续 `Continue` 必须在 Workspace/provider 准备完成后重试。非零退出、超时或非法响应会阻止 Agent 启动，但不会阻止 Workspace 创建。该程序及其 repo/ref、锁、revision 判断和 Agent discovery-root 同步规则由客户 Runtime Foundation 拥有；Jarvis Box 不读取或拉取 Company Jarvis repo。Native 应配置当前服务用户可执行的 Foundation 路径；Docker 应配置持久 Agent HOME 内的容器绝对路径。
 
 Provider allowlists are direct operator configuration. jarvis-box does not reconcile them against a Jarvis repo. Enabling a workflow lane does not provide the workflow; the Jarvis Runtime Foundation must first install it into native Agent discovery roots.
 

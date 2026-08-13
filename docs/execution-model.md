@@ -16,6 +16,27 @@ Inspect、list、verify、reap 和 clean 是只读或维护操作，不属于 Ta
 
 异常不会创建第四种 lifecycle 操作，也不应通过 Start 伪装成恢复：需要保留原 Task 时使用 Continue，需要放弃原 Task 时使用 Cancel。Start 只表达创建一个不同的新 Task。
 
+## Provider lane ownership
+
+| 组件 | 唯一职责 | 不负责 |
+| --- | --- | --- |
+| `IssueLauncher` | 创建类事件的 post-check 与客户 workflow contract 执行 | `@jarvis` 评论命令、直接 provider mutation |
+| `CommandLauncher` | GitLab、GitHub、Jira 或飞书项目评论中显式命令的 Agent 执行；产出 `comment.md` | 伪造 workflow type、向 Agent 暴露评论 endpoint、直接 provider mutation |
+| `ProviderActionExecutor` | 校验并执行 command 与 workflow-result 中声明的 provider action，持久化 response/action/audit | 命令解释、客户 workflow 选择、Agent 生命周期 |
+
+`@jarvis` 只是各 provider adapter 的命令匹配入口。命中后直接进入 `jarvis-command` lane，不生成 workflow input，也不把命令包装成一个虚构的 workflow type。GitLab MR 与 GitHub PR follow-up 共用 provider-neutral dispatcher 和状态机，provider adapter 只归一化事件并实现实时读取/状态评论；command mention 永远优先于普通评论 follow-up。MR/PR review 与 follow-up 保留自己的交付器，但消费同一个全局回写开关；IM conversation reply 仍由 ChatBridge reply owner 管理，不属于“原 provider subject 回写”开关的范围。
+
+能力矩阵是路由和写回校验的单一语义源；不从 provider 名称推导隐含组合：
+
+| Provider | work-item.create | comment.command | subject.lifecycle | comment.write | repo association | repo host | change review | follow-up | issue labels/status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GitLab | 是 | 是 | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
+| GitHub | 是 | 是 | 是 | 是 | 是 | 是 | 是 | 是 | 否 |
+| Jira | 是 | 是 | 是 | 是 | 是 | 否 | 否 | 否 | 否 |
+| 飞书项目 | 是 | 是 | 是 | 是 | 是 | 否 | 否 | 否 | 否 |
+
+各 adapter 先把原始事件精确分类为 `work-item.created`、`work-item.updated`、`comment.created`、`change.updated`、`review.created` 或 `subject.terminal`，再按 capability 路由。自动 post-check 只消费 `work-item.created`；后续更新不会因为字符串包含 `created` 而误触发。一个 Jira/飞书/GitLab/GitHub work item 可以关联零个、一个或多个 GitLab/GitHub 仓库，包括两种 repository host 同时关联；关联不等于二选一路由。
+
 ## Target
 
 `Target` 是外部工作身份和可见性边界。
@@ -197,14 +218,14 @@ Inspect、list、verify、reap 和 clean 是只读或维护操作，不属于 Ta
 - 已登记项的目录存在时，id、path、project、remote 和 primary 保持稳定，保护其中的工作树与未提交修改；`base_branch` 可以在 Start/Continue 时从 provider 实时状态刷新。若目录从未创建成功或已按登记清理，当前请求可以把 repository metadata 修复为声明项目集合中的合法成员，并由同一个 Workspace owner 重新分配路径。非空集合恰好有一个保留 id `primary`，只用于选择 Run 的默认 `cwd`；空集合不合成虚假 Workspace，Run 使用 launcher 的普通工作目录。
 - TaskService 必须先在 Task state mutation 中登记初始 Workspace，最后才逐项创建或 clone。TaskService 是 Task Workspace 唯一清理 owner，不依赖 Runtime Foundation reclaimer，也不通过目录扫描猜测归属。Runner 向每个 runtime agent 注入同一 Workspace ownership contract；zero-workspace Task 在 active Run 中取得第一个仓库时必须通过 `jarvis-box workspace create --id primary` 建立 canonical primary，后续增加仓库使用普通 stable id。该命令始终先原子登记，再创建目录。
 - 所有冷 cache mirror clone 和远端 Workspace clone 使用同一瞬时故障策略：最多 5 次尝试，间隔 1、2、4、8 秒；识别 early EOF、unexpected disconnect、响应 body 不完整和 HTTP/2 stream/internal error 等传输故障。当前 Run 的首次此类故障后，后续网络 Git 尝试显式使用 HTTP/1.1。每次尝试前删除未发布的 staging；cache 始终只是优化，构建失败不发布残缺 mirror，并回退到 authoritative remote。取消 Task 必须中断正在执行的 clone 和退避等待。
-- Run claim 后、Agent PID 发布前，Task state 持久化 `preparation_started_at` 和当前准备操作；读模型实时计算准备/操作耗时，并通过 `preparation_operation_started`、`preparation_operation_retrying`、`preparation_operation_fallback` 事件留下审计证据。Agent 启动、launch 失败、取消或 recovery 会冻结总准备耗时并清空当前操作。
+- Run claim 后、Agent PID 发布前，Task state 持久化 `preparation_started_at` 和当前准备操作；读模型实时计算准备/操作耗时，并通过 `preparation_operation_started`、`preparation_operation_retrying`、`preparation_operation_fallback` 事件留下审计证据。若 Operator 配置了 Agent runtime preparer，新 Task 先完成 Workspace/provider 和依赖准备，再调用这个无参数、版本化的客户 Runtime Foundation hook 并保存成功 receipt，最后启动 Agent；已有成功 receipt 的 `Continue` 与同一 Run 的 Agent failover 不调用，首次失败或旧 Task 没有 receipt 时则在 Workspace/provider 准备完成后重试。Agent 启动、launch 失败、取消或 recovery 会冻结总准备耗时并清空当前操作。
 - active 或 needs-attention Task 的全部已登记 Workspace 可以跨多个 Run 复用。目录缺失时，TaskService 根据登记重建；登记以外的 `cwd`、`workdir`、Run context、Artifact 和目录扫描都不能成为归属证据。
-- Run 结束时，TaskService 先持久化带完整 Run/Task 终态 patch 的 `terminalization_intent`，再提交当前 Run 终态、执行适用的 provider completion/writeback 和最终投影；释放 Run ownership 时按 `JARVIS_TASK_WORKSPACE_CLEANUP_DELAY_MINUTES`（默认 20 分钟）原子写入 `workspace_cleanup_due_at`。只有绑定 provider workflow 的 lane 才要求当前 Run 留下 provider writeback evidence；`maintenance`、`self-improve` 等 scheduled lane 不生成 provider workflow input、comment poller 或 writeback 要求。post-registration preparer 的合法 skip 也使用同一顺序并保存 reason。Provider 回写失败落成 `needs-attention`；持久化瞬时失败保持 `finalizing / retry-finalization`，由服务启动及运行期恢复器幂等重放。Run 终态提交不依赖 Workspace 删除。
+- Run 结束时，TaskService 先持久化带完整 Run/Task 终态 patch 的 `terminalization_intent`，再提交当前 Run 终态、执行适用的 provider completion/writeback 和最终投影；释放 Run ownership 时按 `JARVIS_TASK_WORKSPACE_CLEANUP_DELAY_MINUTES`（默认 20 分钟）原子写入 `workspace_cleanup_due_at`。只有绑定 provider workflow 的 lane 才要求当前 Run 留下 provider writeback evidence；`maintenance`、`self-improve` 等 scheduled lane 不生成 provider workflow input、comment poller 或 writeback 要求。`JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 时 provider lane 仍执行并保留本地结果，但不启动 comment poller、不要求外部回写 evidence，并以 `provider-writeback.json` 记录跳过原因。post-registration preparer 的合法 skip 也使用同一顺序并保存 reason。Provider 回写失败落成 `needs-attention`；持久化瞬时失败保持 `finalizing / retry-finalization`，由服务启动及运行期恢复器幂等重放。Run 终态提交不依赖 Workspace 删除。
 - Continue claim 新 Run 时清除 `workspace_cleanup_due_at` 并复用目录；每个 managed Run 在自身进程组退出前持有 Task 级 shared Workspace lease，覆盖运行中动态追加的所有登记项。截止时间到达后，服务在没有 active Run、没有存活的已登记进程身份且没有 terminalization intent 时，先取得对应的 exclusive Task lease，再按 `workspaces[]` 逐项清理；手工 Status 删除使用完全相同的 idle proof。脱离 managed 进程组的进程还会按 `cwd` 和 open-file reference 复核，无法确认安全时 fail closed。清理失败保留截止时间并按持久化退避再次执行。
 - TaskService 全量清理完成后原子写 `workspace_disposal_completed=true`，新 Run claim 原子清除它。`tasks clean` 在同一把 lifecycle lock 内重新读取最新 state，只凭这个单一交接凭证删除 Task 目录；没有凭证的终态 Task 返回 `workspace-disposal-not-complete` 及已有 cleanup 结果，不被静默跳过。
 - Status Cancel 同样先持久化 cancellation intent，再发送进程信号并终态化 Run。Runner/TaskService 随后先按 Task+Run 标记清理受管后代进程，再尝试清理全部登记 Workspace；Run-owned 进程清理失败会保留 intent，Workspace/Docker 清理失败则把未完成义务和退避期限写入取消终态，避免五秒恢复器无限重放相同事件。intent 不会提前清空 PID 或 Run owner；一旦提交即优先于晚到的 completion，后者不得覆盖取消决定。无 Run owner 但仍有存活 PID/PGID 时取消 fail closed，保留进程与 Workspace 证据。若进程在 Stop 前退出，启动及运行期恢复器先解决该 Run ownership，再做登记式清理。最终状态写入失败时保留 intent，磁盘恢复后自动重放；失败或停止且尚未进入终态处理的 Task 保留目录用于诊断或 Continue。
 - 清理目录不删除登记项；Status detail 继续显示每项路径与存在状态，并允许执行受控删除。
-- Issue/Jira 的 `execution_project` 不是独立项目来源，只能选择 Task context 中 `candidate_gitlab_projects` / `allowed_projects` 或 canonical provider subject 已声明的成员；`execution_repo` 只能从最终选中的成员派生。非成员值不得进入 Workspace project、remote、prompt、environment 或执行审计；无法得到唯一合法成员时不得构造 clone URL。
+- `execution_project` 不是独立项目来源，只能选择 Task context 中 `associated_repositories[]` 的 provider + project identity；`execution_repo` 由 Jarvis Box 基于 provider host 和 allowlist 派生。非关联成员不得进入 Workspace project、remote、prompt、environment 或执行审计；当同时关联多个仓库时，workflow 必须明确选择或保留多 workspace 交付，不能默认取第一个。
 - Public projection 只允许 Task detail 的 `workspace_locations[]` 暴露已登记路径；其他任意 filesystem path 都不得公开。
 
 ## Start
@@ -220,7 +241,7 @@ Start 创建新的 Task、AgentConversation 和 Run。
 3. `TaskService` 选择 effective runtime agent。
 4. `TaskService` 在全局 Task 登记锁内分配并持久化新的 `task_registration_sequence`；同一次 admission mutation 写入随机 `task_instance_id`、canonical `subject`（如有）、初始 `workspaces[]` 和最小 `pending_launch`，但不创建 Run。历史 Task state 不在这个入口补登记或迁移。
 5. TaskService 检查 Task Artifact 所在卷和每一项已登记 Workspace 路径的磁盘余量。容量不足时 Task 进入 `storage-wait`，没有 `current_run_id`；服务启动及每 5 秒运行的恢复器在容量恢复后重新走原 lane launcher。并发恢复仍由 Task owner/sequence CAS 保证只创建一个 Run。
-6. 准入通过后，TaskService 才以读取到的 Task owner 和 `latest_run_sequence` 为条件创建 sequence 为 1 的 Run，再逐项创建或 clone 目录，并把 `primary` 作为 Run 默认 `cwd`。claim 后的 `run_created` 审计写入失败时不得启动进程；Run 分配和 Task ownership 必须按持久化恢复规则收敛，不能制造幽灵 owner。
+6. 准入通过后，TaskService 才以读取到的 Task owner 和 `latest_run_sequence` 为条件创建 sequence 为 1 的 Run，再逐项创建或 clone 目录，并把 `primary` 作为 Run 默认 `cwd`。Workspace/provider 和依赖准备完成后，若配置了 Agent runtime preparer，TaskService 执行它并要求合法成功响应；失败时保留已准备的 Workspace 但不启动 Agent。claim 后的 `run_created` 审计写入失败时不得启动进程；Run 分配和 Task ownership 必须按持久化恢复规则收敛，不能制造幽灵 owner。
 7. `TaskService` 把本次 prompt 和 canonical run-context 写入真实 Run 目录；原始 provider payload/meta 保留在 Task 根目录，可选 Run preparation 回调只处理依赖最终 RunDir 的 provider-specific Artifact。
 8. `TaskService` 按选中的 agent 重建命令参数和每次 Run 的环境变量。
 9. `Runner` 再次检查 Task Artifact 所在卷和全部已登记 Workspace 所在卷，然后启动一个进程并生成 Run 私有 Artifact；TaskService 负责 Run 终态仲裁和 Task 投影。Run claim 同时建立显式 launch-resolution barrier，只有 PID 已发布、启动失败或同步终态完成后才解除；Cancel 不用固定时长轮询猜测启动是否结束。

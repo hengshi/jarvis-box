@@ -113,7 +113,19 @@ curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
 
 ```dotenv
 JARVIS_SERVE_MODE=read-only
+JARVIS_PROVIDER_WRITEBACK_ENABLED=false
 ```
+
+切换到 worker 做安装验收时也可继续保持回写关闭：Agent 和 post-check 仍运行，本地结果与审计仍保留，但不会向 GitLab、GitHub、Jira 或飞书项目原 subject 写评论、标签、状态或 review/follow-up 更新。完成隔离测试并确认 provider identity 后再显式设为 `true`。
+
+如果客户 Runtime Foundation 提供 task-start preparer，在切换为 worker 前把容器内绝对路径写入 `runtime.env`：
+
+```dotenv
+JARVIS_AGENT_RUNTIME_PREPARE_COMMAND=/home/jarvis/.company-jarvis/bin/company-jarvis-prepare
+JARVIS_AGENT_RUNTIME_PREPARE_TIMEOUT_SECONDS=120
+```
+
+该 hook 在每个新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前运行；成功后普通 `Continue` 不重复运行，首次失败或旧 Task 尚无成功 receipt 时会在 Workspace/provider 准备完成后重试。它负责检查 Company repo 默认分支 revision，并按客户自己的 ownership 规则更新 Agent discovery roots。Jarvis Box 不读取 Company repo；hook 超时、失败或响应非法时 Task 保留已准备的 Workspace，但不会启动 Agent。Native 使用服务用户可执行的 Host 绝对路径，Docker 使用持久 Agent HOME 内的容器路径。
 
 ### 5.2 选择一种 Docker 认证路径
 
@@ -295,9 +307,10 @@ Docker 备份完整 deployment home；其中的持久数据目录包括：
 | Agent 无法启动或认证 | `jarvis-box doctor`、Agent smoke、实际 runtime identity |
 | 历史 Task 消失 | 服务使用的实际 runtime root/state，而不是另一个空目录 |
 | Task/Run 失败 | `/status`、Task state/event、Jarvis Box logs |
-| GitHub/GitLab 无写回 | provider allowlist、导入身份、真实 CLI capability |
+| GitHub/GitLab 无写回 | `JARVIS_PROVIDER_WRITEBACK_ENABLED`、provider allowlist、导入身份、真实 CLI capability |
 | IM 无消息或写回 | connector health、connector logs、provider credential |
 | maintenance/self-improve 不运行 | 部署模式、Host scheduler owner、Runtime Foundation status、Docker transport reachability |
+| 新 Task 停在 Agent runtime prepare | Runtime Foundation prepare 命令、Company repo 网络/认证、discovery root 健康和 Task preparation event |
 | Docker helper 无法进入环境 | Host operator/scheduler logs、容器状态和 inner job 是否安装 |
 
 不要先手工修改 state 文件，不要用挂载 Host HOME 的方式修复认证。先保留 Task state、event、日志、版本、部署模式和路径证据，再处理恢复。

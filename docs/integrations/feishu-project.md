@@ -9,6 +9,8 @@ Jarvis Box 接收飞书项目 webhook，读取工作项及其评论，执行 pos
 | `FEISHU_PROJECT_WEBHOOK_SECRET` | 是 | 与当前 webhook envelope 的 `header.token` 匹配的共享 token。 |
 | `FEISHU_PROJECT_BACKEND` | 否 | `plugin` 或 `meegle-cli`；留空时默认 `meegle-cli`。plugin 必须显式指定。 |
 | `FEISHU_PROJECT_ALLOWED_SPACES` | 否 | 逗号分隔的 project key；为空时允许全部 project。 |
+| `JARVIS_FEISHU_PROJECT_COMMAND_ALLOWED_USERS` | 否 | 允许使用 `@jarvis` command 的用户标识；为空时允许所有非 bot 用户。 |
+| `JARVIS_WORK_ITEM_REPOSITORIES` | 否 | provider-neutral work-item 到 GitLab/GitHub 仓库关联 JSON；同一空间可关联零个、一个或多个仓库。 |
 
 ### 使用 Meegle CLI（无 plugin）
 
@@ -82,6 +84,18 @@ Meegle CLI 的工作项与评论读取在后台执行；Jarvis Box 完成鉴权�
 - `https://<jarvis-box-host>/webhooks/feishu-project`
 
 当前飞书项目 envelope 使用 `header.event_type`、`header.token` 和 `header.uuid`，工作项 identity 来自 `payload.id`、`payload.project_key` 与 `payload.work_item_type_key`。`WorkitemCreateEvent` 启动 post-check，带 `@jarvis` 的 `WorkitemCommentEvent` 启动 command Run，`WorkitemAbortedEvent`、`WorkitemFinishEvent` 与 `WorkitemDeleteEvent` 终止同一外部工作项下的 Task 并走统一 cleanup。Jarvis Box 用 UUID 原子 claim 保证幂等，并在持久化 payload 或 ledger 前删除 token。
+
+`@jarvis` 只是 command mention，不是飞书专用 workflow。comment adapter 会先忽略 Jarvis 自身/bot 评论，再按 allowlist 和 comment UUID 去重，命中后与 GitLab/GitHub/Jira 一样进入 `jarvis-command` lane。
+
+仓库关联使用空间 key 作为 source scope：
+
+```dotenv
+GITLAB_PROJECTS=group/backend
+GITHUB_REPOSITORIES=acme/frontend
+JARVIS_WORK_ITEM_REPOSITORIES={"feishu-project":{"space-a":[{"provider":"gitlab","project":"group/backend"},{"provider":"github","project":"acme/frontend"}]}}
+```
+
+创建事件和 command 都会获得全部已关联 workspace；未配置关联时仍是合法的 zero-workspace Task，不会默认猜测 GitLab 或 GitHub 仓库。
 
 旧的 flat `EventCreate-*` payload 和 `X-Plug-In-Token` header 仅作为兼容入口保留。
 

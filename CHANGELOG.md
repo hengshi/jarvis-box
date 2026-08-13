@@ -1,5 +1,14 @@
 # 更新日志
 
+## 0.2.9
+
+- 新增客户中立的 task-start Agent runtime preparation hook：每个新 Task 在 Workspace/provider 准备完成后、Agent 启动前可由客户 Runtime Foundation 按 Company repo revision 刷新 skills；Continue/failover 不重复执行，失败会阻止 Agent 使用半更新运行时启动。
+- `@jarvis` 在 GitLab、GitHub、Jira 和飞书项目中统一作为 comment command mention；Jira/飞书项目不再绑定单一 GitLab 仓库，一个 work item 可关联零个或多个 GitLab/GitHub repository。
+- 新增全局原 subject 写回开关，安装测试可保留 Agent 与本地审计而不向 GitLab、GitHub、Jira 或飞书项目写入评论/字段；Workflow Runtime Contract 升级到 v2 并停止生成 action grants，既有 v1 Run 仍可兼容读取并按原 grant 校验。升级环境若仍包含已移除的 v1 grant 配置，写回会保持关闭，直到运维人员显式配置新开关。
+- GitHub PR 评论、changes-requested/commented review 和 inline review comment 现在可进入与 GitLab MR 共用的 follow-up 状态机；命令 mention 保持优先，fork PR 使用 head repository source branch workspace 并向原 PR 写回状态，状态评论和安装验收回写开关在两个 provider 间一致。
+- 修复 provider 回写工件的外部资源 ID 类型保真，避免 GitLab note 等数字 ID 在运行工件中被转换后失去精确身份。
+- 内置 `uv-im-connector v0.0.13`，修复企业微信大文件上传分片编号，并为 provider 发送失败保留脱敏后的可操作诊断日志。
+
 ## 0.2.8
 
 - 提升工作区 clone 可靠性：对临时 Git 网络故障执行有限重试，任务取消可中断 clone 和退避等待，Status 页面会持续显示准备操作、尝试次数和耗时。
