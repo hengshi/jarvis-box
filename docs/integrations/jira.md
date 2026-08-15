@@ -12,7 +12,7 @@ Jira 是 work-item provider，与飞书项目、GitLab Issues 和 GitHub Issues 
 | 按 issue type 过滤 | 已支持 |
 | Jira project 到 GitLab/GitHub 仓库关联 | 已支持，可同时关联多个 |
 | Jira 评论写回 | 通过 `jira` CLI 可配置 |
-| Jira `@jarvis` command lane | 已支持 `comment_created` 精确事件、评论去重、author allowlist 和 bot/self ignore |
+| Jira `@jarvis` command lane | 已支持 `comment_created` 精确事件、评论去重、author allowlist、bot/self ignore，以及 Agent 通过 `JIRA_CMD` 实时读取 issue、完整评论历史和附件清单 |
 
 ## 配置运行时 env
 
@@ -30,6 +30,10 @@ JARVIS_WORK_ITEM_REPOSITORIES={"jira":{"APP":[{"provider":"gitlab","project":"gr
 ```
 
 JSON 中的 GitLab/GitHub repository 必须分别在 `GITLAB_PROJECTS` / `GITHUB_REPOSITORIES` allowlist 中；Jarvis Box 根据已配置 host 生成 clone URL，不接受配置传入任意 clone endpoint。没有仓库关联时，Jira create/command 仍可以作为 zero-workspace Task 运行和回写原 issue，不会猜测某个 GitLab 项目。旧的 `JIRA_DEFAULT_GITLAB_PROJECT` / `JIRA_GITLAB_PROJECT_MAP` 已移除，存在时服务拒绝启动并给出迁移提示。
+
+若 `GITHUB_REPOSITORIES` 仅用于 Jira 工作项的 Workspace 关联，设置 `JARVIS_GITHUB_WEBHOOK_ENABLED=false`；GitHub webhook endpoint 将返回 `404`，且不要求 `GITHUB_WEBHOOK_SECRET`。
+
+`@jarvis` command 的 webhook payload 只负责触发和提供 issue identity。Jarvis Box 向匹配的 command Agent 注入 `JIRA_CMD`、`INTAKE_JIRA_KEY`、`INTAKE_JIRA_URL` 与 `INTAKE_JIRA_PROJECT`，并要求 Agent 在执行前通过已认证 Jira CLI 读取实时 issue、评论和附件。command Run 不创建伪造的空 `notes.json`；缺少该文件不代表 Jira 没有评论。Agent 只负责生成 `comment.md`，Jarvis Box 负责最终写回。
 
 ## 配置 Jira webhook
 
@@ -70,7 +74,7 @@ jira issue comment add {key} --body-file {body_file}
 
 1. 创建测试 Jira bug，例如 `APP-123`，确认只有 create 事件启动自动 post-check。
 2. 确认 webhook 返回 accepted 或 ignored reason。
-3. 在 issue 评论 `@jarvis 汇总当前证据`，确认 `comment_created` 进入 command lane，而非再次自动 post-check。
+3. 在 issue 评论 `@jarvis 汇总当前证据`，确认 `comment_created` 进入 command lane，而非再次自动 post-check；同时确认 Agent 的 Jira CLI 审计记录包含 live issue/comment read。
 4. 在 `/status` 查看 Jira source 的 work item 及全部已关联 workspace。
 5. 确认 agent 完成后 Jira issue 获得评论，或 artifact 中记录明确写回失败原因。
 

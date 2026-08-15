@@ -1,6 +1,6 @@
 # 飞书项目接入
 
-Jarvis Box 接收飞书项目 webhook，读取工作项及其评论，执行 post-check，再把最终 `comment.md` 发布到对应工作项。读写后端可以是飞书项目 plugin OpenAPI，也可以是官方 Meegle CLI。credential 只由 Jarvis Box 服务进程持有，不会传给 runtime agent。
+Jarvis Box 接收飞书项目 webhook，执行 post-check 或显式 `@jarvis` command，再把最终 `comment.md` 发布到对应工作项。后端可以是飞书项目 plugin OpenAPI，也可以是官方 Meegle CLI。默认的 Meegle command lane 与 GitLab/GitHub/Jira command lane 一样，由 runtime agent 使用已认证 CLI 读取实时正文、完整评论历史和附件清单；plugin 是特殊路径，由 Jarvis Box 预取实时输入且不向 agent 暴露 plugin credential。
 
 ## 配置
 
@@ -34,7 +34,7 @@ FEISHU_PROJECT_MEEGLE_CMD=/usr/local/bin/meegle
 FEISHU_PROJECT_MEEGLE_PROFILE=jarvis
 ```
 
-backend 留空时默认使用 `meegle-cli`，也可以显式写 `FEISHU_PROJECT_BACKEND=meegle-cli`。`FEISHU_PROJECT_MEEGLE_CMD` 默认是 `meegle`。Native/systemd 部署建议填写绝对路径；profile 模式要求运行 `jarvis-box serve` 的系统账号能访问该 profile/keychain。共享机器优先使用专门的短期 `MEEGLE_USER_ACCESS_TOKEN`，不要让 runtime agent 账号复用个人 profile。
+backend 留空时默认使用 `meegle-cli`，也可以显式写 `FEISHU_PROJECT_BACKEND=meegle-cli`。`FEISHU_PROJECT_MEEGLE_CMD` 默认是 `meegle`。Native/systemd 部署建议填写绝对路径；profile 模式要求运行 `jarvis-box serve` 的系统账号及其启动的 command agent 能访问该 profile/keychain。共享机器优先使用专门的短期 `MEEGLE_USER_ACCESS_TOKEN`，不要复用个人 profile。
 
 启动前可用相同账号验证：
 
@@ -48,7 +48,7 @@ backend 留空时默认使用 `meegle-cli`，也可以显式写 `FEISHU_PROJECT_
 - `meegle comment list --auto-paginate` 读取全部评论；
 - `meegle comment add` 回写最终评论。
 
-评论内容通过权限为 `0600` 的临时 JSON 文件传入，不拼 shell 命令。Meegle token、host、command 和 profile 均会从 runtime agent 环境中清除。
+评论写回内容通过权限为 `0600` 的临时 JSON 文件传入，不拼 shell 命令。post-check agent 不接收 Meegle credential；`meegle-cli` command agent 只在匹配的 Feishu Project command Run 中接收 `FEISHU_PROJECT_MEEGLE_CMD`、profile/host 和 token，并被明确要求只读取原工作项。最终评论仍由 Jarvis Box 服务端写回。上述 Meegle 环境不会注入 GitLab、GitHub、Jira 或其他 provider 的 Agent Run，也不会写入 prompt。
 
 ### 使用飞书项目 plugin
 
@@ -76,7 +76,7 @@ Meegle CLI 不负责监听事件。事件入口使用飞书项目自带的自动
 
 需要处理多种事件时，应在飞书项目自动化中为相应触发器配置 Webhook。plugin 只用于 `FEISHU_PROJECT_BACKEND=plugin` 的 OpenAPI 读写后端，或客户自行开发自定义自动化操作；使用默认 Meegle CLI 后端时不需要 plugin ID、plugin secret 或 user key。
 
-Meegle CLI 的工作项与评论读取在后台执行；Jarvis Box 完成鉴权、body 校验和接收状态落账后立即返回 `202 Accepted`，避免飞书项目自动化等待 CLI 时触发 6 秒超时。后台处理使用独立的有界 context，不会因 webhook 客户端断开而取消，最终结果或失败会继续写入事件流、work ledger 和 Run Artifact。
+create/post-check 的 Meegle CLI 工作项与评论预取在后台执行；Jarvis Box 完成鉴权、body 校验和接收状态落账后立即返回 `202 Accepted`，避免飞书项目自动化等待 CLI 时触发 6 秒超时。command lane 同样异步启动，但实时内容由 command agent 使用 Meegle CLI 读取。后台处理使用独立的有界 context，不会因 webhook 客户端断开而取消，最终结果或失败会继续写入事件流、work ledger 和 Run Artifact。
 
 以下两个 endpoint 等价：
 
@@ -92,8 +92,11 @@ Meegle CLI 的工作项与评论读取在后台执行；Jarvis Box 完成鉴权�
 ```dotenv
 GITLAB_PROJECTS=group/backend
 GITHUB_REPOSITORIES=acme/frontend
+JARVIS_GITHUB_WEBHOOK_ENABLED=false
 JARVIS_WORK_ITEM_REPOSITORIES={"feishu-project":{"space-a":[{"provider":"gitlab","project":"group/backend"},{"provider":"github","project":"acme/frontend"}]}}
 ```
+
+上例的 GitHub 仓库仅作为飞书工作项的受控 Workspace 目标，因此显式关闭 GitHub webhook intake；不需要配置 GitHub webhook secret，也不会接收 GitHub 通知。
 
 创建事件和 command 都会获得全部已关联 workspace；未配置关联时仍是合法的 zero-workspace Task，不会默认猜测 GitLab 或 GitHub 仓库。
 
@@ -101,12 +104,14 @@ JARVIS_WORK_ITEM_REPOSITORIES={"feishu-project":{"space-a":[{"provider":"gitlab"
 
 ## 读写边界
 
-每个通过校验的 create event 按以下边界执行：
+不同 lane/backend 的输入 owner 明确分开：
 
-1. 服务端通过所选的 plugin OpenAPI 或 Meegle CLI 后端读取工作项；
-2. 把工作项与已有评论写入私有 Run Artifact；
-3. 在不携带飞书 credential 的情况下启动 runtime agent；
-4. 校验 agent 生成的 `comment.md`，再由同一服务端后端创建工作项评论；
-5. 把响应或失败写入 Run Artifact 和工作账本。
+| Lane / backend | 实时输入 owner | Agent 输入 | credential owner |
+| --- | --- | --- | --- |
+| create/post-check，plugin 或 Meegle | Jarvis Box | 服务端生成的 `issue.json`、`notes.json` | Jarvis Box |
+| command，默认 Meegle | runtime agent | 工作项 URL、命令、Meegle CLI 与工作项 identity；Agent 必须实时读取正文、全量评论和附件清单 | 仅该 Feishu command Agent Run |
+| command，plugin | Jarvis Box | 服务端实时预取的 `issue.json`、`notes.json` 路径；预取失败时不启动 Agent | Jarvis Box，plugin secret 不进入 Agent |
 
-plugin 模式不会启动额外进程；`meegle-cli` 模式只启动配置的 Meegle CLI 子进程。Runtime agent 不应直接调用飞书项目或 Meegle CLI，也不应自行声明写回成功。
+所有路径都由 Agent 显式生成 `comment.md`，再由 Jarvis Box 校验并通过配置的后端写回；Agent 的终端回复和 stdout/stderr 只进入日志，不能覆盖 provider-facing `comment.md`。Agent 不直接发布、编辑或声明原工作项响应已经写回。plugin 模式不会让 Agent 调用 plugin API。Meegle command 获得与 `glab`/`gh`/`jira` 同类的 CLI 能力；read contract 规定执行前必须获取的实时输入，原 subject 的最终响应仍由 Jarvis Box 发布。
+
+这里的 response owner 是行为与审计合同，不是把正式 runtime agent 变成低权限进程沙箱。与 `glab`、`gh` 和 `jira` 的 provider-native auth 一样，默认 Meegle command agent 属于 high-authority Agent，CLI 身份可能同时拥有 provider mutation 能力；`JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 只关闭 Jarvis Box 管理的 provider action/writeback，不撤销 Agent 原生 CLI 身份。若部署要求把不受信 Agent 强制限制为只读，必须为所有适用 provider 统一提供独立只读身份或受限 wrapper/proxy；当前模型不对 Meegle 单独伪装这种保证。

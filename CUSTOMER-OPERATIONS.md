@@ -182,6 +182,8 @@ claude auth login
 
 认证状态属于持久 Agent HOME，删除容器不会删除它。路径 A 还使用私有 auth bundle；撤销身份时要同时处理 auth bundle 与 Agent HOME。完整边界见[认证指南](AUTHENTICATION.md)。
 
+部分 provider CLI 的加密文件存储还依赖容器 hostname。`deploy-production.sh` 将该机器身份保存在 `<deployment-home>/data/runtime-hostname`；首次接管旧容器时会先记录旧 hostname，再执行替换。不要绕过该脚本重建正式容器，也不要单独删除、复制或编辑该文件。持久身份与现存容器不一致时，脚本会在 `down` 前失败，需恢复匹配的完整 deployment home 或容器后再重试。
+
 ### 5.3 Docker 上线验收
 
 依次通过：
@@ -283,6 +285,8 @@ curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
 
 安装器自动下载运维包和镜像、保留 deployment config、更新 `JARVIS_IMAGE`、重建服务并验证。最后重跑一条真实业务链路。发现 active Task、状态 API 不可用或配置属于其他 deployment home 时，安装器会拒绝升级。
 
+Docker 同模式升级必须保留完整 deployment home。部署脚本在重建前解析并固定 `data/runtime-hostname`，确保依赖容器机器身份的加密 provider profile 可继续解密；身份缺失、非法或与现存容器冲突时不会执行替换。
+
 回滚时一键加载目标旧版本、恢复对应 release tag，并执行同样的部署、验证和真实链路检查。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
 
 ## 10. 备份
@@ -297,6 +301,7 @@ Docker 备份完整 deployment home；其中的持久数据目录包括：
 - `<deployment-home>/data/logs`
 - `<deployment-home>/data/config`
 - `<deployment-home>/data/connector-state`（启用 IM 时）
+- `<deployment-home>/data/runtime-hostname`
 
 备份可变数据前先规范停服，或使用客户批准的一致性方案。不要把备份写回 release bundle 或公共仓库。
 

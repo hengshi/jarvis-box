@@ -47,6 +47,7 @@ gh api users/LOGIN --jq '.id'
 ```bash
 GITHUB_REPOSITORIES=owner/repository
 REVIEW_GITHUB_REPOSITORIES=owner/repository
+JARVIS_GITHUB_WEBHOOK_ENABLED=true
 GITHUB_WEBHOOK_SECRET=<shared-secret>
 JARVIS_MENTION_NAMES=jarvis,jarvis-box
 JARVIS_GITHUB_COMMAND_ALLOWED_USERS=301658716,2253581,1201463
@@ -54,6 +55,7 @@ GH_CMD=gh
 ```
 
 `REVIEW_GITHUB_REPOSITORIES` 未设置时复用 `GITHUB_REPOSITORIES`。它不能包含不在 `GITHUB_REPOSITORIES` 里的仓库。
+`JARVIS_GITHUB_WEBHOOK_ENABLED` 默认为 `true`。若 GitHub 仓库只作为飞书项目或 Jira 工作项的受控 Workspace 目标，设置为 `false`；此时 GitHub webhook endpoint 返回 `404`，也不要求配置 `GITHUB_WEBHOOK_SECRET`，但仓库仍必须位于 `GITHUB_REPOSITORIES` allowlist 中。
 `JARVIS_MENTION_NAMES` 是 ChatBridge、GitLab command lane 和 GitHub command lane 共享触发名。每个名字在 GitLab/GitHub 中同时支持 `@name` 和 `/name`；未设置时默认为 `jarvis,jarvis-box`。
 `JARVIS_GITHUB_COMMAND_ALLOWED_USERS` 是 GitHub issue/PR comment command lane 触发人 allowlist；GitHub 部署建议使用 numeric user id。GitLab note command lane 的触发人限制由 `JARVIS_GITLAB_COMMAND_ALLOWED_USERS` 单独配置。
 

@@ -107,6 +107,8 @@ curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
 "$ops" "$home" verify
 ```
 
+Docker 部署脚本把容器的持久机器身份记录在 `<deployment-home>/data/runtime-hostname`。首次接管旧部署时，它会在替换容器前保留旧容器的实际 hostname，使依赖 hostname 的加密凭据在升级后仍可读取。不要绕过 `deploy-production.sh` 重建服务，也不要单独删除、复制或编辑该文件；身份与现存容器不一致时，脚本会在 `down` 前拒绝继续。
+
 回滚时恢复旧 digest，再执行同样两条命令。Jarvis revision 更新由 Runtime Foundation 完成，不与 jarvis-box image 升级绑定。
 
 ## 更新认证
@@ -136,6 +138,7 @@ Docker 备份 deployment home 和需要保留的 named volumes：
 - `<deployment-home>/data/logs`
 - `<deployment-home>/data/config`
 - `<deployment-home>/data/connector-state`（启用 IM 时）
+- `<deployment-home>/data/runtime-hostname`
 
 备份可变数据前先规范停服，或使用客户认可的一致性备份方案。
 

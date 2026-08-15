@@ -8,6 +8,9 @@
 
 - `items` / `count`：当前分页窗口。
 - `total` / `counts`：整个 public projection 的统计，不受分页 `limit` 影响。
+- 可选 `provider=gitlab|github|jira|feishu-project|im` 在分页前筛选 Task 的规范化来源；`lark`、`wecom`、`dingtalk`、`uvim` 等消息来源归入 `im`。response 的 `provider` 返回实际筛选，未筛选时为 `all`。
+- 分页游标绑定生成它的 Provider 范围；游标不能跨 Provider 重用，避免页间混入其他来源。
+- 每个 item 的 `provider` 是 Task subject、run context 或 source URL 的保守规范化投影，不改变外部 Provider 的权威对象。
 - 每个 item 的 `status_group` 是服务端确定的页面筛选分组，取值为 `doing`、`needs-human`、`failed`、`completed` 或 `all`；Status 页面不得从状态文本重复推断分组。
 
 分组时 lifecycle 事实优先于 feed kind：`waiting`、`stopped` 和 `needs-attention` 进入 `needs-human`，失败终态进入 `failed`，`completed` 和 `cancelled` 进入 `completed`；`progress_checkpoint` 等 kind 不得把这些状态重新归入 `doing`。历史持久化状态 `failed-terminal` 和 `retry-exhausted` 在读取时兼容投影为 `needs-attention`，仍按失败终态分组，不会被旧的 `monitor_status=active` 覆盖。
@@ -27,6 +30,81 @@ Run 从被 claim 到 Agent 进程真正启动之间，Task detail 公开准备�
 - 只对选中的 Task 读取 bounded event/log tail。
 - Artifact 内容只在用户显式打开时读取。
 - 多个浏览器标签共享服务端 projection/cache。
+
+## GitLab / GitHub Provider-native Delivery Metrics 读模型
+
+`GET /status/api/value?provider=gitlab|github` 从所选 provider 的已配置仓库生成一份 typed、只读的交付指标快照；缺省为 `gitlab`。响应顶层 `configured` 明确表示该 Provider 是否配置了统计仓库，Status UI 只为 `configured=true` 的 Provider 分配交付质量空间；配置存在但采集失败时仍显示紧凑异常状态。追加 `refresh=1` 跳过该 provider 的 15 分钟 fresh TTL，但会加入正在进行的同一轮刷新，不会再启动并发采集。普通 fresh hit 也会先重新验证对应 CLI 的 authenticated principal；登录主体变化会使前一主体的 snapshot/evidence cache 立即失效。GitLab 与 GitHub snapshot/cache 完全隔离；API 不返回跨 Provider 合计。首次或定时 provider sync 保存快照、分片的不可变待分析队列及消费游标、typed 派生结果到 `JARVIS_STATE_DIR/status-value`；后台每轮直接消费一小批队列并只推进游标，不重复枚举或重写全部历史。MR/PR 的 SHA 或 `updated_at` 变化会生成新的证据键并重新分析；provider host 也属于证据键，跨实例不会复用结果；429/5xx/timeout 保持待分析并退避重试，不记作最终证据未知。
+
+历史累计窗口从当前 `glab` 或 `gh` 登录账号的 `created_at` 开始，到本轮采集固定的 `generated_at` 为止。actor 直接读取对应 provider 的 authenticated-user endpoint，不需要独立账号环境变量，也不假设账号名是 `jarvis`。GitLab 优先使用带 `mergedAfter` / `mergedBefore` 的 GraphQL count fast path，并对 actor MR 取有界近期明细；不支持时才回退到稳定的 `merged_at` REST 排序分页。GitHub 使用 `UPDATED_AT DESC` GraphQL cursor 分页；两个 collector 都执行双边时间校验。按仓库返回：
+
+- 窗口内全部已合并 MR/PR，以及其中由当前登录账号创建的 change request；
+- 当前登录账号 MR/PR 中可证明全部 commit 均归因于该账号的数量；人工审阅或合并不会被误算为人工修改；
+- 明确的人工修改、自动化账号参与修改、代码变更来源未知和证据未知；
+- 仓库覆盖率、证据覆盖率，以及每仓库最近 20 条当前登录账号 MR/PR 证据。
+
+Provider merge 是 provider-native 工程交付 proxy，不代表终端客户业务验收。登录账号 change request 只按 author 识别，不涵盖该账号在其他作者 MR/PR 中的贡献；Jira、飞书项目、跨来源关联、聚合和去重均不在此 response 中。
+
+后端从六类最终 classification 派生两个面向人的代码质量问题；Status UI 直接消费 typed count/rate，不重复计算业务语义。`pending` 只表示历史基线尚待后台分析，不是证据未知或最终分类：
+
+- `未经人工修改 = independent + reviewed_only + automation_assisted`
+- `经过人工修改 = human_corrected`
+
+两者都以 `correction_known = independent + reviewed_only + automation_assisted + human_corrected` 为已知分母。`no_human_correction`、`no_human_correction_rate`、`human_correction_rate` 由 API 返回。`no_other_account_code_change` 仍是更严格的“没有任何其他账号提交代码变更”下界。`attribution_unknown + evidence_unknown` 只进入可信度说明，不能被猜入任一比例。
+
+首次建立历史基线时，历史 merged counts 立即可见，尚未分析的记录进入 `evidence_pending`。UI 显示“历史基线 已分析/总数”，在 pending 归零前不输出累计质量比例。后台持续小批量补齐并复用落盘结果；`evidence_unknown` 只用于真实的 provider 证据读取或身份归因失败，不再承载成本预算或待处理状态。
+
+### Response 状态
+
+`status`、`freshness`、`completeness` 是三个独立维度：
+
+- `status=ready|empty|unavailable`：是否有可展示快照，以及观察窗口内是否有 merged MR/PR。
+- `freshness=fresh|stale|expired`：快照是否来自本轮或 24 小时内的上一次成功采集；stale response 同时返回从原 `generated_at` 计算的 `stale_age_seconds`。
+- `completeness=complete|partial|unavailable`：配置范围是否全部可读；历史分析进度由 `evidence_pending` 独立表达。
+
+所有结果使用 HTTP 200。客户端必须按 typed body 判断状态；`ok=false` 表示没有可用快照。partial 快照仍可展示已采集数量，但聚合 rate 为 `null`，不能把子集冒充完整范围。刷新失败时，24 小时内的旧快照以 `stale` 返回且保留原 `generated_at`；更旧快照不再返回。
+
+```json
+{
+  "ok": true,
+  "configured": true,
+  "status": "ready",
+  "freshness": "fresh",
+  "completeness": "complete",
+  "warnings": [],
+  "snapshot": {
+    "schema_version": 5,
+    "generated_at": "2026-08-11T14:00:00Z",
+    "baseline_updated_at": "2026-08-11T14:03:20Z",
+    "observed_from": "2026-06-09T07:34:53Z",
+    "actor": {"username": "customer-agent", "name": "Customer Agent", "created_at": "2026-06-09T07:34:53Z"},
+    "source": {"provider": "gitlab", "host": "gitlab.example.com"},
+    "repository_coverage": {"configured": 2, "succeeded": 2, "partial": 0, "failed": 0},
+    "totals": {
+      "merged_change_requests": 100,
+      "actor_merged_change_requests": 20,
+      "independent": 8,
+      "reviewed_only": 7,
+      "human_corrected": 2,
+      "automation_assisted": 1,
+      "attribution_unknown": 1,
+      "evidence_unknown": 1,
+      "evidence_pending": 0,
+      "correction_known": 18,
+      "no_human_correction": 16,
+      "no_human_correction_rate": 0.888889,
+      "human_correction_rate": 0.111111,
+      "no_other_account_code_change": 15,
+      "no_other_code_change_rate": 0.833333,
+      "evidence_coverage": 0.9
+    },
+    "repositories": []
+  }
+}
+```
+
+`no_other_account_code_change = independent + reviewed_only`，是“没有其他账号提交代码变更”的可证明保守下界。`no_other_code_change_rate` 的分母只含证据明确的四类结果；`evidence_coverage` 会把 attribution/evidence unknown 排除在已知证据之外。分母为零、聚合 completeness 为 partial，或 `evidence_pending > 0` 时 rate 返回 `null`。
+
+响应只包含声明过的字段、固定 classification/evidence code 和用户安全 warning。MR/PR 外链只允许当前 provider host（含显式端口）上的 HTTPS URL；不符合时 URL 置空并返回 `unsafe_mr_url`。时间非法的 change request 以 `invalid_merged_at` 标记仓库 partial。raw provider object、note/review body、stderr、命令、token、环境变量和主机路径不得进入 public projection。
 
 ## 三个生命周期操作
 

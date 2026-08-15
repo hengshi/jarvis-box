@@ -1,5 +1,16 @@
 # 更新日志
 
+## 0.2.10
+
+- Provider command 现在始终绑定 TaskService 分配的当前 Run：GitLab、GitHub、Jira 和飞书项目会读取实时输入、保留精确 provider artifact 与外部资源 ID，并且只在当前 Run 的远端写回验证成功后推进 Task 级回复；Continue、取消、失败诊断和 workspace finalization 使用同一所有权。
+- Status 页面新增 runner-owned 跨 Agent RunTrace，保留原始输出、分类与修订轨迹，并统一展示 GitLab/GitHub delivery 价值指标、当前质量 provider 和持续工作的增量反馈。
+- 修复 recovery 与真实进程完成同时发生时的终态竞争；恢复 fence 不再覆盖已经观察到的成功/失败结果，重启后的 Task/Run 状态会收敛到真实完成证据。
+- 心智进化任务可通过统一 `JARVIS_NOTIFY_CHANNEL` 向显式 direct/group 目标发送周报；未配置目标时仍只保留本地报告，通知 artifact 不暴露在公开 Status 文件浏览面。
+- GitHub 可只作为 GitLab、Jira 或飞书项目 Task 的受控 Workspace 目标仓库使用，无需启用 GitHub webhook 或配置 `GITHUB_WEBHOOK_SECRET`。
+- Chat continuation 的回复由继续后的 Task/Run 所有，完成消息不会丢失或误投；macOS 默认使用隔离的 managed Chrome for Testing，不再占用桌面浏览器 profile，显式配置 `AGENT_BROWSER_EXECUTABLE_PATH` 时仍遵循该配置。
+- 扩展 Native 依赖缓存并修复 Yarn 版本、模式和清理边界；不同 Workspace 可安全复用支持的缓存，同时避免 cleanup deadlock 或跨项目模式污染。
+- Docker 升级会持久化稳定 runtime hostname，保护 Meegle 加密 profile 在首次升级和后续 force-recreate 后仍可解密；身份不明确或无法恢复时会在替换容器前失败。
+
 ## 0.2.9
 
 - 新增客户中立的 task-start Agent runtime preparation hook：每个新 Task 在 Workspace/provider 准备完成后、Agent 启动前可由客户 Runtime Foundation 按 Company repo revision 刷新 skills；Continue/failover 不重复执行，失败会阻止 Agent 使用半更新运行时启动。

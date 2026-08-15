@@ -78,8 +78,24 @@ Run id 是 compact canonical id，例如 `r_4P8X6C2N7J5K`。来源 provider、co
 GitLab、GitHub 或 Jira 触发的任务完成后，可以通过 IM 通知触发人：
 
 ```bash
-JARVIS_COMMAND_NOTIFY_CHANNEL=wecom:uvim
+JARVIS_NOTIFY_CHANNEL=wecom:uvim
 JARVIS_COMMAND_NOTIFY_RECIPIENT_MODE=trigger_author_user_id
 ```
 
 只有当 provider author 与 IM direct-message user id 有明确映射时，才使用 `trigger_author_user_id`。Jarvis Box 不自动同步通讯录。
+
+`JARVIS_NOTIFY_CHANNEL` 是所有主动通知共享的 provider/connector。旧的
+`JARVIS_COMMAND_NOTIFY_CHANNEL` 和 `JARVIS_COMMAND_NOTIFY_CONNECTOR` 仍可作为迁移期
+fallback；新旧同时存在时必须解析为同一目标，否则 Jarvis Box 拒绝启动，避免把消息发到错误渠道。
+
+## JARVIS 心智进化周报
+
+`cognitive-evolution` Task 始终生成本地周报。只有显式配置通知目标时才主动发送：
+
+```bash
+JARVIS_NOTIFY_CHANNEL=wecom:uvim
+JARVIS_COGNITIVE_EVOLUTION_NOTIFY_TARGET=group:<provider-native-conversation-id>
+```
+
+目标也可以是 `direct:<provider-native-user-id>`。未配置目标时只保留周报 artifact；
+`memory-consolidation` 和 `daily-reflection` 不发送通知。
