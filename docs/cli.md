@@ -32,6 +32,16 @@ jarvis-box workspace create --id <stable-id> --project <group/repo> --base-branc
 jarvis-box workspace create --id <stable-id> --remote <git-url> --base-branch <branch>
 ```
 
+在 active Run 内可用只读入口查看权威 registry：
+
+```bash
+jarvis-box workspace list
+```
+
+该命令输出一个 JSON object，包含当前 `task_id`、`run_id` 和按登记顺序排列的
+`task-state.workspaces[]`。它校验当前 Run ownership，不扫描目录，也不从 `cwd`、
+`run-context.json` 或文件系统猜测 Workspace。
+
 该命令仅在 active 受管 Task 中可用。它在创建 workspace 之前原子地登记服务端分配的路径。zero-workspace Task 的第一个 Workspace 必须使用保留 id `primary`；非空 registry 的后续 Workspace 使用普通 stable id。
 
 ## Release helpers

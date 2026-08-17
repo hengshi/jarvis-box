@@ -1,5 +1,13 @@
 # 更新日志
 
+## 未发布
+
+## 0.2.11
+
+- 主动通知配置改为明确的 `JARVIS_NOTIFY_PROVIDER`，单实例 connector 由 UVIM 实时元数据自动解析；旧 channel 配置只作迁移兼容，provider/connector 错配会在启动时失败。
+- Provider-native 交付质量持续回填新增实时分析阶段、agent、当前批次、完成比例和安全重试状态，Status 页面不再只显示待分析数字；切换 runtime agent 后回填即时采用新 agent 判定，且不再重置已分析的历史基线，判定口径只随判定策略变化触发增量重新分析。
+- `jarvis-box workspace list` 只读取当前 Task/Run 的权威 workspace registry，以 JSON 输出归属明确的工作区，不扫描磁盘猜测状态。
+
 ## 0.2.10
 
 - Provider command 现在始终绑定 TaskService 分配的当前 Run：GitLab、GitHub、Jira 和飞书项目会读取实时输入、保留精确 provider artifact 与外部资源 ID，并且只在当前 Run 的远端写回验证成功后推进 Task 级回复；Continue、取消、失败诊断和 workspace finalization 使用同一所有权。
