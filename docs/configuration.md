@@ -32,9 +32,9 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | `JARVIS_CONNECTOR_PROFILE` | empty or `uvim`; sole connector lifecycle switch |
 | `GITLAB_HOST` / `GITLAB_PROJECTS` | GitLab host and operator allowlist |
 | `REVIEW_GITLAB_PROJECTS` | GitLab review subset |
-| `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` | 是否在符合条件的 GitLab MR 合并后运行 repo-local self-improve lane |
-| `JARVIS_SELF_IMPROVE_GITLAB_PROJECTS` | self-improve 项目子集，必须包含在 `GITLAB_PROJECTS` 中 |
-| `JARVIS_SELF_IMPROVE_TARGET_BRANCHES` | self-improve 允许的目标分支 |
+| `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` | 是否在符合条件的 GitLab MR 合并后运行 repo-local `self-skills-improve` lane |
+| `JARVIS_SELF_IMPROVE_GITLAB_PROJECTS` | `self-skills-improve` 项目子集，必须包含在 `GITLAB_PROJECTS` 中 |
+| `JARVIS_SELF_IMPROVE_TARGET_BRANCHES` | `self-skills-improve` 允许的目标分支 |
 | `GITHUB_REPOSITORIES` | GitHub operator allowlist |
 | `REVIEW_GITHUB_REPOSITORIES` | GitHub review subset |
 | `JARVIS_GITHUB_WEBHOOK_ENABLED` | GitHub webhook intake switch; defaults to `true`. Set `false` when allowlisted GitHub repositories are only workspace targets for another source provider. |

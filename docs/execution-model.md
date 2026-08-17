@@ -47,7 +47,7 @@ Inspect、list、verify、reap 和 clean 是只读或维护操作，不属于 Ta
 - Jira issue
 - IM conversation，包含私信、群组和频道
 - status 手动 Task
-- scheduled maintenance 产生的可见工作
+- JARVIS 记忆固化、日省或心智进化产生的可见工作
 
 字段：
 
@@ -206,7 +206,7 @@ Inspect、list、verify、reap 和 clean 是只读或维护操作，不属于 Ta
 
 - `value` 只存在于 private handle store。
 - 公开 JSON 只可暴露 handle metadata 和 safe status。
-- `value` 不得出现在 Run JSON、launch request JSON、public projection response、Artifact、logs、E2E evidence 或公共摘要中。
+- `value` 不得出现在 Run JSON、launch request JSON、Status projection response、Artifact、logs、E2E evidence 或用户可见摘要中。
 
 ## Workspace
 
@@ -220,8 +220,8 @@ Inspect、list、verify、reap 和 clean 是只读或维护操作，不属于 Ta
 - 所有冷 cache mirror clone 和远端 Workspace clone 使用同一瞬时故障策略：最多 5 次尝试，间隔 1、2、4、8 秒；识别 early EOF、unexpected disconnect、响应 body 不完整和 HTTP/2 stream/internal error 等传输故障。当前 Run 的首次此类故障后，后续网络 Git 尝试显式使用 HTTP/1.1。每次尝试前删除未发布的 staging；cache 始终只是优化，构建失败不发布残缺 mirror，并回退到 authoritative remote。取消 Task 必须中断正在执行的 clone 和退避等待。
 - Run claim 后、Agent PID 发布前，Task state 持久化 `preparation_started_at` 和当前准备操作；读模型实时计算准备/操作耗时，并通过 `preparation_operation_started`、`preparation_operation_retrying`、`preparation_operation_fallback` 事件留下审计证据。若 Operator 配置了 Agent runtime preparer，新 Task 先完成 Workspace/provider 和依赖准备，再调用这个无参数、版本化的客户 Runtime Foundation hook 并保存成功 receipt，最后启动 Agent；已有成功 receipt 的 `Continue` 与同一 Run 的 Agent failover 不调用，首次失败或旧 Task 没有 receipt 时则在 Workspace/provider 准备完成后重试。Agent 启动、launch 失败、取消或 recovery 会冻结总准备耗时并清空当前操作。
 - active 或 needs-attention Task 的全部已登记 Workspace 可以跨多个 Run 复用。目录缺失时，TaskService 根据登记重建；登记以外的 `cwd`、`workdir`、Run context、Artifact 和目录扫描都不能成为归属证据。
-- Run 结束时，TaskService 先持久化带完整 Run/Task 终态 patch 的 `terminalization_intent`，再提交当前 Run 终态、执行适用的 provider completion/writeback 和最终投影；释放 Run ownership 时按 `JARVIS_TASK_WORKSPACE_CLEANUP_DELAY_MINUTES`（默认 20 分钟）原子写入 `workspace_cleanup_due_at`。只有绑定 provider workflow 的 lane 才要求当前 Run 留下 provider writeback evidence；`maintenance`、`self-improve` 等 scheduled lane 不生成 provider workflow input、comment poller 或 writeback 要求。`JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 时 provider lane 仍执行并保留本地结果，但不启动 comment poller、不要求外部回写 evidence，并以 `provider-writeback.json` 记录跳过原因。post-registration preparer 的合法 skip 也使用同一顺序并保存 reason。Provider 回写失败落成 `needs-attention`；持久化瞬时失败保持 `finalizing / retry-finalization`，由服务启动及运行期恢复器幂等重放。Run 终态提交不依赖 Workspace 删除。
-- Continue claim 新 Run 时清除 `workspace_cleanup_due_at` 并复用目录；每个 managed Run 在自身进程组退出前持有 Task 级 shared Workspace lease，覆盖运行中动态追加的所有登记项。截止时间到达后，服务在没有 active Run、没有存活的已登记进程身份且没有 terminalization intent 时，先取得对应的 exclusive Task lease，再按 `workspaces[]` 逐项清理；手工 Status 删除使用完全相同的 idle proof。脱离 managed 进程组的进程还会按 `cwd` 和 open-file reference 复核，无法确认安全时 fail closed。清理失败保留截止时间并按持久化退避再次执行。定时 Workspace finalizer 在 worker、chatbridge 和 read-only serve mode 中都运行。`read-only` 拒绝外部 mutation 以及 lost-run/pending-terminalization recovery，但允许 loopback scheduled lifecycle 创建和启动带持久化 authority 的 `maintenance`/`self-improve` Task，并只为这些 Task 恢复 storage/duplicate admission wait；provider lane、普通历史 Task 和手工 Status 删除仍然被拒绝。
+- Run 结束时，TaskService 先持久化带完整 Run/Task 终态 patch 的 `terminalization_intent`，再提交当前 Run 终态、执行适用的 provider completion/writeback 和最终投影；释放 Run ownership 时按 `JARVIS_TASK_WORKSPACE_CLEANUP_DELAY_MINUTES`（默认 20 分钟）原子写入 `workspace_cleanup_due_at`。只有绑定 provider workflow 的 lane 才要求当前 Run 留下 provider writeback evidence；`memory-consolidation`、`daily-reflection`、`cognitive-evolution` 等 scheduled lane 不生成 provider workflow input、comment poller 或 writeback 要求。`JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 时 provider lane 仍执行并保留本地结果，但不启动 comment poller、不要求外部回写 evidence，并以 `provider-writeback.json` 记录跳过原因。post-registration preparer 的合法 skip 也使用同一顺序并保存 reason。Provider 回写失败通常落成 `needs-attention`。GitLab 或 GitHub 最终评论返回 HTTP 404，且同一服务身份仍可访问目标项目或仓库时，writeback owner 记录 `subject-not-found / provider-subject-not-found`；TaskService 清理 browser、全部登记 Workspace 和 typed external resource 后，把 Task 置为 `cancelled`，同时保留成功 Run 的 `succeeded`。清理失败或延迟时，Task 保持 `finalizing / retry-finalization` 和 durable intent，恢复器完成清理后再发布一次 `task_cancelled`。该分类只适用于 GitLab 和 GitHub；其他 provider 继续使用各自的 writeback failure contract。持久化瞬时失败也由服务启动及运行期恢复器幂等重放。Run 终态提交不依赖 Workspace 删除。
+- Continue claim 新 Run 时清除 `workspace_cleanup_due_at` 并复用目录；每个 managed Run 在自身进程组退出前持有 Task 级 shared Workspace lease，覆盖运行中动态追加的所有登记项。截止时间到达后，服务在没有 active Run、没有存活的已登记进程身份且没有 terminalization intent 时，先取得对应的 exclusive Task lease，再按 `workspaces[]` 逐项清理；手工 Status 删除使用完全相同的 idle proof。脱离 managed 进程组的进程还会按 `cwd` 和 open-file reference 复核，无法确认安全时 fail closed。清理失败保留截止时间并按持久化退避再次执行。定时 Workspace finalizer 在 worker、chatbridge 和 read-only serve mode 中都运行。`read-only` 拒绝外部 mutation 以及 lost-run/pending-terminalization recovery，但允许 loopback internal prompt Start 为 `memory-consolidation`、`daily-reflection` 和 `cognitive-evolution` 原子分配 Task/首 Run，并只为这些带 durable internal authority 的 Task 恢复 storage/duplicate admission wait；provider lane、普通历史 Task 和手工 Status 删除仍然被拒绝。
 - TaskService 全量清理完成后原子写 `workspace_disposal_completed=true`，新 Run claim 原子清除它。`tasks clean` 在同一把 lifecycle lock 内重新读取最新 state，只凭这个单一交接凭证删除 Task 目录；没有凭证的终态 Task 返回 `workspace-disposal-not-complete` 及已有 cleanup 结果，不被静默跳过。
 - Status Cancel 同样先持久化 cancellation intent，再发送进程信号并终态化 Run。Runner/TaskService 随后先按 Task+Run 标记清理受管后代进程，再尝试清理全部登记 Workspace；Run-owned 进程清理失败会保留 intent，Workspace/Docker 清理失败则把未完成义务和退避期限写入取消终态，避免五秒恢复器无限重放相同事件。intent 不会提前清空 PID 或 Run owner；一旦提交即优先于晚到的 completion，后者不得覆盖取消决定。无 Run owner 但仍有存活 PID/PGID 时取消 fail closed，保留进程与 Workspace 证据。若进程在 Stop 前退出，启动及运行期恢复器先解决该 Run ownership，再做登记式清理。最终状态写入失败时保留 intent，磁盘恢复后自动重放；失败或停止且尚未进入终态处理的 Task 保留目录用于诊断或 Continue。
 - 清理目录不删除登记项；Status detail 继续显示每项路径与存在状态，并允许执行受控删除。
@@ -315,6 +315,16 @@ Agent 切换不是 import/export。jarvis-box 不转换历史记录。目标 run
 - 不启动 runtime agent，不创建 Run，不修改终态 Run。
 - 成功或失败都追加 writeback audit event，并更新 provider-facing projection。
 - 已成功发送或内容缺失时不选择 writeback strategy；Continue 回到 agent strategy 或返回明确 disabled reason。
+
+ChatBridge 的 provider send failure 与 Agent Run failure 是两个事实。Agent 已成功且 `reply.md` 已持久化时，最终 IM 回复失败不得把 Run 改成 failed，也不得让 Continue 重新执行 agent：
+
+- Task 保持 `status=completed`、`monitor_status=completed`，并投影 `phase=writeback-failed`、`next_action=retry-writeback`；
+- `reply-error.json` 用 `kind=provider-delivery` 与非投递类 Artifact 错误区分，记录 delivery source，并保存 provider-neutral `failure`：`category`、`retryable`、`delivery_state`，以及可选的 provider HTTP status/code、Retry-After 和 request id；
+- ChatBridge 只对 `retryable=true` 且 `delivery_state=rejected|not-attempted` 的结果做最多 3 次有界自动重试；`delivery_state=unknown` 不自动重放，避免实际已送达时重复发送；
+- 自动重试耗尽、永久失败或投递结果不确定时，Status 直接展示结构化原因。操作者可以用 Continue 重放 Task 根目录的 `reply.md`，不需要读取 service log，也不需要提供 agent prompt；
+- 只有带 durable `provider-delivery` kind 与 source 的 failed reply action 选择 writeback strategy。缺少该分类的历史 Artifact 和无效 `reply-decision.json` 保持 `completion-finalization-failed / inspect-artifacts`，防止 Continue 发送被本地合同禁止的内容。
+
+Jarvis Box 不解析 provider 名称、`detail`、HTTP 502 文本或日志。错误分类属于 `uv-im-connector` adapter；重试次数、Task 状态和人工介入策略属于 Jarvis Box。
 
 ## Runtime Agent Failover
 

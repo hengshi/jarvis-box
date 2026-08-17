@@ -1,13 +1,13 @@
-# Status 与 Server API
+# Status API
 
-`/status` 是团队可见工作的界面和 API；`/server` 是主机维护界面。两者不得混用权限或数据。
+`/status` 是 Jarvis Box 唯一的人类界面，工作状态与系统操作共用同一可信团队边界。Jarvis Box 不为人类观看者定义角色，也不根据 `RemoteAddr` 切换权限；反向代理或上游网关负责需要的身份认证。
 
 ## Status 读模型
 
 `GET /status/api/work-items` 返回：
 
 - `items` / `count`：当前分页窗口。
-- `total` / `counts`：整个 public projection 的统计，不受分页 `limit` 影响。
+- `total` / `counts`：整个 Status task projection 的统计，不受分页 `limit` 影响。
 - 可选 `provider=gitlab|github|jira|feishu-project|im` 在分页前筛选 Task 的规范化来源；`lark`、`wecom`、`dingtalk`、`uvim` 等消息来源归入 `im`。response 的 `provider` 返回实际筛选，未筛选时为 `all`。
 - 分页游标绑定生成它的 Provider 范围；游标不能跨 Provider 重用，避免页间混入其他来源。
 - 每个 item 的 `provider` 是 Task subject、run context 或 source URL 的保守规范化投影，不改变外部 Provider 的权威对象。
@@ -15,11 +15,13 @@
 
 分组时 lifecycle 事实优先于 feed kind：`waiting`、`stopped` 和 `needs-attention` 进入 `needs-human`，失败终态进入 `failed`，`completed` 和 `cancelled` 进入 `completed`；`progress_checkpoint` 等 kind 不得把这些状态重新归入 `doing`。历史持久化状态 `failed-terminal` 和 `retry-exhausted` 在读取时兼容投影为 `needs-attention`，仍按失败终态分组，不会被旧的 `monitor_status=active` 覆盖。
 
-`GET /status/api/tasks` 和单 Task detail 返回 public projection。默认读路径可以读取 Task state、bounded Artifact metadata，以及 Runner-owned RunTrace 中当前 Run 的 bounded、redacted 用户指令投影；不得读取 `prompt.txt`、native AgentSession、private resume handle value、raw payload 或任意主机路径。
+`GET /status/api/tasks` 和单 Task detail 返回 Status task projection。默认读路径可以读取 Task state、bounded Artifact metadata，以及 Runner-owned RunTrace 中当前 Run 的 bounded、redacted Run 输入。Run 输入是真正交给 runtime agent 的当次指令：人机会话可以是用户原文，workflow lane 可以包含服务端生成的契约、运行上下文和主机路径。它不得包含可用 credential、private resume handle 或 raw provider secret，也不得从 `prompt.txt`、native AgentSession 或跨 Run history 补齐。
 
 单 Task 查询接受 Task id、当前/最新 Run id，也接受仍保留 `run-state.json` 的历史 Run id。使用 Run id 查询时返回其所属 Task；Run id 不会被当成 Task identity。
 
-单 Task detail 的 `workspace_locations` 是主机路径规则的唯一例外，用于建立 Task 与可清理工作目录的明确关联。每项只包含服务端生成的 opaque id、显示标签、绝对目录、存在状态、删除资格和原因；其他任意 Workspace、Run 或日志路径仍不得进入 public projection。
+单 Task detail 的 `workspace_locations` 是唯一个结构化工作区路径字段，用于建立 Task 与可清理工作目录的明确关联。每项只包含服务端生成的 opaque id、显示标签、绝对目录、存在状态、删除资格和原因；其他主机路径只能作为 bounded Run 输入文本或系统操作 response 出现，不得变成 Task 身份或 Workspace ownership 来源。
+
+IM Agent Run 已成功但 final reply 未送达时，Task detail 保持 `status/monitor_status=completed`，并返回 `phase=writeback-failed`、`next_action=retry-writeback` 和 credential-safe `writeback_failure`。`writeback_failure` 包含 `kind=provider-delivery`、provider/connector、source、stage、attempts、category、retryable、delivery_state，以及可选的 upstream HTTP status、provider code、Retry-After 和 request id；不包含 raw provider body。此状态仍进入统一 Task/work-item projection，lifecycle stage/blocker 为 writeback；它不是新的任务类型，也不创建第四个生命周期操作。
 
 Run 从被 claim 到 Agent 进程真正启动之间，Task detail 公开准备进度：`preparation_started_at`、`preparation_elapsed_ms`、`current_operation`、`current_operation_started_at`、`current_operation_elapsed_ms`、`current_operation_attempt`、`current_operation_max_attempts` 和 `current_operation_detail`。Status 页面必须优先显示当前操作、已耗时和重试次数，不能只显示笼统的“Run created”或“执行中”。准备成功、失败、取消或进入 recovery 时清空 `current_operation`，并把 `preparation_elapsed_ms` 冻结为最终耗时；历史 Task 没有这些字段时保持兼容。
 
@@ -136,7 +138,7 @@ Provider merge 是 provider-native 工程交付 proxy，不代表终端客户业
 
 `evidence_coverage = correction_known / actor_merged_change_requests`。分母为零、聚合 completeness 为 partial，或 `evidence_pending > 0` 时 rate 返回 `null`。
 
-响应只包含声明过的字段、固定 classification/evidence code 和用户安全 warning。MR/PR 外链只允许当前 provider host（含显式端口）上的 HTTPS URL；不符合时 URL 置空并返回 `unsafe_mr_url`。时间非法的 change request 以 `invalid_merged_at` 标记仓库 partial。raw provider object、note/review body、stderr、命令、token、环境变量和主机路径不得进入 public projection。
+响应只包含声明过的字段、固定 classification/evidence code 和用户安全 warning。MR/PR 外链只允许当前 provider host（含显式端口）上的 HTTPS URL；不符合时 URL 置空并返回 `unsafe_mr_url`。时间非法的 change request 以 `invalid_merged_at` 标记仓库 partial。raw provider object、note/review body、stderr、命令、token、环境变量和主机路径不得进入 delivery metrics projection。
 
 ## 三个生命周期操作
 
@@ -155,7 +157,7 @@ Task response 的 `actions` 恰好使用以下 key：
 }
 ```
 
-后端 policy 是唯一授权来源。UI 和 CLI 不自行推断 enabled 状态。所有 mutation 写入 audit event；`read-only` serve mode 统一拒绝 public `/status` mutation。
+后端 policy 是唯一授权来源。UI 和 CLI 不自行推断 enabled 状态。所有生命周期 mutation 写入 audit event；`read-only` serve mode 统一拒绝 public `/status` 生命周期 mutation。
 
 ### Start
 
@@ -167,7 +169,7 @@ Task response 的 `actions` 恰好使用以下 key：
 - 原 Task、Run 和 Artifact 不变。
 - source active、`needs-attention`、完成但仍缺产物/写回、进程 ownership 未解决或 lane 不支持时返回 `409` 和明确 reason；先 Continue 或 Cancel 原 Task。
 
-客户 Runtime Foundation 的 host scheduler 不使用 public Start。它只能从 loopback 调用 `/server/api/scheduled-tasks/create` 和 `/server/api/scheduled-tasks/{task_id}/start`；该专用入口在 `read-only` 下只允许带持久化 `local-scheduled` authority 的 `maintenance`/`self-improve` Task。普通本地 Task、远端调用和 provider lane 不会继承这项权限。
+无 source 的原子 Start 使用 `POST /status/api/tasks/start`（人类 gateway，`jarvis-command`）或 loopback-only `POST /server/api/tasks/start`。JSON body 为 `prompt`、可选 `reason` 和 `lane`。服务端生成 Task identity、登记 intake、创建首 Run、启动并返回真实 Task/Run identities。Runtime Foundation 的 host scheduler 只从 loopback internal route 使用三个 allowlisted lane；`read-only` 权限由该路由与 lane 共同推导，普通 Task、远端调用和 provider lane不会继承。
 
 ### Continue
 
@@ -212,6 +214,8 @@ TaskService 在首个 Run claim 之前一次登记 Task identity 和初始工作
 
 Task 创建时会把 GitLab/GitHub/Jira 外部工作对象登记成规范化 `task-state.subject`。GitLab issue `close`、MR `close/merge`，GitHub issue `closed`、PR closed/merged，以及 Jira issue 进入 Done category 或被删除时，provider adapter 调用同一个终态入口：非终态 Task 先停止并转为 cancelled，再清理全部登记目录；已有终态只重试清理。首次处理 terminal delivery 时，服务先把当时精确匹配到的 `task_dir` 集合原子写入 receipt，再做任何取消或清理；部分失败、进程退出或磁盘故障后的 retry 只重放这份快照，不重新扫描 Task。关联只来自创建时的 subject 登记，不从 `issue_or_mr` 文本、workspace 路径、Artifact、branch 或 lane 反推。
 
+GitLab/GitHub 的最终评论如果返回 HTTP 404，writeback owner 会用同一个 provider 身份检查目标项目或仓库。目标项目或仓库仍可访问，而 issue、MR 或 PR 已不存在时，Task 进入与 provider terminal event 相同的登记式清理流程；清理完成后状态为 `cancelled`，成功 Run 保持 `succeeded`。Workspace 或 typed external resource 仍需重试时，Status 显示 `finalizing / retry-finalization`，并保留 `terminalization_intent`；恢复器完成清理后才提交取消终态。项目/仓库不可访问、鉴权失败或配置错误仍显示普通 writeback failure，不会被转换成取消。
+
 `POST /status/api/tasks/{task_id}/delete-workspace`
 
 ```json
@@ -229,14 +233,14 @@ Task 创建时会把 GitLab/GitHub/Jira 外部工作对象登记成规范化 `ta
 - 已登记目录即使已经不存在也保持删除资格；重复调用返回成功并标记 `already_absent=true`，不会把幂等重试误报为冲突。
 - 删除结果写入 Task audit event；`read-only` serve mode 统一拒绝。
 
-## Public Projection
+## Status task projection
 
 允许：
 
 - safe Target key/hash、标题和 provider label
 - Task id、`current_run_id`、`latest_run_id`、Run sequence、状态、时间、safe agent name
 - Run 启动前的当前准备操作、实时/最终准备耗时、重试次数和 safe transport detail
-- Runner-owned RunTrace 中当前 Run 的 bounded、redacted 用户指令投影
+- Runner-owned RunTrace 中当前 Run 的 bounded、redacted Run 输入；该文本可以包含工作流契约、上下文和主机路径
 - `actions`、`safe_actions`、`inspect_actions`
 - safe lifecycle/blocker/action summary
 - opaque safe Artifact ref
@@ -244,32 +248,38 @@ Task 创建时会把 GitLab/GitHub/Jira 外部工作对象登记成规范化 `ta
 
 禁止：
 
-- `task_dir`、`run_dir`、log 路径，以及 `workspace_locations[].location` 之外的任意 Workspace 绝对路径
+- 作为结构化字段的 `task_dir`、`run_dir`、log 路径，以及 `workspace_locations[].location` 之外的任意 Workspace 绝对路径
 - native AgentSession id/file
 - private resume handle value
 - cross-agent source ref
 - raw payload、provider token、reply token、`prompt.txt` 原文或跨 Run prompt/history
 - process command、argv、env、pid/pgid
 
-Public Artifact endpoint 只解析经过授权的 safe ref。它拒绝 `payload.json`、`meta.json`、`run-context.json`、`prompt.txt`、`task-state.json`、`task-events.jsonl` 和 runtime logs，并在返回文本前执行 redaction。
+Status Artifact endpoint 只解析经过授权的 safe ref。它拒绝 `payload.json`、`meta.json`、`run-context.json`、`prompt.txt`、`run-trace.jsonl`、`task-state.json`、`task-events.jsonl` 和 runtime logs，并在返回文本前执行 redaction。RunTrace 只能通过 Status timeline 的 bounded/redacted 投影读取，不能通过 base64 封装绕过文本 redaction。
 
-## Server 边界
+## 系统操作 API
 
-`/server` 和 local-admin CLI 才能展示或操作：
+`/status/api/system/*` 为 topbar 系统操作面板提供：
 
-- jarvis-box 服务、内部 server loop、部署和主机健康
-- host scheduler 的 providerless scheduled lifecycle；该例外只接受 loopback、`maintenance`/`self-improve` 和持久化的 `local-scheduled` authority
-- jarvis-box service/runtime logs；不包含宿主 scheduler 或 Runtime Foundation logs
-- runtime agent 安装与配置诊断
-- `workspace_locations` 契约之外的文件系统路径、cleanup dry-run、reap 和其他主机维护
+- `GET overview|agents|doctor|crons`：实例、Agent、诊断、内部轮询与已脱敏配置；
+- `POST agents/current`、`POST|DELETE agents/scopes/{scope}`：默认 Agent 和 lane scope；
+- `POST chatbridge/reset`：重置 ChatBridge 连接；
+- `POST tasks/clean`：按 dry-run、终态、lifecycle lock 和 disposal certificate 清理 Task Artifact；
+- `POST tasks/start`：原子启动显式 operator prompt。
+
+这些 endpoint 不再根据 loopback 切换人类权限。每个 mutation 仍执行输入校验、业务 owner 和 audit 契约；`read-only` 拒绝 Agent 配置、ChatBridge reset、operator prompt 和实际 clean，但允许 `POST tasks/clean?dry_run=1` 返回候选项且不删除数据。系统 response 可以展示当前主机路径和经脱敏的运行配置，但不得返回 credential、private resume handle 或 raw provider payload。
+
+系统操作 UI 必须把这些 endpoint 解释成用户任务，而不是原样暴露 API 名称。默认 Agent 和 scope response 的成功只证明未来路由配置已保存，不代表 active Run 已切换；ChatBridge reset 的成功要继续以重新读取的 running/provider connected 状态为证据；operator prompt 的 `result.task_id` / `result.run_id` 是进入 Status 工作项跟踪的凭据；clean response 的 `status=dry-run|cleaned|deferred|error` 必须被汇总并保留逐项原因。
+
+`GET|HEAD /server` 使用 permanent redirect 转到 `/status`。旧的人类 `/server/api/*` endpoint 不做 POST redirect；`POST /server/api/tasks/start` 是 loopback-only prompt admission，scheduled authority 只由 internal route 与当前 lane allowlist 推导。
 
 服务重启会恢复服务能力、RuntimeAgentRouter cooldown timer，并自动重放已经持久化的 terminalization intent；它不会自动 Continue、重新启动 agent，或把失联 Run 当成成功。执行态恢复仍由用户选择 Continue/Cancel。
 
 ## 安全与审计
 
-- `/status` 必须部署在可信团队边界；更强身份认证由反向代理或上游网关提供。
-- lifecycle mutation 前先做 public visibility 和 action policy 检查；工作目录清理按终态和目录边界检查。
-- response 再经过 public projection，不能因 mutation 暴露私有路径。
+- `/status` 必须部署在可信团队边界；更强身份认证和浏览器跨站策略由反向代理或上游网关提供。
+- lifecycle mutation 前先做 action policy 检查；工作目录清理按终态、签发的 workspace id 和目录边界检查。
+- Task/API response 继续使用明确投影，系统 response 继续执行 secret redaction；同权限不等于 credential 可见。
 - audit event 至少记录 operation、Task、Run（如有）、actor/reason、结果和时间。
 
 ## 历史任务取代状态

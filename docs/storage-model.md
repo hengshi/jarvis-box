@@ -109,15 +109,15 @@ Run Artifact 是证据，不是 conversation memory。产生 provider output 的
 
 `chat-bindings/bindings/` 每个 IM Target 只保存默认 Task 指针。`chat-bindings/messages/` 保存同一 Target 内 message id 到 Task 的引用索引，包括已确认发送的机器人回复 id。两者都不保存 Run id、Run 状态、reply token、native session 或 provider credential；Task/Run artifact 始终是执行状态的唯一事实来源。
 
-ChatBridge 附件下载目录属于单个 Run。`attachments/` 中的文件只供 runtime agent 和本机运维排查使用；`prompt.txt` 和 `run-context.json` 可以保存下载后的本地路径，方便 agent 定位文件，但 public projection 和 public Artifact endpoint 不得枚举或读取该目录，也不得通过 symlink alias 绕过该限制。provider 下载 URL、provider 文件密钥、raw IM payload 和 reply token 不写入附件 metadata 的公开形态。
+ChatBridge 附件下载目录属于单个 Run。`attachments/` 中的文件只供 runtime agent 使用；`prompt.txt` 和 `run-context.json` 可以保存下载后的本地路径，方便 agent 定位文件，但 Status task projection 和 Status Artifact endpoint 不得枚举或读取该目录，也不得通过 symlink alias 绕过该限制。provider 下载 URL、provider 文件密钥、raw IM payload 和 reply token 不写入 Status response。
 
-ChatBridge 出站 `outbox/` 也属于单个 Run。jarvis-box 只接受目录根部的普通非空文件，先对数量、单文件大小和总大小做整批校验，再依据精确 provider + connector 的 live capability 上传和发送；任何预检失败都不开始远端发送。发送开始前写 private recovery marker，因此超时、进程崩溃或重试不会自动重放可能已经送达的附件。`outbox/` 及其 symlink alias 不得由 public Artifact endpoint 枚举或读取。
+ChatBridge 出站 `outbox/` 也属于单个 Run。jarvis-box 只接受目录根部的普通非空文件，先对数量、单文件大小和总大小做整批校验，再依据精确 provider + connector 的 live capability 上传和发送；任何预检失败都不开始远端发送。发送开始前写 private recovery marker，因此超时、进程崩溃或重试不会自动重放可能已经送达的附件。`outbox/` 及其 symlink alias 不得由 Status Artifact endpoint 枚举或读取。
 
 ## Runtime Agent Log 与 Native AgentSession
 
 Run 内的 runtime agent log 是 Run Artifact。它记录 jarvis-box 启动的 runtime agent 进程 stdout/stderr、退出线索和运行期可审计输出，典型文件名是 `codex.log`、`claude.log` 或 `agent.log`。
 
-Runner-owned RunTrace 也是 Run Artifact。它保存当前 Run 的 bounded 用户指令投影，并按原始顺序保存进程 stdout/stderr；Status 从该 trace 重建脱敏时间线。用户指令只在首次创建 trace 时写入一次，不能充当 conversation memory、跨 Run prompt history 或 native resume source。
+Runner-owned RunTrace 也是 Run Artifact。它保存当前 Run 的 bounded Run 输入，并按原始顺序保存进程 stdout/stderr；Status 从该 trace 重建脱敏时间线。Run 输入是真正交给 runtime agent 的当次指令，可以是用户原文，也可以包含 workflow 生成的契约、运行上下文和主机路径。它只在首次创建 trace 时写入一次，不能充当 conversation memory、跨 Run prompt history 或 native resume source。
 
 Native AgentSession jsonl 属于 runtime agent，不属于 Run Artifact。它保存 agent 自己的 conversation memory、checkpoint、compact 结果、tool trace 或 session metadata，用于 native resume。
 
@@ -131,9 +131,9 @@ Native AgentSession jsonl 属于 runtime agent，不属于 Run Artifact。它保
 规则：
 
 - Runtime agent log 不能作为 conversation memory、prompt history 或 resume source。
-- RunTrace 中的用户指令只允许作为当前 Run 的 bounded、redacted Status 投影；不得从 `prompt.txt` 或 native AgentSession 补齐原文或历史消息。
-- Native AgentSession jsonl 不能作为 public Artifact 暴露，不能被复制到 Run Artifact，也不能被 jarvis-box 解析后拼接进 prompt。
-- `task-state.json`、`task-events.jsonl` 和 public status 只能保存 safe resume status/ref，不能保存 native session id、session file path 或 resume handle value。
+- RunTrace 中的 Run 输入只允许作为当前 Run 的 bounded、redacted Status 投影；不得从 `prompt.txt` 或 native AgentSession 补齐原文或历史消息。
+- Native AgentSession jsonl 不能作为 Status Artifact 暴露，不能被复制到 Run Artifact，也不能被 jarvis-box 解析后拼接进 prompt。
+- `task-state.json`、`task-events.jsonl` 和 Status task projection 只能保存 safe resume status/ref，不能保存 native session id、session file path 或 resume handle value。
 - Cross-agent Continue 创建目标 runtime 的新 session；jarvis-box 不导入、不转写、不展开源 session 内容。
 - 文本重叠只是观测层面的副作用，不改变 ownership：Run log 用来审计一个 Run，AgentSession jsonl 用来延续一个 AgentConversation。
 - Runtime agent log 必须由 jarvis-box 捕获进程输出后按固定策略合并写入；不得通过 symlink、hardlink 或 raw pointer 复用 native AgentSession 文件来伪装成 Run Artifact。
@@ -168,7 +168,7 @@ Start 准入遇到 `low-disk`、`ENOSPC` 或 `EDQUOT` 时，Task 进入 `status=
 
 Task-store 的一次 `ENOSPC`、权限或原子写失败是当前 persistence fault，不是只能随进程重启清除的配置状态。健康检查、Run 准入和周期 terminalization recovery 都走和正式状态写入相同的文件锁及 crash-durable 原子替换路径执行 create/write/file-fsync/rename/directory-fsync/delete 探测；探针若不完成文件和目录同步，不得解除 latch。同一时刻的并发检查合并为一次探测，探测本身失败不会覆盖原始业务写入的故障证据，成功也只解除它开始时观察到的错误 generation，期间出现的更新错误不能被旧探测误清除。多个终态 Task 采用 250 ms 到 5 s 的有界指数退避，不会在磁盘故障时形成固定频率的探测惊群。`JARVIS_TASK_STORE_MIN_FREE_GB` 只约束新 Run/clone 准入；终态恢复以实际可写为提交条件，不要求磁盘先回到新工作余量，也不提前删除当前 Task 的 Workspace。当前 fault 解除后，新 Run 或 finalization 清除 Task 的 `task_store_degraded` 并记录恢复时间；workspace 卷恢复后同样清除 `workspace_storage_degraded`。最后一次错误和恢复时间继续作为历史诊断信息保留，但不得继续阻塞调度。
 
-准入检查与运行期写入属于两道不同的保护。agent 启动后，runtime log、AgentSession stream、result 或最终回复的任一关键持久化失败都绑定到当前 Run；即使进程 exit code 为 0，也必须提交 `persistence-failed / needs-attention`，保留已登记 Workspace，不能伪装成 completed。最终事件和 jarvis-command 通知只在 provider 回写及 Task 终态提交之后触发；这些步骤失败时通知结果必须改为 `completion-finalization-failed`。准入检查通过后，创建 `runs/`、创建具体 Run 目录或 Workspace clone/create 直接返回 `ENOSPC` / `EDQUOT`，都必须回到同一 `storage-wait` 准入状态；已经取得 owner 的未启动 Run 先终态化为 failed，再释放 owner。TaskService 完成这次转换后必须向所有 lane 返回 Waiting，provider/lane wrapper 不得把 canonical `storage-wait` 重写为 `launch-failed`。错误只登记在对应 Task 的存储证据中，不得误锁无关 Task。周期恢复重新检查实时容量，并在成功取得新 Run 后清除等待错误、记录 recovery。
+准入检查与运行期写入属于两道不同的保护。agent 启动后，runtime log、AgentSession stream、result、`reply.md` 或其他关键 Artifact 的持久化失败都绑定到当前 Run；即使进程 exit code 为 0，也必须提交 `persistence-failed / needs-attention`，保留已登记 Workspace，不能伪装成 completed。Artifact 已持久化之后发生的 provider delivery failure 不属于 Run persistence failure：Run 保持 succeeded，Task 投影为 `completed / writeback-failed`，`reply-error.json` 与 `writeback_failure` 用 durable `provider-delivery` kind 和 source 保存 normalized failure，后续 Continue 只重放 provider-ready 内容。无效 reply decision 等本地 Artifact 合同错误继续投影为 `completion-finalization-failed / needs-attention`，并禁止直接重放 `reply.md`。其他 completion callback 或 Task 终态提交失败使用相同的 inspect 路径。最终事件和 jarvis-command 通知只在 provider 回写及 Task 终态提交之后触发。准入检查通过后，创建 `runs/`、创建具体 Run 目录或 Workspace clone/create 直接返回 `ENOSPC` / `EDQUOT`，都必须回到同一 `storage-wait` 准入状态；已经取得 owner 的未启动 Run 先终态化为 failed，再释放 owner。TaskService 完成这次转换后必须向所有 lane 返回 Waiting，provider/lane wrapper 不得把 canonical `storage-wait` 重写为 `launch-failed`。错误只登记在对应 Task 的存储证据中，不得误锁无关 Task。周期恢复重新检查实时容量，并在成功取得新 Run 后清除等待错误、记录 recovery。
 
 文件锁不可用时不得退化成只有进程内 mutex 的写入。锁创建、`flock`、状态写入或 rename 任一步失败都必须让本次 mutation fail closed 并登记新的 persistence fault。低磁盘准入只阻止会继续放大写入的新 Workspace/Run；已终态 Task 的登记式自动清理和 Status 手工删除仍是释放空间的通道，不受进程内 persistence fault 阻断，释放后由真实写探测解除 fault。不得通过扫描目录、猜测归属或删除 active/needs-attention Task 来应急回收；Workspace 由登记驱动的终态清理负责，terminal Task Artifact 由 retention clean 负责。
 
@@ -190,18 +190,18 @@ Adapter 可以把 runtime-native session id、thread id、checkpoint ref 或 opa
 
 - private handle store 位于 `JARVIS_STATE_DIR/agent-resume-handles/`。
 - private value 只在 adapter dispatch 时解析。
-- private value 不写入 public status response、public Artifact listing、E2E evidence、service logs 或用户可见摘要。
+- private value 不写入 Status response、Status Artifact listing、E2E evidence、service logs 或用户可见摘要。
 - private value 不写入 `task-state.json`、`task-events.jsonl`、`run-context.json`、`prompt.txt`、`result.json` 或 runtime logs。
 - private handle 不能跨 runtime agent 复制。
 - cross-agent source ref 不是公开持久对象；目标 runtime 的 continuation instruction 只引用 Task/Workspace/lineage 所需信息。
 
-## Public Projection
+## Status Projection
 
-`/status` 的 public projection 是响应 allowlist 和进程内派生读模型，不是独立存储层。
+`/status` 的 Task projection 是响应 allowlist 和进程内派生读模型，不是独立存储层或角色权限层。系统操作使用独立的 typed response，但与 Task projection 属于同一人类信任边界。
 
 规则：
 
-- jarvis-box 单进程运行时，public projection 必须保存在进程内，通过 Task state 写入、Run 完成事件、服务启动时从 Artifact 重建和后台 reconcile 更新。重建 projection 不调度 Run。
+- jarvis-box 单进程运行时，Task projection 必须保存在进程内，通过 Task state 写入、Run 完成事件、服务启动时从 Artifact 重建和后台 reconcile 更新。重建 projection 不调度 Run。
 - 磁盘上的 `task-state.json` 和 `task-events.jsonl` 是恢复来源，不是每个 `/status` 请求的查询引擎。
 - `/status` 不引入 Redis、SQLite 或其他外部 cache/database。外部存储只有在多节点写入、十万级 Task、跨进程事务或复杂离线查询成为真实需求后才重新评估。
 - 如果 status list、summary 或 work-items 需要在请求路径中全量扫描 `runs_dir` 才能返回，视为实现偏离契约。
@@ -225,16 +225,16 @@ Adapter 可以把 runtime-native session id、thread id、checkpoint ref 或 opa
 - raw inbound payload
 - reply token
 - raw provider token
-- arbitrary filesystem path
+- 作为 Task 结构化字段的 arbitrary filesystem path；系统操作 response 和 bounded Run 输入可以展示当前主机路径
 - `task_dir`
 - `run_dir`
 - `log_file`
 - Workspace absolute path
 - chat message history
 
-## Artifact Access
+## Status Artifact Access
 
-Public Artifact endpoint 只解析授权后的 safe artifact ref 或受限 `run`/`run-group` 相对路径。它不提供 Workspace root，不读取 raw payload、run-context、prompt、events 或 runtime logs。完整 root/path 文件浏览只属于 `/server` local-admin 面。
+Status Artifact endpoint 只解析授权后的 safe artifact ref 或受限 `run`/`run-group` 相对路径。它不提供 Workspace root，不读取 raw payload、run-context、prompt、RunTrace、events 或 runtime logs。系统操作面板可以显示它自身 typed response 中的主机路径，但不增加任意 root/path 文件浏览器。
 
 规则：
 
@@ -249,7 +249,7 @@ Public Artifact endpoint 只解析授权后的 safe artifact ref 或受限 `run`
 
 `JARVIS_LOG_DIR` 保存 jarvis-box service、deploy 和 runtime wrapper 日志。它不等于 `runs_dir`，也不被 `tasks clean` 清理；宿主 scheduler 与 Runtime Foundation logs 不属于该目录的产品契约。
 
-Run 内的 runtime agent log 属于 Run Artifact。Service log tail 只能通过 `/server` 或 CLI 运维命令读取。
+Run 内的 runtime agent log 属于 Run Artifact。Service log 只能通过 CLI 运维命令读取；Status 系统操作面板只展示 runtime inspector 已经结构化并脱敏的诊断与内部轮询摘要，这些原始运维字段统一位于“技术详情”，不成为顶层操作分区。
 
 ## Workspace
 
@@ -263,7 +263,7 @@ Run 内的 runtime agent log 属于 Run Artifact。Service log tail 只能通过
 
 一个 Task 的全部已登记 Workspace 跨多个 Run 存续。每个 managed Run 从启动到其进程组退出都持有同一把 Task 级 shared Workspace lease；清理前必须证明没有 Run owner、没有存活的已登记进程身份、没有 terminalization intent，取得对应的 exclusive Task lease，再逐项取得 exclusive Workspace lease。手工与定时清理共享这组准入条件。Run 结束/取消时先按 Task+Run 环境标记和稳定进程 identity 清理受管后代进程；脱离 managed 进程组的进程再由 `cwd` 和 open-file reference 扫描兜底，无法确认安全时保留目录并进入可见的延迟清理。外部资源只来自 Task 显式登记的 typed `external_resources[]`；文件名、目录名、repository 名和 Docker working-directory scan 都不能创建资源所有权。详细状态机见 [Task external resource lifecycle](task-external-resource-lifecycle.md)。Run 释放 `current_run_id` 时，Task state 原子写入 `workspace_cleanup_due_at = now + JARVIS_TASK_WORKSPACE_CLEANUP_DELAY_MINUTES`；Continue claim 新 Run 时清除该截止时间。任何 Workspace disposal 失败都持久化并退避重试。全量清理成功后写入 `workspace_disposal_completed=true`；`tasks clean` 只消费这个凭证，不重新解释 Workspace 或外部资源。
 
-Cancel 以及 provider 明确发出的 Issue close、MR close/merge 是立即清理边界：它们先解决 active Run 与同 Run 后代进程 ownership，再按同一份 `workspaces[]` 立即尝试清理全部目录，不等待配置的保留窗口；无法完成的 Workspace/外部资源义务随取消状态持久化并进入退避重试。普通 Run 结束与 workspace 删除彼此独立；Run 终态落盘、provider writeback 或其恢复不得以提前删除 workspace 作为前置条件。
+Cancel、provider 明确发出的 Issue close 或 MR close/merge，以及经验证的 GitLab/GitHub subject-not-found writeback 都是立即清理边界。Subject-not-found 需要最终评论返回 HTTP 404，并由同一 provider 身份证明目标项目或仓库仍可访问；项目/仓库不可访问、鉴权失败和配置错误保持普通 writeback failure。立即清理先解决 active Run 与同 Run 后代进程 ownership，再按同一份 `workspaces[]` 和 typed `external_resources[]` 尝试清理，不等待配置的保留窗口。Subject-not-found 清理失败或延迟时，Task 保留 completion `terminalization_intent` 并保持 `finalizing`；恢复器完成清理后再原子提交 `cancelled`，成功 Run 不改写为失败，`task_cancelled` 只发布一次。普通 Run 结束与 workspace 删除彼此独立；Run 终态落盘、provider writeback 或其恢复不得以提前删除 workspace 作为前置条件。
 
 Task 首次 claim 还会在全局登记锁内分配递增的 `task_registration_sequence`，生成随机不可变 `task_instance_id`，并把外部工作对象规范化为不可改绑的 `task-state.subject`（`provider`、`kind`、`project`、`number`）；这些字段和 `workspaces[]` 在同一次 state mutation 中先于目录创建落盘。Provider webhook 的明确终态会按该登记精确匹配事件首次处理时已经存在的 Task：GitLab issue `close`、MR `close/merge`，GitHub issue `closed`、pull request `closed`（按 `merged` 归一为 `close/merge`），以及 Jira issue 状态进入 Done category 或被删除。匹配到的非终态 Task 统一经 `TaskService.CancelTask` 终止并清理全部已登记 Workspace；已经 completed/cancelled 的 Task 保持原终态，只重试登记目录清理。
 

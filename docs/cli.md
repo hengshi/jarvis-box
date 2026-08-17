@@ -16,8 +16,9 @@ jarvis-box agent list
 ```bash
 jarvis-box serve
 jarvis-box tasks list
-jarvis-box tasks create <task-id> --lane maintenance --local-scheduled
-jarvis-box tasks start <task-id> --in-place --local-scheduled
+jarvis-box tasks start <source-task-id> --reason "start from an existing Task"
+jarvis-box tasks start --prompt "handoff to the managed runtime"
+jarvis-box tasks start --prompt "consolidate memory" --lane memory-consolidation
 jarvis-box status
 jarvis-box logs
 jarvis-box doctor
@@ -27,7 +28,11 @@ jarvis-box monitor
 Compose 配置 service mode、state/log/workspace 路径和 Agent 可执行文件。jarvis-box 不将 Jarvis root skill 注入 Run。
 `jarvis-box status` 始终输出 effective `runs_dir` 和 `workspace_root`；前者由 `JARVIS_RUN_DIR`（默认 `${JARVIS_STATE_DIR}/runs`）决定，后者由 `JARVIS_WORKSPACE_ROOT`（默认 `${JARVIS_RUNTIME_ROOT}/workspace`）决定。集成方必须读取这两个 effective 值，不得根据默认目录反推 Task 或 Workspace 根。
 
+`jarvis-box tasks start --prompt <text>` 是外部交互式 shell 和 Runtime Foundation job 共用的原子 admission。它只能在调用进程没有 `JARVIS_TASK_ID`、`JARVIS_TASK_DIR`、`JARVIS_RUN_ID`、`JARVIS_WORKSPACE_ROOT` 时使用；CLI 从 canonical runtime env 检查 loopback service health，然后用一次 Start 请求交付 prompt。服务端分配 Task identity、登记 intake、创建首 Run 并启动 Agent；调用方不创建 Task、不读取 `task_dir`，也不写 `prompt.txt`。成功 JSON 返回真实 `task_id`、`task_dir`、`run_id`、`run_dir` 和 effective `workspace_root`。
+
 Delivery Metrics 历史基线由 Status 服务管理，不是 Task 或 Run。`tasks list` 和 `monitor` 不显示它；请使用 `/status` 或 `/status/api/value?provider=gitlab|github`。查看进度和恢复中断分析见 [Delivery Metrics 历史基线](delivery-metrics.md)。
+
+`--lane` 仅用于 prompt Start。默认 lane 是 `jarvis-command`；另外只接受 `memory-consolidation`、`daily-reflection` 和 `cognitive-evolution`。scheduled 权限由服务端 loopback internal route 与 lane allowlist 推导，不存在调用方 authority flag。
 
 ## Task workspace
 

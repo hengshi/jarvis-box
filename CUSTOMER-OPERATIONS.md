@@ -201,7 +201,7 @@ claude auth login
 
 ## 6. Runtime Foundation 与定时任务
 
-create-jarvis 生成的 Company Jarvis 已包含版本化的 maintenance/self-improve jobs、prompts 和 scheduler manager。Runtime Agent 按模板安装，客户不需要自己编写脚本或 cron。
+create-jarvis 生成的 Company Jarvis 已包含版本化的 JARVIS 记忆固化、日省和心智进化 jobs、prompts 与 scheduler manager。Runtime Agent 按模板安装，客户不需要自己编写脚本或 cron。
 
 | 部署模式 | 唯一 scheduler owner | 调用方式 |
 | --- | --- | --- |
@@ -316,7 +316,7 @@ Delivery Metrics 不属于 Task，也不会出现在 `jarvis-box tasks list`。�
 | Task/Run 失败 | `/status`、Task state/event、Jarvis Box logs |
 | GitHub/GitLab 无写回 | `JARVIS_PROVIDER_WRITEBACK_ENABLED`、provider allowlist、导入身份、真实 CLI capability |
 | IM 无消息或写回 | connector health、connector logs、provider credential |
-| maintenance/self-improve 不运行 | 部署模式、Host scheduler owner、Runtime Foundation status、Docker transport reachability |
+| 记忆固化/日省/心智进化不运行 | 部署模式、Host scheduler owner、Runtime Foundation status、Docker transport reachability |
 | 新 Task 停在 Agent runtime prepare | Runtime Foundation prepare 命令、Company repo 网络/认证、discovery root 健康和 Task preparation event |
 | Docker helper 无法进入环境 | Host operator/scheduler logs、容器状态和 inner job 是否安装 |
 

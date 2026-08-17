@@ -1,6 +1,14 @@
 # Scheduled jobs
 
-jarvis-box 拥有其常驻的 provider 轮询、connector 循环和 Task/Run 机制。客户 Jarvis 的 sync、maintenance 和 self-improve 任务属于该 Jarvis 的 Runtime Foundation。
+jarvis-box 拥有其常驻的 provider 轮询、connector 循环和 Task/Run 机制。客户 Jarvis 的 sync 与定时认知工作属于该 Jarvis 的 Runtime Foundation。
+
+当前定时认知工作分类固定为：
+
+| lane | 产品名称 | 用途 |
+| --- | --- | --- |
+| `memory-consolidation` | JARVIS 记忆固化 | 固化近期值得长期保留的记忆 |
+| `daily-reflection` | JARVIS 日省 | 回顾当日工作并形成改进线索 |
+| `cognitive-evolution` | JARVIS 心智进化 | 周期性沉淀可验证的方法与能力改进 |
 
 内部 Runtime Job 对 Docker 无感知。Native scheduler 直接调用它们。对于正式 Docker 运行时，Jarvis 自有的 host Scheduler Adapter 调用：
 
@@ -10,12 +18,12 @@ scripts/deploy-production.sh <deployment-home> runtime-job <inner-command> [args
 
 内部 job 将其 state/log 写入持久 Agent HOME。Host scheduler 记录 helper/容器启动失败。jarvis-box 不检查 host scheduler 定义或日志，也不安装客户调度。
 
-正式 job 必须通过专用的本地 scheduled lifecycle 创建和启动 Task：
+正式 job 与 direct shell 共用 Task Start admission，一次请求交付 prompt：
 
 ```bash
-jarvis-box tasks create <task-id> --lane maintenance --reason <reason> --local-scheduled
-# 写入命令返回的 Task 目录中的 prompt.txt
-jarvis-box tasks start <task-id> --reason <reason> --in-place --local-scheduled
+jarvis-box tasks start --prompt <text> --lane memory-consolidation --reason <reason>
 ```
 
-`--local-scheduled` 只调用 loopback-only 的 `/server/api/scheduled-tasks/*`，并且只接受 `maintenance` 和 `self-improve`。服务会在 Task state 中持久化这项 launch authority，使磁盘准入等待可在服务重启后继续恢复；未带该 authority 的历史 Task、provider lane、远端请求和所有 `/status` mutation 在 `read-only` 下仍被拒绝。该入口不会启用 provider ingress、comment poller、provider writeback 或代码托管通知。
+CLI 从 canonical runtime env 定位 loopback-only `/server/api/tasks/start`。服务只对上表三个 lane 推导 internal launch authority，使磁盘准入等待可在服务重启后继续恢复；provider lane、远端请求和所有会改变状态的 public `/status` mutation 在 `read-only` 下仍被拒绝。该入口不会启用 provider ingress、comment poller、provider writeback 或代码托管通知。
+
+服务端生成 Task identity、登记 intake、创建首 Run 并启动；job 不创建 Task 目录、不读取 `task_dir`、不写 `prompt.txt`。迁移前的 `maintenance` / `self-improve` 不能用于新 Start；合并后 repo-local `self-skills-improve` 是独立能力，不属于本页分类。

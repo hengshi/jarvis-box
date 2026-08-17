@@ -65,7 +65,7 @@ Bootstrap、recovery sync 和宿主调度的全量 sync 必须使用客户 Jarvi
 
 Bootstrap 的临时 material 删除后，stable commands、cache、state/log 与 Agent discovery roots 必须仍在持久 Agent HOME 中可用。真实 Agent discovery probe 属于 Jarvis onboarding，不属于 jarvis-box generic probe。
 
-Jarvis-owned host Scheduler Adapter 也调用 `runtime-job`。内部 sync/maintenance/self-improve command 不调用 Docker。
+Jarvis-owned host Scheduler Adapter 也调用 `runtime-job`。内部 sync、memory-consolidation、daily-reflection 和 cognitive-evolution command 不调用 Docker。
 
 Runtime Foundation doctor、真实 Agent discovery 与下述 generic verification 通过并得到客户批准后，才把 `runtime.env` 切为 `JARVIS_SERVE_MODE=worker`；只启用已经具备适用 Jarvis workflow 的业务 lane，再执行首个监督任务。
 

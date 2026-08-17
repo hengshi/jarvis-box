@@ -2,7 +2,7 @@
 
 Jarvis Box 是 Jarvis 的任务执行运行时。它接收 GitHub、GitLab、IM、Jira 等入口产生的工作，创建 Task/Run 和独立 workspace，调用已经认证的 Agent，并把结果写回原入口，最后清理 workspace。
 
-它不保存客户知识，也不替客户临时生成运维规则。客户知识、workflow、maintenance 和 self-improve 由客户自己的 Company Jarvis 与 Runtime Foundation 拥有。
+它不保存客户知识，也不替客户临时生成运维规则。客户知识、workflow，以及 JARVIS 记忆固化、日省和心智进化由客户自己的 Company Jarvis 与 Runtime Foundation 拥有。
 
 ## 最快开始
 
@@ -12,7 +12,7 @@ Jarvis Box 是 Jarvis 的任务执行运行时。它接收 GitHub、GitLab、IM�
 请用 git clone https://github.com/hengshi/create-jarvis 获取最新代码，记录 commit 和提交信息，读取其中的 SKILL.md，然后帮我构建一套 Jarvis。
 ```
 
-Host Agent 会引导你完成资料范围确认、Company Jarvis 构建、Runtime Foundation 安装和 Jarvis Box 正式部署。你只需要在部署阶段选择 Native 或 Docker，不需要自己编写 scheduler、maintenance 或 self-improve 脚本。
+Host Agent 会引导你完成资料范围确认、Company Jarvis 构建、Runtime Foundation 安装和 Jarvis Box 正式部署。你只需要在部署阶段选择 Native 或 Docker，不需要自己编写 scheduler 或定时认知工作脚本。
 
 已经拥有 Company Jarvis 时，从 [GitHub Releases](https://github.com/hengshi/jarvis-box/releases/latest) 下载同一版本的 release bundle 和 `SHA256SUMS`，校验后再安装。
 

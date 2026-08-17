@@ -32,6 +32,12 @@ Native 部署直接复用安装用户的 `glab` 身份。Docker 可以由 `start
 
 GitLab command 与 post-check lane 由 Agent 产出 `comment.md`，再由 Jarvis Box 的 `ProviderActionExecutor` 使用服务端 `glab` 身份写回。MR review 保留 review delivery owner，follow-up 通过 provider-neutral `FollowupProvider` adapter 写状态评论；三条路径都消费同一个全局回写开关和服务端 identity。Agent 不接收 provider 评论 endpoint，也不负责生成成功回执。所有写回都必须由同一个 Task/Run 证据链关联到原始 subject。
 
+## 最终写回时 subject 已不存在
+
+Issue、MR、command 和 review 的最终评论如果返回 HTTP 404，Jarvis Box 会用同一个 `glab` 身份查询目标项目。项目仍可访问时，writeback artifact 记录 `subject-not-found / provider-subject-not-found`，TaskService 清理全部登记 Workspace 和 typed external resource 后把 Task 置为 `cancelled`；Agent 已成功完成的 Run 保持 `succeeded`。清理失败或延迟时，Task 保持 `finalizing / retry-finalization`，恢复器完成清理后再提交取消终态。
+
+MR review 更新旧 bot note 的 `PUT` 返回 404 时，Jarvis Box 会先创建新 note。只有新建操作仍返回 404，且目标项目检查成功时，Task 才进入 subject-not-found 终态。目标项目检查失败、鉴权错误和配置错误仍是普通写回失败，Status 会保留 `needs-attention` 供排查。
+
 MR follow-up 不限于特定客户 workflow 创建的 MR，也不搜索 `bugfix-result.json`。Runtime Agent 通过原生 discovery 选择适用的客户或 repo-local workflow。
 
 Provider terminal 事件仅匹配不可变的 `task-state.subject` 元组与 Task 已登记的 `workspaces[]`。分支名、artifact 路径和目录扫描永不建立所有权。

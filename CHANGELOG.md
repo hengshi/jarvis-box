@@ -2,9 +2,15 @@
 
 ## 未发布
 
+## 0.2.13
+
+- Task 对外生命周期收敛为 Start、Continue、Cancel；direct shell 与 Runtime Foundation jobs 通过一次 `tasks start --prompt` 由服务端分配 Task/首 Run，调用方不再预建 Task 或写 Task `prompt.txt`。
+- 内置 `uv-im-connector v0.0.14`，消费统一的 provider 发送失败契约与安全诊断。
+- GitLab 或 GitHub 的 Issue、MR/PR 在 Task 执行期间被删除时，最终评论会在项目或仓库仍可访问的前提下触发登记式清理并将 Task 取消；清理需要重试时保持 finalizing，成功 Run 不受影响。
+
 ## 0.2.12
 
-- Docker 部署在关闭远程 Provider 与公开 Status 写入时，仍可从本机运行客户配置的定时维护和自改进任务；磁盘空间暂不可用时会等待，并在空间恢复后继续。
+- Docker 部署在关闭远程 Provider 与公开 Status 写入时，仍可从本机运行客户配置的 JARVIS 记忆固化、日省和心智进化任务；磁盘空间暂不可用时会等待，并在空间恢复后继续。迁移前已落盘的旧定时 Task 仅保留恢复兼容，不能再次创建。
 - 创建动态 Workspace 时，无法解析、缺失或不是 Git worktree 的本地仓库会在登记前被拒绝，并提示改用显式 remote，避免留下不可用的 Workspace 记录。
 - 修复 Status 页面连接建立瞬间可能漏掉 Task 操作和状态更新的问题，实时状态在首次加载期间也会完整到达。
 - 修复从 Status 页面继续 Chat Task 后 Agent 可能在页面请求结束时被提前终止的问题；接受继续操作后，任务会持续运行，直到正常完成或被显式取消。
@@ -91,7 +97,7 @@
 
 - 修复 GitLab 合并请求与工作项使用相同编号时的标题、链接和制品错位，确保评审始终绑定正确的项目与合并请求。
 - 恢复自动评审跟进链路：识别标准 Jarvis bot 身份、避免终态交界重复启动，并在合并请求评论和 Status 页面持续展示跟进任务的执行状态。
-- 恢复合并后 self-skills-improve 任务，并将 followup、self-improve、external cleanup 和 dependency cache 纳入完整 Task/Run happy-path 证据。
+- 恢复合并后 self-skills-improve 任务，并将 followup、self-skills-improve、external cleanup 和 dependency cache 纳入完整 Task/Run happy-path 证据。
 - Native 与 Docker 统一复用客户无关的标准依赖缓存，覆盖 Go、JavaScript、Python、Java、Rust、C/C++ 等常见生态；Docker 通过持久命名卷保留缓存，未知或项目特殊工具使用显式可选 hook。
 - 修复 Docker 中 GitLab 项目访问 Token 可调用 API 却无法 clone 的凭据用户名问题，并让 workspace cleanup 接受 Task 注册的规范 workspace ID。
 - 加固 release gate：企业微信使用无 GUI 协议 envelope，external resource cleanup 经过真实 Jarvis 二进制和 production finalizer，CI 镜像缓存与多架构 systemd/launchd 证据保持分层执行。
@@ -99,7 +105,7 @@
 
 ## 0.2.0
 
-- 将 Jarvis Box 稳定为客户中立的 Task/Run、workspace、Agent 和 provider writeback 运行时；Company Jarvis 与 Runtime Foundation 独立拥有客户知识、workflow、maintenance 和 self-improve。
+- 将 Jarvis Box 稳定为客户中立的 Task/Run、workspace、Agent 和 provider writeback 运行时；Company Jarvis 与 Runtime Foundation 独立拥有客户知识、workflow 和定时认知工作。
 - Native 安装和升级始终使用发起安装的现有 OS 用户，保留实际 runtime root、历史 state 与原始时间信息；服务运行或存在 active Task 时拒绝替换 artifact，不提供绕过检查的安装 force 模式。
 - Docker 提供两条明确认证路径：导入当前 Host 用户的可移植身份，或直接在持久容器 Agent HOME 内登录；provider execution token 和 Agent credential 不进入 `runtime.env`。
 - 重建分层端到端证据模型：release gate 验证 GitHub/GitLab 真实交付与 Docker 认证、企业微信/钉钉真实 IM provider 以及 Jira；MR 阶段验证统一 IM core、飞书 transport stub 和飞书项目 core shim，不再把 stub 或局部测试表述为 provider 认证。
@@ -123,7 +129,7 @@
 
 ## 0.1.36
 
-- 使 jarvis-box 成为客户中立的 Task/Run 运行时：客户 Jarvis 的 bootstrap、sync、discovery roots、maintenance 和 scheduler 策略由客户 Runtime Foundation 拥有，不再属于 jarvis-box 配置。
+- 使 jarvis-box 成为客户中立的 Task/Run 运行时：客户 Jarvis 的 bootstrap、sync、discovery roots、定时认知工作和 scheduler 策略由客户 Runtime Foundation 拥有，不再属于 jarvis-box 配置。
 - 从正式 Docker 运行时中移除 Jarvis checkout 挂载、context manifest、deployment lock 和客户专属 workspace 工具假设。
 - 新增带版本的 Workflow Runtime Contract，包含精确 action grant、经验证的 provider writeback 和显式的客户自有 workflow 链式调用。
 - 新增真实的 GitLab issue→Claude→MR Docker E2E，并在 Agent 退出和 workflow action 交付后保留其完成证据。

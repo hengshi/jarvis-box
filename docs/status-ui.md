@@ -1,6 +1,6 @@
 # Status UI
 
-`/status` 是 Jarvis 数字员工的统一状态页。阅读顺序固定为：先证明累计产出与交付质量，再看当前工作与已完成工作；选中工作项后，右侧继续使用原 Task workbench 查看 Task、Run、Agent 输出、文件和生命周期操作。它不是服务维护控制台。
+`/status` 是 Jarvis Box 唯一的人类操作页。阅读顺序固定为：先证明累计产出与交付质量，再看当前工作与已完成工作；选中工作项后，右侧继续使用原 Task workbench 查看 Task、Run、Agent 输出、文件和生命周期操作。系统运维通过 topbar 的“系统操作”面板按需展开，不再使用独立 Server 页面。
 
 历史基线的恢复和排障步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。
 
@@ -52,6 +52,8 @@ Delivery Metrics 卡片由 Status 读模型驱动，不属于下方 Task 列表�
 
 右侧 Task workbench 不重新建模：保留现有 detail shell、progress、Agent session、文件视图、Continue / Start / Cancel、workspace 清理和 SSE 更新。桌面三栏初始宽度按 `1 / 4 / 5` 分配；用户仍可通过原分栏拖拽调整宽度，双击分隔条恢复默认比例。
 
+定时认知工作使用统一的人类名称：`memory-consolidation` 为“JARVIS 记忆固化”，`daily-reflection` 为“JARVIS 日省”，`cognitive-evolution` 为“JARVIS 心智进化”。迁移前已落盘 Task 的 `maintenance` / `self-improve` 在列表与 workbench 中显示“旧版定时任务”，原始 lane 仅作为审计字段保留；它们不是新建选项。repo-local `self-skills-improve` 不属于该分类。
+
 ## 三个控件
 
 UI 只消费 response 的 `actions` policy，不在前端重算权限。
@@ -67,6 +69,7 @@ UI 只消费 response 的 `actions` policy，不在前端重算权限。
 - disabled reason 可用于 tooltip/错误提示，但不能通过改按钮名称创造新操作。
 - `actions.continue.requires_input=true` 时必须选择 agent 并输入新消息；同 agent native resume 与跨 agent child conversation 对 UI 都是 Continue。
 - `actions.continue.requires_input=false` 时禁用输入区；`strategy=recover` 自动恢复失联 Run，`strategy=writeback` 自动重试 delivery。
+- `writeback-failed` Task 继续出现在统一 Task 列表和 workbench；概览直接显示 normalized failure（category、delivery certainty、provider/http code、request id、attempts），不要求先打开 service logs。Continue 重放 `reply.md`，不显示 agent selector 或 message input。
 - active Run 的 Continue 会在服务端内部停止旧 Run 后立即继续；用户不需要先执行另一个操作。
 - Cancel 终结 Task；确认文本显示 Task id，不把内部 Stop Run 暴露成并列操作。
 - mutation 期间固定控件尺寸并禁用重复提交；完成后从服务端重新读取 Task。
@@ -79,13 +82,29 @@ UI 只消费 response 的 `actions` policy，不在前端重算权限。
 
 人类文案使用“Run 需要恢复”或“运行观察链已失联”。低 CPU 或长时间无输出不是失联证据。
 
-## 边界
+## 系统操作
 
-`/status` 默认不显示 CPU 图表、cron/scheduler、runtime env editor、原始 JSON、任意文件系统浏览、service logs、native AgentSession 或 provider secret。这些属于 `/server` 或 local-admin CLI。
+topbar 的“系统操作”打开 modal drawer。关闭时它不占用价值、工作项或 Task workbench 布局；打开后按面板独立显示 loading/error，失败不清空上一次成功数据。主导航按用户要完成的事情固定为：
+
+| 分区 | 回答的问题 | 主要操作 |
+| --- | --- | --- |
+| 系统概览 | 当前是否可用、是否需要处理、下一步去哪里 | 重新检查、进入对应分区 |
+| 处理问题 | 哪个诊断或消息连接有问题，是否需要 Jarvis 处理 | 重连 ChatBridge、启动显式 operator prompt |
+| 工作方式 | 以后新工作使用哪个 Agent | 修改默认 Agent、按工作类型覆盖 Agent |
+| 数据维护 | 哪些终态记录可以安全清理 | 预检、确认清理 |
+
+版本、环境、路径、进程/容器资源和内部轮询统一收进系统概览底部的“技术详情”。它们用于确认部署和排障，不作为顶层任务，也不得把容器视角资源写成 Docker 宿主机全局资源。
+
+每个修改操作都写明何时使用、影响当前还是未来工作、是否中断、是否可恢复、成功证据和失败后的下一步。修改默认 Agent 与工作类型覆盖只影响保存后新启动的 Run；正在运行的 Agent 不切换。重连 ChatBridge 只短暂重建消息接入，不取消已有 Task/Run。operator prompt 创建可在 Status 工作项中跟踪的新 Task/Run。终态清理不可恢复，但不处理 active Task、正在运行的 Agent、service log 或依赖缓存。
+
+所有 mutation 使用服务端现有 owner，不做 optimistic update，完成后重新读取真实状态。`read-only` 是实例运行模式，不是人类角色：页面结构和人类权限不分叉；创建任务、修改 Agent、重连 ChatBridge 和实际删除被禁用并显示原因，诊断、查看和 `tasks/clean?dry_run=1` 预检仍可执行。控件的 disabled state 必须与 API 能力一致，不能提供注定返回 403 的假入口。
+
+该面板允许展示当前部署的主机路径和已脱敏配置，但不显示 provider credential、private resume handle、raw inbound payload、native AgentSession 或未脱敏 service/runtime log。系统操作面板与其他 `/status` 功能属于同一可信团队边界，Jarvis Box 不再根据请求是否来自 loopback 区分人类权限。更强的认证由上游网关负责。
 
 ## 视觉与无障碍
 
 - topbar 是页面中唯一的数字员工身份标题；左栏不重复 Jarvis 名称或页面介绍，只显示当前工作状态、Provider 和请求人筛选。
+- 系统操作使用原生 dialog 语义；支持 Escape 关闭、焦点陷获和关闭后回到触发按钮。移动端面板使用完整视口，内容自身滚动，不与主 workbench 产生双重滚动。
 - 桌面优先采用状态/筛选、价值与工作项、Task workbench 三栏；中央栏使用唯一的连续纵向滚动，按价值、当前工作、已完成工作顺序阅读，不在工作项内部再嵌套滚动；workbench 保持在当前视口。
 - 使用中性背景、紧凑行高、小圆角和稳定对齐；视觉冲击来自清楚的数字、比例和工作现场，不使用霓虹、玻璃态或科幻装饰。
 - 语义颜色只表达状态，不作为唯一识别方式；id、时间和日志使用等宽字体。

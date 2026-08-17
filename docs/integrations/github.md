@@ -123,6 +123,12 @@ Docker 部署由 `deploy-production.sh ... start` 自动导入当前宿主机身
 
 token 至少需要目标仓库的 issue/PR 读取和评论权限；要执行 follow-up 修改，还需要读取并推送 PR head repository 的 source branch（fork PR 即 fork 仓库分支）。GitHub issue `opened` 的 post-check 会用 `gh api` 预取 issue 和分页评论。GitHub command/post-check lane 由 Agent 产出 GitHub-ready Markdown，再由 Jarvis Box 的 `ProviderActionExecutor` 使用 `gh issue comment` 或 `gh pr comment` 写回；Agent 不接收 provider mutation 命令。Task/Run 中的 `comment-post-action.txt` 与 provider 上的真实评论共同构成 writeback evidence。PR review 保留 review delivery owner，follow-up 通过 provider-neutral `FollowupProvider` adapter 写状态评论；两者与 command/post-check 共用全局回写开关和服务端 identity。follow-up 状态评论按 marker 查找并 POST/PATCH 同一条评论。
 
+### 最终写回时 subject 已不存在
+
+Issue、PR、command 和 review 的最终评论如果返回 HTTP 404，Jarvis Box 会用同一个 `gh` 身份查询目标 repository。仓库仍可访问时，writeback artifact 记录 `subject-not-found / provider-subject-not-found`，TaskService 清理全部登记 Workspace 和 typed external resource 后把 Task 置为 `cancelled`；Agent 已成功完成的 Run 保持 `succeeded`。清理失败或延迟时，Task 保持 `finalizing / retry-finalization`，恢复器完成清理后再提交取消终态。
+
+PR review 更新旧 bot comment 的 `PATCH` 返回 404 时，Jarvis Box 会先创建新 comment。只有新建操作仍返回 404，且目标仓库检查成功时，Task 才进入 subject-not-found 终态。目标仓库检查失败、鉴权错误和配置错误仍是普通写回失败，Status 会保留 `needs-attention` 供排查。
+
 生产推荐使用专门的 GitHub machine user 或 GitHub App installation token，而不是个人高权限账号。写回身份必须拥有目标 repo 的 issue/PR 读取与评论权限；webhook secret 不能替代 `gh` 写回 token。
 
 ## 验证

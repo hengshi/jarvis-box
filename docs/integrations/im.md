@@ -62,7 +62,9 @@ Run id 是 compact canonical id，例如 `r_4P8X6C2N7J5K`。来源 provider、co
 
 如果普通消息到达时已有 active Run，ChatBridge 在 Continue 内部先解决旧 Run ownership；`recovery-required` 时自动选择 recovery strategy。跨 agent 时不复制 native session id。
 
-已取消 Task 不可 Continue；后续普通消息会提示使用 `/start <prompt>` 创建新 Task。完成但回复仍未送达的 IM Task 可以用 `/cancel` 明确放弃剩余 delivery。
+已取消 Task 不可 Continue；后续普通消息会提示使用 `/start <prompt>` 创建新 Task。完成但回复仍未送达的 IM Task 仍在同一个 Task 生命周期内：安全、可重试的 provider rejection 会先自动重试；其余失败在 Status 中显示 normalized category、delivery certainty、provider/http code、request id 和已尝试次数。Continue 只重放已保存的 `reply.md`，不会重跑 agent；`/cancel` 可以明确放弃剩余 delivery。
+
+`POST /v1/message.create` 的外层 HTTP 502 只说明 `uv-im-connector` 没有完成发送，不能据此判断是哪个 provider 返回了 502。Jarvis Box 只消费 response 的 `failure`；`failure.http_status` 才是上游 provider HTTP 状态，`provider_code` 是 provider 业务码。两者缺失时仍有 `category`、`retryable` 和 `delivery_state`，无需读取 connector 日志来决定生命周期。
 
 ## 附件
 

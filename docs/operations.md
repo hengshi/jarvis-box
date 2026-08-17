@@ -38,6 +38,19 @@ jarvis-box agent smoke
 
 Native 在本机访问 `http://127.0.0.1:8787/status`。Docker 默认发布到宿主机所有接口，可从受信任网络访问 `http://<docker-host>:8787/status`；若显式设置 `JARVIS_BIND_ADDRESS=127.0.0.1`，则只允许宿主机访问。`/status` 是诊断视图，不是客户 Jarvis 的知识源。
 
+### 使用 Status 系统操作
+
+从 `/status` 顶部打开“系统操作”，按目标选择：
+
+- **系统概览**：先看“系统当前可用”或“发现 N 项需要处理”，再进入对应分区；版本、路径、进程/容器资源、脱敏配置和内部轮询位于“技术详情”。
+- **处理问题**：查看 doctor 失败项；ChatBridge 自动重试未恢复时可重新连接即时消息；需要多步检查或处理时可交给 Jarvis，操作会创建可跟踪的 Task/Run。
+- **工作方式**：修改默认 Agent 或某类工作的 Agent 覆盖。保存只影响以后新启动的 Run，不切换正在运行的 Agent；重新选回原 Agent 或“使用默认”即可恢复配置。
+- **数据维护**：先执行“预检可清理项”。预检不删除数据；“确认清理”不可恢复，只删除超过保留期、已经终态并完成 workspace disposal 的 Task Artifact，不影响 active Task、正在运行的 Agent、service log 或依赖缓存。
+
+`read-only` 是部署运行模式，不是用户角色。所有人看到同一页面；该模式允许查看、诊断和清理预检，但禁止创建 operator Task、修改 Agent 配置、重连 ChatBridge 和实际删除。按钮不可用时页面会说明原因，不要通过切换网络来源绕过运行模式。
+
+系统操作完成后以页面重新读取的状态为准：Agent 配置看当前默认值/工作类型，消息重连看 running 与 provider connected，operator prompt 记录 Task ID/Run ID，清理查看逐项 `dry-run`、`cleaned`、`deferred` 或 `error`。失败时保留页面错误和对应服务日志，再按本页“出问题时按这个顺序”继续。
+
 ### 查看或恢复 Delivery Metrics 历史基线
 
 Delivery Metrics 由 Status 服务运行，不属于 Task。它不会出现在 `jarvis-box tasks list`。打开 `/status` 或读取一次 value API，就会加载持久化队列并继续未完成分析：
