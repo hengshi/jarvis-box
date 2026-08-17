@@ -27,6 +27,7 @@
 - [配置参考](configuration.md)
 - [CLI 参考](cli.md)
 - [Runtime Agent](runtime-agents.md)
+- [Delivery Metrics 历史基线](delivery-metrics.md)：查看进度、恢复中断分析和处理重试
 - [Task/Run 执行模型](execution-model.md)
 - [持久化与恢复](storage-model.md)
 - [外部资源与清理](task-external-resource-lifecycle.md)

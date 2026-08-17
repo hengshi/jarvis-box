@@ -90,6 +90,7 @@ GitHub / GitLab / IM / Jira ingress
 ## 常用入口
 
 - [完整使用文档](docs/README.md)：Provider 接入、配置、执行模型、状态和清理合同
+- [Delivery Metrics 历史基线](docs/delivery-metrics.md)：查看分析进度、恢复中断基线和处理重试
 - [客户部署与运维指南](CUSTOMER-OPERATIONS.md)：上线、日常操作、升级、回滚、备份和诊断
 - [认证指南](AUTHENTICATION.md)：Native 身份以及 Docker 两种认证路径
 - [仓库与发布模型](REPOSITORY-MODEL.md)：create-jarvis、私有工程源码、公开发行仓库和 Company Jarvis 的职责

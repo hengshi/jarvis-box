@@ -307,6 +307,8 @@ Docker 备份完整 deployment home；其中的持久数据目录包括：
 
 ## 11. 故障诊断
 
+Delivery Metrics 不属于 Task，也不会出现在 `jarvis-box tasks list`。历史基线的进度、恢复入口和重试错误码见 [Delivery Metrics 历史基线操作手册](docs/delivery-metrics.md)。
+
 | 现象 | 先看哪里 |
 | --- | --- |
 | Agent 无法启动或认证 | `jarvis-box doctor`、Agent smoke、实际 runtime identity |

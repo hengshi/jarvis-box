@@ -2,6 +2,8 @@
 
 `/status` 是 Jarvis 数字员工的统一状态页。阅读顺序固定为：先证明累计产出与交付质量，再看当前工作与已完成工作；选中工作项后，右侧继续使用原 Task workbench 查看 Task、Run、Agent 输出、文件和生命周期操作。它不是服务维护控制台。
 
+历史基线的恢复和排障步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。
+
 ## 页面模型
 
 页面只投影三类现有事实，不创造 Activity、Work History 或统一 Value Case：
@@ -12,19 +14,32 @@
 
 Provider 是页面级筛选：`全部 / GitLab / GitHub / Jira / 飞书项目 / 即时消息`。它同时限定中央价值证据和工作项范围。`全部`只并列已配置 GitLab / GitHub 的独立证据，不相加 MR 与 PR；未配置统计仓库的代码 Provider 不渲染质量卡片，也不保留空白占位。Jira、飞书项目和即时消息当前只筛选 Task，因为它们的交付结果与人工介入语义不能套用代码交付指标。
 
+Delivery Metrics 卡片由 Status 读模型驱动，不属于下方 Task 列表。基线分析不会创建 Task、Run 或 Workspace，也不会出现在 `jarvis-box tasks list`。
+
 ## 累计产出与交付质量
 
 每个代码托管 Provider 独立回答三个问题：
 
 1. **当前账号合并交付**：当前 `glab` / `gh` 登录账号作为 author 创建并已合并的 MR / PR 数量；Provider 范围内全部 merged 只作为上下文。
-2. **未经人工修改**：证据可判断的账号交付中，没有发现其他人员提交代码的数量与比例；包括独立完成、只经人工 review/approve/merge，以及只发生自动化账号协作修改。
-3. **经过人工修改**：证据可判断的账号交付中，明确发现其他人员提交代码的数量与比例。
+2. **未发现人工纠正**：完全原样合并，以及发生过 revision 但当前策略未判断为公开人类反馈促成的数量与比例。
+3. **发现人工纠正**：当前策略判断公开人类反馈促成了后续 source revision 的数量与比例。
 
-`未经人工修改` 与 `经过人工修改` 使用相同的已知分母，因此互斥且可解释。人工 review、comment、approve 或执行 merge 是治理协作，不等于修改代码；自动化账号参与修改也不冒充人工纠正。
+`未发现人工纠正` 与 `发现人工纠正` 使用相同的已知分母。人工 review、comment、approve、merge、rebase 或 committer/pusher 身份本身不能推出人工纠正；Runtime Agent 按判断策略检查公开人类反馈与后续修订的因果关系。
 
 证据覆盖不是价值 KPI。它以可信度脚注显示：可判断数、unknown 数、仓库覆盖、freshness 和 warning。分母为零、身份归因不足或采集不完整时，两个代码修改指标显示 `—` 和“暂不判断”，不得显示误导性的 0 或 0%。
 
 仓库明细、分类口径和近期 MR / PR 证据放在原生 `details / summary` 可展开区，不与头部问题争夺视觉层级。入口必须显示“展开 / 收起”和方向箭头，并为 hover、键盘 focus 与展开状态提供可见反馈。不展示货币 ROI，也不把 Provider merge 称为终端业务验收。
+
+## 历史基线进度
+
+首次建立基线或仍有 pending 项时，Provider 卡片显示“实时分析会话”：
+
+- 当前阶段和 `analysis_progress.agent`；
+- `analyzed / total`、待分析数量和进度条；
+- 当前批次的仓库与 MR/PR number；
+- 失败后的安全错误码和下次尝试时间。
+
+打开 `/status` 会加载持久化 snapshot、queue 和 cursor，并继续未完成的分析。`scheduled`、`collecting_evidence`、`judging` 和 `persisting` 表示后台仍在工作；`retry_wait` 表示服务已安排退避重试。页面的手动刷新会同步 Provider 历史，它不执行 Task Continue。
 
 ## 工作项与 workbench
 

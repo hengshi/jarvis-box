@@ -25,6 +25,9 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | Variable | Meaning |
 |---|---|
 | `JARVIS_RUNTIME_AGENT` | selected Runtime Agent |
+| `JARVIS_RUNTIME_AGENT_SCOPE_VALUE_JUDGE` | optional Runtime Agent override for Delivery Metrics historical judgment; prefer `jarvis-box agent set --scope value-judge <agent>` |
+| `JARVIS_RUNTIME_AGENT_SCOPE_VALUE_JUDGE_PREFIX_ARGS` | arguments inserted before generated value-judge arguments; use for scope-specific model/runtime options |
+| `JARVIS_STATUS_VALUE_JUDGMENT_POLICY` | optional UTF-8 judgment policy, at most 32 KiB; changing it changes the historical metric definition and triggers re-analysis after restart |
 | `AGENT_BROWSER_EXECUTABLE_PATH` | optional dedicated automation-browser executable; on macOS the default is agent-browser's managed Chrome for Testing cache, and a missing managed browser fails closed instead of launching desktop Chrome |
 | `JARVIS_CONNECTOR_PROFILE` | empty or `uvim`; sole connector lifecycle switch |
 | `GITLAB_HOST` / `GITLAB_PROJECTS` | GitLab host and operator allowlist |
@@ -46,6 +49,8 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND` | 可选的绝对可执行路径；每次新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前调用 |
 | `JARVIS_AGENT_RUNTIME_PREPARE_TIMEOUT_SECONDS` | Agent runtime preparer 超时；默认 `120` |
 | `GIT_LFS_SKIP_SMUDGE` | Jarvis workspace clone/checkout 默认 `1`，LFS 按需下载；显式设为 `0` 恢复全量 materialize |
+
+Delivery Metrics 默认继承 `JARVIS_RUNTIME_AGENT`。后续分析批次会从 canonical runtime env 重新读取 `value-judge` scope 的 Agent、命令、prefix args 和模型配置，无需重启服务，且已分析结果保持有效。`JARVIS_STATUS_VALUE_JUDGMENT_POLICY` 在服务启动时读取；修改策略并重启后，Jarvis Box 按新 policy digest 分批重建基线。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md#选择判断-agent)。
 
 Native 默认把依赖缓存放在 `${JARVIS_RUNTIME_ROOT}/dependency-cache`。`JARVIS_DEPENDENCY_CACHE_ROOT` 可显式覆盖，但 Docker 中该路径由 Compose 固定为 `/var/cache/jarvis-box`，不要在 `runtime.env` 重定义。Jarvis Box 把这个稳定根目录和各工具的原生缓存变量注入每个 Agent；各语言继续使用自己的缓存格式、锁和校验规则。Workspace checkout 完成后，只有实际使用 Yarn 的 Workspace 才会生成未跟踪的 `.jarvis-yarnrc.yml`：能完整证明 Yarn 3+ 时加入 `nmMode: hardlinks-global`，其他 Yarn 版本只镜像原配置。C/C++、Python、Rust 等非 Yarn Workspace 不会生成 Yarn 文件或收到 Yarn Workspace policy。Agent 统一使用这个文件名，因此运行中新增 Yarn 2 Workspace 不会继承 Yarn 3-only 设置。零 Workspace Run 不注入该文件名；首个动态 Workspace 在当前 Run 保持工具原生行为，下一次 Run 再启用 Workspace-local 优化。Operator 显式设置的缓存变量始终优先。
 

@@ -21,6 +21,18 @@ JARVIS_RUNTIME_ROOT/
         messages/
       runtime-agent-route.json
       runtime-agent-events.jsonl
+      status-value/
+        snapshots/
+          gitlab.json
+          github.json
+        queues/
+          <provider>/
+            <generation>/
+              manifest.json
+              <shard>.json
+        evidence/
+          <provider>/
+            <hash>.json
       runs/
         <task-id>/
           <lane>/
@@ -60,6 +72,20 @@ Linux system install 可以将 config、state 和 logs 映射到 `/etc/jarvis-bo
 
 `runtime-agent-route.json` 保存尚未到期的 service-level agent cooldown。`runtime-agent-events.jsonl` 保存 unavailable observation、cooldown extension 和 restored 审计事件；具体 Task 的 cross-agent child conversation 记录在该 Task 的 `task-events.jsonl`。两者不属于 Task Artifact；服务重启时只恢复 timer 和路由状态，不据此恢复或重跑 Task。
 
+## Delivery Metrics 派生状态
+
+`JARVIS_STATE_DIR/status-value/` 保存 GitLab 和 GitHub Delivery Metrics 的可重建派生状态：
+
+- `snapshots/<provider>.json` 保存当前快照、Provider scope、登录主体、queue generation、cursor 和 pending 数量；
+- `queues/<provider>/<generation>/` 保存 manifest 与分片的待分析 MR/PR；
+- `evidence/<provider>/<hash>.json` 保存已完成的 typed classification 和固定 evidence code。
+
+这些文件不属于 Task 或 Run。它们没有 `task-state.json`，不会进入 `jarvis-box tasks list`，也不受 Start、Continue、Cancel 或 `tasks clean` 控制。打开 `/status` 或读取 `/status/api/value` 后，服务加载兼容的 snapshot、queue 和 cursor，并继续 pending 批次。
+
+服务只复用 scope、actor 和 schema 均匹配的状态。scope 包含 Provider、Provider host、配置仓库集合、判断合同和判断策略。Runtime Agent 选择不进入缓存 identity，因此切换 Agent 不会重算已完成 evidence；判断策略变化会创建新 scope。单个 MR/PR 的 SHA 或 `updated_at` 变化会创建新 evidence key。
+
+status-value 只保存 typed 派生结果，不保存 raw note、review body、Agent stderr、token 或命令。不要手工修改 queue shard 或 cursor。文件损坏、版本不兼容或 scope 不匹配时，服务忽略旧状态并在下一次 Provider 请求中重建。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md)。
+
 ## Task Directory
 
 `JARVIS_RUN_DIR` 是 Run/Task artifact root，默认 `$JARVIS_STATE_DIR/runs`。
@@ -91,6 +117,8 @@ ChatBridge 出站 `outbox/` 也属于单个 Run。jarvis-box 只接受目录根�
 
 Run 内的 runtime agent log 是 Run Artifact。它记录 jarvis-box 启动的 runtime agent 进程 stdout/stderr、退出线索和运行期可审计输出，典型文件名是 `codex.log`、`claude.log` 或 `agent.log`。
 
+Runner-owned RunTrace 也是 Run Artifact。它保存当前 Run 的 bounded 用户指令投影，并按原始顺序保存进程 stdout/stderr；Status 从该 trace 重建脱敏时间线。用户指令只在首次创建 trace 时写入一次，不能充当 conversation memory、跨 Run prompt history 或 native resume source。
+
 Native AgentSession jsonl 属于 runtime agent，不属于 Run Artifact。它保存 agent 自己的 conversation memory、checkpoint、compact 结果、tool trace 或 session metadata，用于 native resume。
 
 两者可能出现部分文本重叠，但语义不重复：
@@ -103,6 +131,7 @@ Native AgentSession jsonl 属于 runtime agent，不属于 Run Artifact。它保
 规则：
 
 - Runtime agent log 不能作为 conversation memory、prompt history 或 resume source。
+- RunTrace 中的用户指令只允许作为当前 Run 的 bounded、redacted Status 投影；不得从 `prompt.txt` 或 native AgentSession 补齐原文或历史消息。
 - Native AgentSession jsonl 不能作为 public Artifact 暴露，不能被复制到 Run Artifact，也不能被 jarvis-box 解析后拼接进 prompt。
 - `task-state.json`、`task-events.jsonl` 和 public status 只能保存 safe resume status/ref，不能保存 native session id、session file path 或 resume handle value。
 - Cross-agent Continue 创建目标 runtime 的新 session；jarvis-box 不导入、不转写、不展开源 session 内容。
@@ -230,7 +259,7 @@ Run 内的 runtime agent log 属于 Run Artifact。Service log tail 只能通过
 
 `JARVIS_WORKSPACE_ROOT` 保存 Task Workspace。一个 Task 可以拥有零个到多个 Workspace；唯一归属记录是 append-only 的 `task-state.workspaces[]`。每项包含稳定的 Task-local id、服务端分配的绝对路径、可选 repository metadata 和 `primary` 标记。路径由 `task_id + task_instance_id + workspace_id` 共同派生；同一个 task id 被重新创建后也不会复用旧实例目录。非空集合恰好有一个 `primary=true`，只负责选择 Run 的默认 `cwd`；空集合不合成目录，Run 使用 launcher 的普通工作目录。
 
-初始 Workspace 必须和 Run ownership claim 在同一次 crash-durable Task state mutation 中登记；active Run 中的 zero-workspace Task 必须通过 `jarvis-box workspace create --id primary` 建立第一个 canonical Workspace，非空 registry 后续增加仓库时使用普通 stable id。Runner 在所有 agent lane 的启动和 resume prompt 中注入这条 ownership contract，明确禁止 agent 绕过该命令创建、替换或物化 `JARVIS_WORKSPACE_ROOT` 的任何直接子项；已登记 Workspace 内部的正常文件操作不受影响。两条登记写路径都先提交 `workspaces[]`，随后在 Task 生命周期锁内重新验证 Run ownership、检查 Task store 和全部已登记 Workspace 所在卷，最后才创建、clone 或 checkout 目录。jarvis-box 不通过独立 reclaimer 扫描或清理 Task Workspace。已有 repository 目录必须包含真实 `.git` 目录或 worktree 文件；登记的 id、path、project、remote 和 primary 保持稳定。目录从未创建成功或已按登记清理时，Continue 可以由同一个 Workspace owner 重新分配路径；`base_branch` 只是目录准备输入。`cwd`、`workdir`、Run context、Artifact、marker 文件和目录扫描都不是 Workspace 归属来源。
+初始 Workspace 必须和 Run ownership claim 在同一次 crash-durable Task state mutation 中登记；active Run 中的 zero-workspace Task 必须通过 `jarvis-box workspace create --id primary` 建立第一个 canonical Workspace，非空 registry 后续增加仓库时使用普通 stable id。Runner 在所有 agent lane 的启动和 resume prompt 中注入这条 ownership contract，明确禁止 agent 绕过该命令创建、替换或物化 `JARVIS_WORKSPACE_ROOT` 的任何直接子项；已登记 Workspace 内部的正常文件操作不受影响。两条登记写路径都先验证 repository source 可解析，再提交 `workspaces[]`，随后在 Task 生命周期锁内重新验证 Run ownership、检查 Task store 和全部已登记 Workspace 所在卷，最后才创建、clone 或 checkout 目录。`--project` 依赖已配置的 `GITLAB_HOST`；GitHub 等其他远端使用显式 `--remote`。验证失败发生在 registry mutation 和目录创建之前；声明 repository 的成功 Workspace 必须是真实 Git worktree，只有 project/remote 都为空时才允许空目录。jarvis-box 不通过独立 reclaimer 扫描或清理 Task Workspace。已有 repository 目录必须包含真实 `.git` 目录或 worktree 文件；登记的 id、path、project、remote 和 primary 保持稳定。目录从未创建成功或已按登记清理时，Continue 可以由同一个 Workspace owner 重新分配路径；`base_branch` 只是目录准备输入。`cwd`、`workdir`、Run context、Artifact、marker 文件和目录扫描都不是 Workspace 归属来源。
 
 一个 Task 的全部已登记 Workspace 跨多个 Run 存续。每个 managed Run 从启动到其进程组退出都持有同一把 Task 级 shared Workspace lease；清理前必须证明没有 Run owner、没有存活的已登记进程身份、没有 terminalization intent，取得对应的 exclusive Task lease，再逐项取得 exclusive Workspace lease。手工与定时清理共享这组准入条件。Run 结束/取消时先按 Task+Run 环境标记和稳定进程 identity 清理受管后代进程；脱离 managed 进程组的进程再由 `cwd` 和 open-file reference 扫描兜底，无法确认安全时保留目录并进入可见的延迟清理。外部资源只来自 Task 显式登记的 typed `external_resources[]`；文件名、目录名、repository 名和 Docker working-directory scan 都不能创建资源所有权。详细状态机见 [Task external resource lifecycle](task-external-resource-lifecycle.md)。Run 释放 `current_run_id` 时，Task state 原子写入 `workspace_cleanup_due_at = now + JARVIS_TASK_WORKSPACE_CLEANUP_DELAY_MINUTES`；Continue claim 新 Run 时清除该截止时间。任何 Workspace disposal 失败都持久化并退避重试。全量清理成功后写入 `workspace_disposal_completed=true`；`tasks clean` 只消费这个凭证，不重新解释 Workspace 或外部资源。
 

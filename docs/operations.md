@@ -38,6 +38,17 @@ jarvis-box agent smoke
 
 Native 在本机访问 `http://127.0.0.1:8787/status`。Docker 默认发布到宿主机所有接口，可从受信任网络访问 `http://<docker-host>:8787/status`；若显式设置 `JARVIS_BIND_ADDRESS=127.0.0.1`，则只允许宿主机访问。`/status` 是诊断视图，不是客户 Jarvis 的知识源。
 
+### 查看或恢复 Delivery Metrics 历史基线
+
+Delivery Metrics 由 Status 服务运行，不属于 Task。它不会出现在 `jarvis-box tasks list`。打开 `/status` 或读取一次 value API，就会加载持久化队列并继续未完成分析：
+
+```bash
+curl -fsS 'http://127.0.0.1:8787/status/api/value?provider=gitlab' |
+  jq '{warnings, analysis_progress, totals: (.snapshot.totals // null)}'
+```
+
+GitHub 使用 `provider=github`。阶段、错误码、Agent 切换和完整恢复步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。
+
 ## 看日志
 
 ### Native
@@ -144,7 +155,7 @@ Docker 备份 deployment home 和需要保留的 named volumes：
 
 ## 出问题时按这个顺序
 
-1. 看 `status`，确认失败属于 provider、Task/Run、Agent 还是 connector；
+1. 看 `status`，确认失败属于 Delivery Metrics、provider、Task/Run、Agent 还是 connector；
 2. 运行 `jarvis-box doctor` 和 `jarvis-box agent smoke`，Docker 使用 `verify`；
 3. 看对应服务日志，不先改 state 文件；
 4. 检查 provider allowlist、认证 capability 和真实 writeback；

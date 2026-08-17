@@ -2,6 +2,16 @@
 
 ## 未发布
 
+## 0.2.12
+
+- Docker 部署在关闭远程 Provider 与公开 Status 写入时，仍可从本机运行客户配置的定时维护和自改进任务；磁盘空间暂不可用时会等待，并在空间恢复后继续。
+- 创建动态 Workspace 时，无法解析、缺失或不是 Git worktree 的本地仓库会在登记前被拒绝，并提示改用显式 remote，避免留下不可用的 Workspace 记录。
+- 修复 Status 页面连接建立瞬间可能漏掉 Task 操作和状态更新的问题，实时状态在首次加载期间也会完整到达。
+- 修复从 Status 页面继续 Chat Task 后 Agent 可能在页面请求结束时被提前终止的问题；接受继续操作后，任务会持续运行，直到正常完成或被显式取消。
+- Status 的 Agent 执行时间线重新显示当前 Run 的用户指令，并为不同 Agent 提供一致的过程展示和公开脱敏结果。
+- 新增 Delivery Metrics 历史基线恢复与故障诊断指南；更换判定 Agent、命令参数或模型配置后，待处理批次会自动使用最新配置，无需重启服务，也不会重算已分析基线。
+
+
 ## 0.2.11
 
 - 主动通知配置改为明确的 `JARVIS_NOTIFY_PROVIDER`，单实例 connector 由 UVIM 实时元数据自动解析；旧 channel 配置只作迁移兼容，provider/connector 错配会在启动时失败。

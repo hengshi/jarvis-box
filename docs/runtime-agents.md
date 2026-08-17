@@ -17,6 +17,22 @@ scripts/deploy-production.sh /absolute/deployment-home auth-import
 
 `JARVIS_RUNTIME_AGENT` 和 `runtime.env` 中的可选 scope override 选择 Agent 可执行文件。变更属于 operator 配置变更，需要 doctor/smoke 加上受影响的 workflow 验证；不涉及 Jarvis context 或 deployment lock。
 
+## Delivery Metrics value-judge
+
+Delivery Metrics 使用 `value-judge` scope 分批判断历史 MR/PR。它默认继承全局 Runtime Agent；以下命令设置或取消独立选择：
+
+```bash
+jarvis-box agent list
+jarvis-box agent set --scope value-judge codex
+jarvis-box agent unset --scope value-judge
+```
+
+`agent list` 的 `scoped runtime agents` 会显示 `value-judge` 的 effective Agent、来源、命令和 prefix args。设置前运行 `jarvis-box agent doctor` 和 `jarvis-box agent smoke <agent>`。
+
+服务在每个判断批次前从 canonical runtime env 解析 Agent、命令、prefix args 和模型配置。修改后下一批会采用新配置，无需重启；执行配置变化不会使已经分析的 evidence 失效。`JARVIS_RUNTIME_AGENT_SCOPE_VALUE_JUDGE_PREFIX_ARGS` 只影响该 scope。
+
+`JARVIS_STATUS_VALUE_JUDGMENT_POLICY` 改变判断口径。服务启动时读取该策略；修改后重启会生成新的 policy digest，并按新口径分批分析历史记录。进度与恢复步骤见 [Delivery Metrics 历史基线](delivery-metrics.md)。
+
 ## Skill 发现
 
 - 镜像自带的通用 `skill-creator` 链接到 Codex/Claude discovery roots；

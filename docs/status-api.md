@@ -15,7 +15,7 @@
 
 分组时 lifecycle 事实优先于 feed kind：`waiting`、`stopped` 和 `needs-attention` 进入 `needs-human`，失败终态进入 `failed`，`completed` 和 `cancelled` 进入 `completed`；`progress_checkpoint` 等 kind 不得把这些状态重新归入 `doing`。历史持久化状态 `failed-terminal` 和 `retry-exhausted` 在读取时兼容投影为 `needs-attention`，仍按失败终态分组，不会被旧的 `monitor_status=active` 覆盖。
 
-`GET /status/api/tasks` 和单 Task detail 返回 public projection。默认读路径可以读取 Task state 和 bounded Artifact metadata，但不得读取 native AgentSession、private resume handle value、raw payload 或任意主机路径。
+`GET /status/api/tasks` 和单 Task detail 返回 public projection。默认读路径可以读取 Task state、bounded Artifact metadata，以及 Runner-owned RunTrace 中当前 Run 的 bounded、redacted 用户指令投影；不得读取 `prompt.txt`、native AgentSession、private resume handle value、raw payload 或任意主机路径。
 
 单 Task 查询接受 Task id、当前/最新 Run id，也接受仍保留 `run-state.json` 的历史 Run id。使用 Run id 查询时返回其所属 Task；Run id 不会被当成 Task identity。
 
@@ -33,25 +33,48 @@ Run 从被 claim 到 Agent 进程真正启动之间，Task detail 公开准备�
 
 ## GitLab / GitHub Provider-native Delivery Metrics 读模型
 
-`GET /status/api/value?provider=gitlab|github` 从所选 provider 的已配置仓库生成一份 typed、只读的交付指标快照；缺省为 `gitlab`。响应顶层 `configured` 明确表示该 Provider 是否配置了统计仓库，Status UI 只为 `configured=true` 的 Provider 分配交付质量空间；配置存在但采集失败时仍显示紧凑异常状态。追加 `refresh=1` 跳过该 provider 的 15 分钟 fresh TTL，但会加入正在进行的同一轮刷新，不会再启动并发采集。普通 fresh hit 也会先重新验证对应 CLI 的 authenticated principal；登录主体变化会使前一主体的 snapshot/evidence cache 立即失效。GitLab 与 GitHub snapshot/cache 完全隔离；API 不返回跨 Provider 合计。首次或定时 provider sync 保存快照、分片的不可变待分析队列及消费游标、typed 派生结果到 `JARVIS_STATE_DIR/status-value`；后台每轮直接消费一小批队列并只推进游标，不重复枚举或重写全部历史。MR/PR 的 SHA 或 `updated_at` 变化会生成新的证据键并重新分析；provider host 也属于证据键，跨实例不会复用结果；429/5xx/timeout 保持待分析并退避重试，不记作最终证据未知。
+完整的查看、恢复和排障步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。Delivery Metrics 是 Status 服务维护的持久化读模型，不是 Task；`jarvis-box tasks list` 不会列出它。
+
+`GET /status/api/value?provider=gitlab|github` 从所选 Provider 的已配置仓库生成 typed、只读的交付指标快照；缺省 Provider 为 `gitlab`。顶层 `configured` 表示该 Provider 是否配置了统计仓库。GitLab 与 GitHub 分别维护 snapshot、queue、evidence 和刷新状态，API 不返回跨 Provider 合计。
+
+普通 GET 会读取持久化 snapshot、待分析队列和 cursor，并为未完成基线安排后台批次。追加 `refresh=1` 会跳过该 Provider 的 15 分钟 fresh TTL；已有刷新时，请求会加入同一轮刷新。fresh hit 仍会验证对应 CLI 的 authenticated principal，登录主体变化会使前一主体的 snapshot 和队列失效。
+
+服务把派生状态写入 `JARVIS_STATE_DIR/status-value`。每批最多消费 5 个待分析 MR/PR，正常批次间隔 10 秒；429、5xx、timeout 和 Runtime Agent 失败会保留 pending 项并退避重试。MR/PR 的 SHA 或 `updated_at` 变化会产生新的证据键。Provider host、仓库集合、schema、判断合同或判断策略变化时，服务不会复用不兼容的 snapshot。
 
 历史累计窗口从当前 `glab` 或 `gh` 登录账号的 `created_at` 开始，到本轮采集固定的 `generated_at` 为止。actor 直接读取对应 provider 的 authenticated-user endpoint，不需要独立账号环境变量，也不假设账号名是 `jarvis`。GitLab 优先使用带 `mergedAfter` / `mergedBefore` 的 GraphQL count fast path，并对 actor MR 取有界近期明细；不支持时才回退到稳定的 `merged_at` REST 排序分页。GitHub 使用 `UPDATED_AT DESC` GraphQL cursor 分页；两个 collector 都执行双边时间校验。按仓库返回：
 
 - 窗口内全部已合并 MR/PR，以及其中由当前登录账号创建的 change request；
-- 当前登录账号 MR/PR 中可证明全部 commit 均归因于该账号的数量；人工审阅或合并不会被误算为人工修改；
-- 明确的人工修改、自动化账号参与修改、代码变更来源未知和证据未知；
+- 当前登录账号 MR/PR 中完全原样合并、自主修订后合并和发现人工纠正的数量；
+- 判断未知、Provider 证据未知和待分析数量；
 - 仓库覆盖率、证据覆盖率，以及每仓库最近 20 条当前登录账号 MR/PR 证据。
 
 Provider merge 是 provider-native 工程交付 proxy，不代表终端客户业务验收。登录账号 change request 只按 author 识别，不涵盖该账号在其他作者 MR/PR 中的贡献；Jira、飞书项目、跨来源关联、聚合和去重均不在此 response 中。
 
-后端从六类最终 classification 派生两个面向人的代码质量问题；Status UI 直接消费 typed count/rate，不重复计算业务语义。`pending` 只表示历史基线尚待后台分析，不是证据未知或最终分类：
+后端从以下 classification 派生两个面向人的代码质量问题；Status UI 直接消费 typed count/rate：
 
-- `未经人工修改 = independent + reviewed_only + automation_assisted`
-- `经过人工修改 = human_corrected`
+- `unchanged`：change request 创建后未发现 source revision；
+- `self-revised`：发生过 revision，但当前策略未判断为公开人类反馈促成；
+- `human-corrected`：当前策略判断公开人类反馈促成了后续 revision；
+- `judgment-unknown`：Provider evidence 完整，但 Runtime Agent 无法判断；
+- `evidence-unknown`：Provider 时间线或参与者身份采集不完整；
+- `pending`：历史基线尚待后台分析，不是最终分类。
 
-两者都以 `correction_known = independent + reviewed_only + automation_assisted + human_corrected` 为已知分母。`no_human_correction`、`no_human_correction_rate`、`human_correction_rate` 由 API 返回。`no_other_account_code_change` 仍是更严格的“没有任何其他账号提交代码变更”下界。`attribution_unknown + evidence_unknown` 只进入可信度说明，不能被猜入任一比例。
+`未发现人工纠正 = unchanged + self_revised`，`发现人工纠正 = human_corrected`。两者共享 `correction_known = unchanged + self_revised + human_corrected` 分母。`judgment_unknown`、`evidence_unknown` 和 `evidence_pending` 不进入比例分母。
 
-首次建立历史基线时，历史 merged counts 立即可见，尚未分析的记录进入 `evidence_pending`。UI 显示“历史基线 已分析/总数”，在 pending 归零前不输出累计质量比例。后台持续小批量补齐并复用落盘结果；`evidence_unknown` 只用于真实的 provider 证据读取或身份归因失败，不再承载成本预算或待处理状态。
+首次建立历史基线时，merged counts 先显示，尚未分析的记录进入 `evidence_pending`。pending 归零前，聚合质量比例为 `null`。后台持续小批量补齐并复用落盘结果。
+
+### 分析进度
+
+快照存在或历史发现正在进行时，顶层 `analysis_progress` 返回：
+
+- `phase`：`discovering_history`、`scheduled`、`collecting_evidence`、`judging`、`persisting`、`retry_wait` 或 `complete`；
+- `agent`：当前 value-judge 使用的 Runtime Agent；
+- `analyzed`、`pending`、`total`：历史基线数量；
+- `current_batch`：当前批次的 Provider、仓库和 MR/PR number；
+- `started_at`、`updated_at`、`next_attempt_at`：分析与重试时间；
+- `last_error_code`：`judge_timeout`、`judge_failed`、`persistence_failed` 或 `evidence_retry`。
+
+`current_batch` 和错误码是用户安全的 typed 状态。API 不返回 Agent 命令、stderr、Provider 正文或 state 路径。
 
 ### Response 状态
 
@@ -71,38 +94,47 @@ Provider merge 是 provider-native 工程交付 proxy，不代表终端客户业
   "freshness": "fresh",
   "completeness": "complete",
   "warnings": [],
+  "analysis_progress": {
+    "provider": "gitlab",
+    "phase": "complete",
+    "agent": "codex",
+    "analyzed": 20,
+    "pending": 0,
+    "total": 20,
+    "current_batch": [],
+    "started_at": "2026-08-11T14:00:00Z",
+    "updated_at": "2026-08-11T14:03:20Z"
+  },
   "snapshot": {
-    "schema_version": 5,
+    "schema_version": 6,
     "generated_at": "2026-08-11T14:00:00Z",
     "baseline_updated_at": "2026-08-11T14:03:20Z",
     "observed_from": "2026-06-09T07:34:53Z",
     "actor": {"username": "customer-agent", "name": "Customer Agent", "created_at": "2026-06-09T07:34:53Z"},
     "source": {"provider": "gitlab", "host": "gitlab.example.com"},
+    "judgment": {"mode": "runtime-agent", "agent": "codex", "policy_digest": "sha256:..."},
     "repository_coverage": {"configured": 2, "succeeded": 2, "partial": 0, "failed": 0},
     "totals": {
       "merged_change_requests": 100,
       "actor_merged_change_requests": 20,
-      "independent": 8,
-      "reviewed_only": 7,
+      "unchanged": 8,
+      "self_revised": 7,
       "human_corrected": 2,
-      "automation_assisted": 1,
-      "attribution_unknown": 1,
+      "judgment_unknown": 2,
       "evidence_unknown": 1,
       "evidence_pending": 0,
-      "correction_known": 18,
-      "no_human_correction": 16,
-      "no_human_correction_rate": 0.888889,
-      "human_correction_rate": 0.111111,
-      "no_other_account_code_change": 15,
-      "no_other_code_change_rate": 0.833333,
-      "evidence_coverage": 0.9
+      "correction_known": 17,
+      "no_human_correction": 15,
+      "no_human_correction_rate": 0.882353,
+      "human_correction_rate": 0.117647,
+      "evidence_coverage": 0.85
     },
     "repositories": []
   }
 }
 ```
 
-`no_other_account_code_change = independent + reviewed_only`，是“没有其他账号提交代码变更”的可证明保守下界。`no_other_code_change_rate` 的分母只含证据明确的四类结果；`evidence_coverage` 会把 attribution/evidence unknown 排除在已知证据之外。分母为零、聚合 completeness 为 partial，或 `evidence_pending > 0` 时 rate 返回 `null`。
+`evidence_coverage = correction_known / actor_merged_change_requests`。分母为零、聚合 completeness 为 partial，或 `evidence_pending > 0` 时 rate 返回 `null`。
 
 响应只包含声明过的字段、固定 classification/evidence code 和用户安全 warning。MR/PR 外链只允许当前 provider host（含显式端口）上的 HTTPS URL；不符合时 URL 置空并返回 `unsafe_mr_url`。时间非法的 change request 以 `invalid_merged_at` 标记仓库 partial。raw provider object、note/review body、stderr、命令、token、环境变量和主机路径不得进入 public projection。
 
@@ -123,7 +155,7 @@ Task response 的 `actions` 恰好使用以下 key：
 }
 ```
 
-后端 policy 是唯一授权来源。UI 和 CLI 不自行推断 enabled 状态。所有 mutation 写入 audit event；`read-only` serve mode 统一拒绝。
+后端 policy 是唯一授权来源。UI 和 CLI 不自行推断 enabled 状态。所有 mutation 写入 audit event；`read-only` serve mode 统一拒绝 public `/status` mutation。
 
 ### Start
 
@@ -134,6 +166,8 @@ Task response 的 `actions` 恰好使用以下 key：
 - 成功结果中的 `task_id` 是新 Task，`run_id` 是它的首个 Run；两者不能混用。
 - 原 Task、Run 和 Artifact 不变。
 - source active、`needs-attention`、完成但仍缺产物/写回、进程 ownership 未解决或 lane 不支持时返回 `409` 和明确 reason；先 Continue 或 Cancel 原 Task。
+
+客户 Runtime Foundation 的 host scheduler 不使用 public Start。它只能从 loopback 调用 `/server/api/scheduled-tasks/create` 和 `/server/api/scheduled-tasks/{task_id}/start`；该专用入口在 `read-only` 下只允许带持久化 `local-scheduled` authority 的 `maintenance`/`self-improve` Task。普通本地 Task、远端调用和 provider lane 不会继承这项权限。
 
 ### Continue
 
@@ -202,6 +236,7 @@ Task 创建时会把 GitLab/GitHub/Jira 外部工作对象登记成规范化 `ta
 - safe Target key/hash、标题和 provider label
 - Task id、`current_run_id`、`latest_run_id`、Run sequence、状态、时间、safe agent name
 - Run 启动前的当前准备操作、实时/最终准备耗时、重试次数和 safe transport detail
+- Runner-owned RunTrace 中当前 Run 的 bounded、redacted 用户指令投影
 - `actions`、`safe_actions`、`inspect_actions`
 - safe lifecycle/blocker/action summary
 - opaque safe Artifact ref
@@ -213,7 +248,7 @@ Task 创建时会把 GitLab/GitHub/Jira 外部工作对象登记成规范化 `ta
 - native AgentSession id/file
 - private resume handle value
 - cross-agent source ref
-- raw payload、provider token、reply token、prompt/history
+- raw payload、provider token、reply token、`prompt.txt` 原文或跨 Run prompt/history
 - process command、argv、env、pid/pgid
 
 Public Artifact endpoint 只解析经过授权的 safe ref。它拒绝 `payload.json`、`meta.json`、`run-context.json`、`prompt.txt`、`task-state.json`、`task-events.jsonl` 和 runtime logs，并在返回文本前执行 redaction。
@@ -223,6 +258,7 @@ Public Artifact endpoint 只解析经过授权的 safe ref。它拒绝 `payload.
 `/server` 和 local-admin CLI 才能展示或操作：
 
 - jarvis-box 服务、内部 server loop、部署和主机健康
+- host scheduler 的 providerless scheduled lifecycle；该例外只接受 loopback、`maintenance`/`self-improve` 和持久化的 `local-scheduled` authority
 - jarvis-box service/runtime logs；不包含宿主 scheduler 或 Runtime Foundation logs
 - runtime agent 安装与配置诊断
 - `workspace_locations` 契约之外的文件系统路径、cleanup dry-run、reap 和其他主机维护
