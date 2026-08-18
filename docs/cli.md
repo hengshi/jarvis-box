@@ -53,6 +53,8 @@ jarvis-box workspace list
 
 该创建命令仅在 active 受管 Task 中可用。它在创建 workspace 之前原子地登记服务端分配的路径。zero-workspace Task 的第一个 Workspace 必须使用保留 id `primary`；非空 registry 的后续 Workspace 使用普通 stable id。带 `--project` 的 repository 必须能通过已配置的 `GITLAB_HOST` 解析；GitHub 或其他 provider-neutral 仓库必须显式使用 `--remote`。repository source 会在 registry mutation 前验证，成功后目录必须是真实 Git worktree；无法解析的 `--project` 不会登记或发布空目录。只有同时省略 `--project` 和 `--remote` 才表示有意创建空的非 repository Workspace。
 
+省略 `--base-branch` 且没有 Provider checkout ref 时，jarvis-box 从 remote symbolic `HEAD` 选择默认分支，执行非浅的单分支 clone；该 Workspace 不包含其他分支 ref 或其他分支独有历史。显式 branch/ref 使用声明的 checkout 合同。
+
 ## Release helpers
 
 ```bash

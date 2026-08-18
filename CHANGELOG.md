@@ -2,6 +2,10 @@
 
 ## 未发布
 
+## 0.2.16
+
+- 动态 Workspace 在未显式指定分支或 checkout ref 时，只获取远端默认分支的完整非浅历史；不再经由全 refs repo cache 暴露其他分支 ref 或其他分支独有对象。
+
 ## 0.2.15
 
 - Jarvis Box 私有源码发布面切换到 GitHub 后，公开发布同步增加客户文档空白校验；公开 GitHub Release、`download.hengshi.com` 安装入口、四平台 release bundle、Docker archive 和 `latest.json` 的消费合同保持不变。
