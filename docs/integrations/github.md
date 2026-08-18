@@ -160,3 +160,39 @@ npm run e2e -- e2e/github-webhook.spec.ts
 ## 能力边界
 
 GitHub 同时是 repository host 和 work-item provider。issue 提供 create/command/lifecycle/comment writeback，PR 另外提供 review/follow-up。GitHub issue 当前没有 Jarvis Box 内建的 label/status mutation adapter；workflow 请求 provider 不具备的 action 会在调用 `gh` 前 fail closed。
+
+
+
+## nginx配置参考
+
+```bash
+upstream jarvis.xxx.com {
+    server xx.xx.xx.xx:443;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name jarvis.xxxx.com;
+
+    location / {
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Host 'jarvis.xxx.com';
+            #proxy_set_header Host 'rc.hengshi.org';
+            #proxy_set_header X-Request-Domain '$scheme://rcorg.xxxx.com';
+            proxy_pass https://jarvis.xxxx.com;
+    }
+
+    listen 443 ssl http2; # managed by Certbot
+    ssl_certificate /etc/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+
+    if ($scheme != "https") {
+        return 301 https://$host$request_uri;
+    }
+}
+```

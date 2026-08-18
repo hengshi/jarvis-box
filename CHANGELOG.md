@@ -2,6 +2,14 @@
 
 ## 未发布
 
+## 0.2.15
+
+- Jarvis Box 私有源码发布面切换到 GitHub 后，公开发布同步增加客户文档空白校验；公开 GitHub Release、`download.hengshi.com` 安装入口、四平台 release bundle、Docker archive 和 `latest.json` 的消费合同保持不变。
+
+## 0.2.14
+
+- Jarvis Box 私有工程源码与正式发布流水线迁移到 GitHub；公开 `hengshi/jarvis-box` Release、`download.hengshi.com` 安装入口、四平台 release bundle、Docker archive 和 `latest.json` 的客户消费合同保持不变。
+
 ## 0.2.13
 
 - Task 对外生命周期收敛为 Start、Continue、Cancel；direct shell 与 Runtime Foundation jobs 通过一次 `tasks start --prompt` 由服务端分配 Task/首 Run，调用方不再预建 Task 或写 Task `prompt.txt`。
