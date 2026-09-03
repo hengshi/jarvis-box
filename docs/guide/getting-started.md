@@ -7,7 +7,7 @@
 不要先配置 webhook、env 文件或容器。让已经登录并获得授权的 Host Agent 执行：
 
 ```text
-请运行 git clone https://github.com/hengshi/create-jarvis create-jarvis，读取本地 create-jarvis/SKILL.md，然后帮我构建并部署一套 Jarvis。
+请运行 git clone https://github.com/hengshi-jarvis/create-jarvis create-jarvis，读取本地 create-jarvis/SKILL.md，然后帮我构建并部署一套 Jarvis。
 ```
 
 Host Agent 会盘点授权的数据源和代码仓库，建设客户拥有的 Jarvis repo、workflow 与 Runtime Foundation，然后引导选择部署模式。

@@ -2,7 +2,7 @@
 
 ## 受支持的版本
 
-当前公开 `0.2.x` 线接收安全与安装程序更新。建议使用 [GitHub Releases](https://github.com/hengshi/jarvis-box/releases/latest) 中的最新稳定版本；更早的公开版本除非对应 Release 明确说明，否则不再接收常规修复。
+当前 `0.2.x` 线接收安全与安装程序更新。建议使用私有 `hengshi-jarvis/jarvis-box` GitHub Release 或公开 S3 fallback mirror 中的最新稳定版本；更早版本除非对应 Release 明确说明，否则不再接收常规修复。
 
 ## 报告漏洞
 

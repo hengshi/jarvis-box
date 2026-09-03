@@ -17,6 +17,7 @@ Operator-owned Compose configuration:
 | `JARVIS_GITLAB_HOST` | optional Host `glab` identity selector |
 
 Connector profile does not belong here. The deployment home has no Jarvis context, checkout or lock.
+On hosts with more than one Docker instance, each instance must use a unique `JARVIS_DEPLOYMENT_HOME`, `JARVIS_DEPLOYMENT_NAME`, `JARVIS_PORT`, provider webhook URL, and runtime env file. See [多实例部署](multi-instance.md).
 
 ## `runtime.env`
 
@@ -25,38 +26,39 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | Variable | Meaning |
 |---|---|
 | `JARVIS_RUNTIME_AGENT` | selected Runtime Agent |
-| `JARVIS_RUNTIME_AGENT_SCOPE_VALUE_JUDGE` | optional Runtime Agent override for Delivery Metrics historical judgment; prefer `jarvis-box agent set --scope value-judge <agent>` |
-| `JARVIS_RUNTIME_AGENT_SCOPE_VALUE_JUDGE_PREFIX_ARGS` | arguments inserted before generated value-judge arguments; use for scope-specific model/runtime options |
-| `JARVIS_STATUS_VALUE_JUDGMENT_POLICY` | optional UTF-8 judgment policy, at most 32 KiB; changing it changes the historical metric definition and triggers re-analysis after restart |
+| `JARVIS_RUNTIME_AGENT_SCOPE_DELIVERY_METRICS` | optional Runtime Agent override for the Delivery Metrics lane; prefer `jarvis-box agent set --scope delivery-metrics <agent>` |
+| `JARVIS_RUNTIME_AGENT_SCOPE_DELIVERY_METRICS_PREFIX_ARGS` | arguments inserted before generated Delivery Metrics lane arguments; use for scope-specific model/runtime options |
+| `JARVIS_DELIVERY_METRICS_ENABLED` | Delivery Metrics lane 启停开关，默认 `true`；设为 `false` 后 Status 不再启动新的 `delivery-metrics` Task，操作台 Start/恢复入口拒绝该 lane，已在运行的 Task 与 Continue 收尾不受影响。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md#启用和禁用-lane)。 |
 | `AGENT_BROWSER_EXECUTABLE_PATH` | optional dedicated automation-browser executable; on macOS the default is agent-browser's managed Chrome for Testing cache, and a missing managed browser fails closed instead of launching desktop Chrome |
 | `JARVIS_CONNECTOR_PROFILE` | empty or `uvim`; sole connector lifecycle switch |
 | `GITLAB_HOST` / `GITLAB_PROJECTS` | GitLab host and operator allowlist |
 | `REVIEW_GITLAB_PROJECTS` | GitLab review subset |
-| `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` | 是否在符合条件的 GitLab MR 合并后运行 repo-local `self-skills-improve` lane |
+| `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` | 是否在符合条件的 GitLab MR 或 GitHub PR 合并后运行 repo-local `self-skills-improve` lane |
 | `JARVIS_SELF_IMPROVE_GITLAB_PROJECTS` | `self-skills-improve` 项目子集，必须包含在 `GITLAB_PROJECTS` 中 |
 | `JARVIS_SELF_IMPROVE_TARGET_BRANCHES` | `self-skills-improve` 允许的目标分支 |
 | `GITHUB_REPOSITORIES` | GitHub operator allowlist |
-| `REVIEW_GITHUB_REPOSITORIES` | GitHub review subset |
+| `REVIEW_GITHUB_REPOSITORIES` | GitHub review subset；启用 `self-skills-improve` 时同样作为 GitHub PR 合并后的 repo-local self-improve 仓库范围，未设置时继承 `GITHUB_REPOSITORIES` |
 | `JARVIS_GITHUB_WEBHOOK_ENABLED` | GitHub webhook intake switch; defaults to `true`. Set `false` when allowlisted GitHub repositories are only workspace targets for another source provider. |
 | webhook secret variables | provider signature verification |
 | `JARVIS_ISSUE_POST_CHECK_ENABLED` | enable issue post-check lane after applicable workflow is available through Agent discovery |
 | `JARVIS_PROVIDER_WRITEBACK_ENABLED` | global switch for Jarvis Box-owned original-subject mutation; default `true`; set `false` during installation tests to retain local results without Jarvis Box writing comments, labels, statuses, or review/follow-up updates to GitLab, GitHub, Jira, or Feishu Project. It does not sandbox the high-authority Agent's provider-native CLI identity. Upgrades from a runtime env containing the removed Workflow v1 grant variables fail closed to `false` until an operator explicitly sets this switch. |
 | `JARVIS_WORK_ITEM_REPOSITORIES` | provider-neutral JSON mapping from source provider + work-item scope to zero or more allowlisted GitLab/GitHub repositories; supports simultaneous cross-provider associations and never accepts caller-supplied clone endpoints |
+| `FEISHU_PROJECT_SIMPLE_NAMES` | optional JSON mapping from stable Feishu Project webhook project keys to browser URL `simple_name`; required for plugin-backed stable keys, while the Meegle CLI backend resolves and caches it through `project search` |
 | `JARVIS_*_COMMAND_ALLOWED_USERS` | optional non-bot author allowlists for GitLab, GitHub, Jira, and Feishu Project command comments |
 | `JARVIS_UV_IM_CONNECTOR_URL/TOKEN` | jarvis-box → connector access when profile is `uvim` |
 | `JARVIS_TASK_STORE_MIN_FREE_GB` | workspace admission floor |
-| `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` | 可选的依赖准备程序；在 checkout 后、Agent 启动前调用 |
+| `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` | 可选的 workspace 准备程序；在 checkout 后、Agent 启动前调用，可配置依赖缓存和 workspace-local Git identity |
 | `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND` | 可选的绝对可执行路径；每次新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前调用 |
 | `JARVIS_AGENT_RUNTIME_PREPARE_TIMEOUT_SECONDS` | Agent runtime preparer 超时；默认 `120` |
 | `GIT_LFS_SKIP_SMUDGE` | Jarvis workspace clone/checkout 默认 `1`，LFS 按需下载；显式设为 `0` 恢复全量 materialize |
 
-Delivery Metrics 默认继承 `JARVIS_RUNTIME_AGENT`。后续分析批次会从 canonical runtime env 重新读取 `value-judge` scope 的 Agent、命令、prefix args 和模型配置，无需重启服务，且已分析结果保持有效。`JARVIS_STATUS_VALUE_JUDGMENT_POLICY` 在服务启动时读取；修改策略并重启后，Jarvis Box 按新 policy digest 分批重建基线。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md#选择判断-agent)。
+Delivery Metrics 默认继承 `JARVIS_RUNTIME_AGENT`。Status 服务为待分析 MR/PR 启动 `delivery-metrics` lane Task；后续 Start/Continue 都从 canonical runtime env 重新读取该 scope 的 Agent、命令、prefix args 和模型配置。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md#选择判断-agent)。
 
-Native 默认把依赖缓存放在 `${JARVIS_RUNTIME_ROOT}/dependency-cache`。`JARVIS_DEPENDENCY_CACHE_ROOT` 可显式覆盖，但 Docker 中该路径由 Compose 固定为 `/var/cache/jarvis-box`，不要在 `runtime.env` 重定义。Jarvis Box 把这个稳定根目录和各工具的原生缓存变量注入每个 Agent；各语言继续使用自己的缓存格式、锁和校验规则。Workspace checkout 完成后，只有实际使用 Yarn 的 Workspace 才会生成未跟踪的 `.jarvis-yarnrc.yml`：能完整证明 Yarn 3+ 时加入 `nmMode: hardlinks-global`，其他 Yarn 版本只镜像原配置。C/C++、Python、Rust 等非 Yarn Workspace 不会生成 Yarn 文件或收到 Yarn Workspace policy。Agent 统一使用这个文件名，因此运行中新增 Yarn 2 Workspace 不会继承 Yarn 3-only 设置。零 Workspace Run 不注入该文件名；首个动态 Workspace 在当前 Run 保持工具原生行为，下一次 Run 再启用 Workspace-local 优化。Operator 显式设置的缓存变量始终优先。
+Native 默认把依赖缓存放在 `${JARVIS_RUNTIME_ROOT}/dependency-cache`。`JARVIS_DEPENDENCY_CACHE_ROOT` 可显式覆盖，但 Docker 中该路径由 Compose 固定为 `/var/cache/jarvis-box`，不要在 `runtime.env` 重定义。Jarvis Box 把这个稳定根目录和各工具的原生缓存变量注入每个 Agent；各语言继续使用自己的缓存格式、锁和校验规则。Workspace checkout 完成后，Jarvis 只对能安全识别的 Workspace 应用 Workspace-local policy：实际使用 Yarn 的 Workspace 会生成未跟踪的 `.jarvis-yarnrc.yml`；完整注册集合中只有一个 Cargo Workspace 时，会通过 `CARGO_BUILD_BUILD_DIR` 把 Rust 中间构建产物放到按 repo identity 隔离的共享目录，运行中新增第二个 Cargo Workspace 后会清除 Jarvis 自己管理的该变量。能完整证明 Yarn 3+ 时加入 `nmMode: hardlinks-global`（含 vendored release 文件名证明：`.yarnrc.yml` 顶层 `yarnPath` 解析到 Workspace 内存在的 `yarn-<版本>.cjs` 常规文件、版本 major ≥ 3，并与 `packageManager` 声明交叉验证不冲突），其他 Yarn 版本只镜像原配置；`yarnPath` 为 `${ENV}` 插值、URL、非字符串、文件缺失或文件名无法解析时视为无法证明，保持不支持。C/C++、Python 等非 Yarn/Cargo Workspace 不会收到 Workspace policy。Managed Task 即使从零 Workspace 或非 Yarn Workspace 启动，也会预置同一个 `YARN_RC_FILENAME=.jarvis-yarnrc.yml` 约定；运行中新增 Yarn Workspace 时，`workspace create` 会在该 Workspace 内生成对应文件，所以当前 Run 的普通 `yarn install` 也能吃到 Workspace-local policy。Agent 统一使用这个文件名，因此运行中新增 Yarn 2 Workspace 不会继承 Yarn 3-only 设置。Operator 显式设置的缓存变量始终优先。
 
-内置依赖缓存覆盖 Go，npm/Yarn/pnpm，pip/uv/Poetry/PDM/Pipenv，Gradle/Maven，Cargo，ccache/sccache，Conan/vcpkg，NuGet、Composer 和 Bundler。Jarvis 只设置工具原生缓存变量，缓存格式、校验和锁仍由对应工具负责；客户已设置的路径优先。`CARGO_HOME` 会复用 crates registry/git 下载；Bundler 同时使用持久的 `BUNDLE_USER_CACHE` 和 `BUNDLE_PATH`，后者让新 Workspace 直接复用已安装 gems，并由 Bundler 自身按 Ruby ABI 和 native extension 平台分层；使用 node-modules linker 的 Yarn 3+ Workspace 可以在文件系统支持时用硬链接复用 global cache 内容。Jarvis 不会把整个 `node_modules` 目录或 Cargo `target/`、CMake build 等可变项目编译产物跨 Workspace 共享。客户自有构建工具同样始终收到 `JARVIS_DEPENDENCY_CACHE_ROOT`，并可通过 `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` 在 checkout 后映射自己的原生缓存目录。
+内置依赖缓存覆盖 XDG cache、Go，npm/Yarn/pnpm/Corepack/Bun/Deno，Playwright/Puppeteer/Cypress 浏览器缓存，Turbo/Nx task cache，pip/uv/Poetry/PDM/Pipenv/pre-commit/Ruff/mypy/Python pycache，Gradle/Maven/Coursier，Cargo，ccache/sccache，Conan/vcpkg，NuGet、Composer 和 Bundler。Jarvis 只设置工具原生缓存变量，缓存格式、校验和锁仍由对应工具负责；客户已设置的路径优先。`CARGO_HOME` 会复用 crates registry/git 下载；Agent 默认设置 `CARGO_INCREMENTAL=0`，避免短生命周期 Rust Workspace 产生大量 `target/debug/incremental` 状态；运行环境里可找到 `sccache` 时，Jarvis 同时把 `RUSTC_WRAPPER` 设置为解析后的 sccache 可执行文件路径并复用 `SCCACHE_DIR`；单一 Cargo Workspace 使用 `CARGO_BUILD_BUILD_DIR` 共享 `debug/deps`、`debug/build` 等中间构建目录，但不改 `CARGO_TARGET_DIR`，因此最终 binary 仍在 Workspace 的 `target/`。当已配置可执行的 agent browser 时，Jarvis 还会把 Playwright 的 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 和 Puppeteer 的 `PUPPETEER_EXECUTABLE_PATH` 指向该浏览器，并让 Puppeteer 跳过 install-time Chromium 下载；Playwright 仍按 `PLAYWRIGHT_BROWSERS_PATH` 维护自己的 revision cache，只有项目配置显式使用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 时才直接复用 agent browser。Bundler 同时使用持久的 `BUNDLE_USER_CACHE` 和 `BUNDLE_PATH`，后者让新 Workspace 直接复用已安装 gems，并由 Bundler 自身按 Ruby ABI 和 native extension 平台分层；使用 node-modules linker 的 Yarn 3+ Workspace 可以在文件系统支持时用硬链接复用 global cache 内容。Jarvis 不会把整个 `node_modules` 目录、Cargo `target/` 顶层输出、CMake build、`.next/`、`dist/` 等可变项目编译产物跨 Workspace 粗暴共享。客户自有构建工具同样始终收到 `JARVIS_DEPENDENCY_CACHE_ROOT`，并可通过 `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` 在 checkout 后映射自己的原生缓存目录。
 
-可选依赖准备程序的调用格式为 `<program> <repo> --configure-existing <workspace> [--base-branch <branch>]`。客户 Runtime Foundation 可以提供该程序；Jarvis Box 不生成、不猜测项目专用安装命令。
+可选 workspace 准备程序的调用格式为 `<program> <repo> --configure-existing <workspace> [--base-branch <branch>]`。客户 Runtime Foundation 可以提供该程序；Jarvis Box 不生成、不猜测项目专用安装命令。需要在共享 Jarvis 运行时中按代码负责人设置 commit author/committer 时，也通过这个 workspace-local 入口写当前仓库的 `.git/config`，见 [代码归属与 Git 提交身份](code-attribution.md)。
 
 Agent runtime preparer 不带参数运行，必须只向 stdout 输出一个不超过 4096 bytes 的 JSON object：
 
@@ -69,6 +71,7 @@ Jarvis Box 在新 Task 的 Workspace/provider 和依赖准备完成后、Agent s
 Provider allowlists are direct operator configuration. jarvis-box does not reconcile them against a Jarvis repo. Enabling a workflow lane does not provide the workflow; the Jarvis Runtime Foundation must first install it into native Agent discovery roots.
 
 Compose injects state/log/workspace paths, service manager and image reference. Do not redefine those deployment-owned facts in `runtime.env`.
+Docker is the recommended multi-instance model. Native multi-instance maintenance is not recommended; when it is used for an approved migration or recovery window, `JARVIS_ENV_FILE` or `JARVIS_RUNTIME_ROOT` only selects runtime paths. `jarvis-box status --smart` confirms the effective runtime root, env file, and workspace root, but Native service lifecycle still requires separate systemd unit or launchd label proof.
 
 ## `connector.env`
 

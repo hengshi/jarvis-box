@@ -7,7 +7,7 @@ GitHub provider loop 用于把 GitHub issue comment 和 pull request 事件接�
 | 事件 | 行为 |
 | --- | --- |
 | `issue_comment` | 评论包含 command mention，例如 `/jarvis`、`@jarvis` 或 `@jarvis-box` 时进入 command lane；没有 mention 且 subject 是 PR 时进入 follow-up lane；普通 issue 评论不触发 follow-up |
-| `pull_request` | `opened`、`reopened`、`synchronize`、`ready_for_review` 进入 PR review lane；`closed` 先按 `merged` 归一为 Task `close/merge` 终态 |
+| `pull_request` | `opened`、`reopened`、`synchronize`、`ready_for_review` 进入 PR review lane；`closed` 先按 `merged` 归一为 Task `close/merge` 终态；开启 `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` 后，已合并且符合仓库、目标分支与 bugfix 证据条件的 PR 会进入 repo-local `self-skills-improve` lane |
 | `pull_request_review` | `submitted` 且 review state 为 `changes_requested` 或 `commented`、正文非空时进入 follow-up lane |
 | `pull_request_review_comment` | 新建的 PR inline review comment 进入 follow-up lane |
 | `issues` | `opened` 在开启 `JARVIS_ISSUE_POST_CHECK_ENABLED` 后进入 post-check；其他非终态 update 不会重跑；`closed` 会终态化创建时绑定到该 issue 的 Task |
@@ -23,7 +23,7 @@ GitHub issue/PR URL 在 Task 创建 claim 中登记为规范化 `task-state.subj
 生产启用 GitHub command lane 前，先确定三类 allowlist：
 
 - repo allowlist：哪些 GitHub 仓库允许进入 Jarvis。
-- review repo allowlist：哪些 GitHub 仓库允许 PR review lane。
+- review repo allowlist：哪些 GitHub 仓库允许 PR review lane；启用 `self-skills-improve` 时，同一范围也约束 GitHub merged PR self-improve admission。
 - shared mention names：哪些文本触发 command lane，例如 `JARVIS_MENTION_NAMES=jarvis,jarvis-box`。
 - command user allowlist：哪些 GitHub 用户允许通过 issue/PR comment 触发 command lane。
 
@@ -54,7 +54,7 @@ JARVIS_GITHUB_COMMAND_ALLOWED_USERS=301658716,2253581,1201463
 GH_CMD=gh
 ```
 
-`REVIEW_GITHUB_REPOSITORIES` 未设置时复用 `GITHUB_REPOSITORIES`。它不能包含不在 `GITHUB_REPOSITORIES` 里的仓库。
+`REVIEW_GITHUB_REPOSITORIES` 未设置时复用 `GITHUB_REPOSITORIES`。它不能包含不在 `GITHUB_REPOSITORIES` 里的仓库。`JARVIS_SELF_SKILLS_IMPROVE_ENABLED=true` 时，GitHub merged PR 的 repo-local `self-skills-improve` admission 复用该 review 仓库范围，不需要额外的 GitHub self-improve 仓库变量；GitLab MR 子集仍由 `JARVIS_SELF_IMPROVE_GITLAB_PROJECTS` 控制。
 `JARVIS_GITHUB_WEBHOOK_ENABLED` 默认为 `true`。若 GitHub 仓库只作为飞书项目或 Jira 工作项的受控 Workspace 目标，设置为 `false`；此时 GitHub webhook endpoint 返回 `404`，也不要求配置 `GITHUB_WEBHOOK_SECRET`，但仓库仍必须位于 `GITHUB_REPOSITORIES` allowlist 中。
 `JARVIS_MENTION_NAMES` 是 ChatBridge、GitLab command lane 和 GitHub command lane 共享触发名。每个名字在 GitLab/GitHub 中同时支持 `@name` 和 `/name`；未设置时默认为 `jarvis,jarvis-box`。
 `JARVIS_GITHUB_COMMAND_ALLOWED_USERS` 是 GitHub issue/PR comment command lane 触发人 allowlist；GitHub 部署建议使用 numeric user id。GitLab note command lane 的触发人限制由 `JARVIS_GITLAB_COMMAND_ALLOWED_USERS` 单独配置。
@@ -121,13 +121,13 @@ gh auth status
 
 Docker 部署由 `deploy-production.sh ... start` 自动导入当前宿主机身份；多账号宿主机用 `JARVIS_GITHUB_USER` 选择 machine user。Token 写入私有 `auth/github.token`，不写 `runtime.env`，也不挂载宿主机 HOME/Keychain。
 
-token 至少需要目标仓库的 issue/PR 读取和评论权限；要执行 follow-up 修改，还需要读取并推送 PR head repository 的 source branch（fork PR 即 fork 仓库分支）。GitHub issue `opened` 的 post-check 会用 `gh api` 预取 issue 和分页评论。GitHub command/post-check lane 由 Agent 产出 GitHub-ready Markdown，再由 Jarvis Box 的 `ProviderActionExecutor` 使用 `gh issue comment` 或 `gh pr comment` 写回；Agent 不接收 provider mutation 命令。Task/Run 中的 `comment-post-action.txt` 与 provider 上的真实评论共同构成 writeback evidence。PR review 保留 review delivery owner，follow-up 通过 provider-neutral `FollowupProvider` adapter 写状态评论；两者与 command/post-check 共用全局回写开关和服务端 identity。follow-up 状态评论按 marker 查找并 POST/PATCH 同一条评论。
+token 至少需要目标仓库的 issue/PR 读取和评论权限；要执行 follow-up 修改，还需要读取并推送 PR head repository 的 source branch（fork PR 即 fork 仓库分支）。GitHub issue `opened` 的 post-check 会用 `gh api` 预取 issue 和分页评论。GitHub command/post-check lane 由 Agent 产出 GitHub-ready Markdown，再由 Jarvis Box 的 `ProviderActionExecutor` 使用 `gh issue comment` 或 `gh pr comment` 写回；Agent 不接收 provider mutation 命令。Task/Run 中的 `comment-post-action.txt` 与 provider 上的真实评论共同构成 writeback evidence。PR review 保留 review delivery owner，并按每次 Run / head diff append-only 新建评论，避免改写旧 review 的 timeline；follow-up 通过 provider-neutral `FollowupProvider` adapter 写状态评论。两者与 command/post-check 共用全局回写开关和服务端 identity。follow-up 状态评论按 marker 查找并 POST/PATCH 同一条评论。
 
 ### 最终写回时 subject 已不存在
 
 Issue、PR、command 和 review 的最终评论如果返回 HTTP 404，Jarvis Box 会用同一个 `gh` 身份查询目标 repository。仓库仍可访问时，writeback artifact 记录 `subject-not-found / provider-subject-not-found`，TaskService 清理全部登记 Workspace 和 typed external resource 后把 Task 置为 `cancelled`；Agent 已成功完成的 Run 保持 `succeeded`。清理失败或延迟时，Task 保持 `finalizing / retry-finalization`，恢复器完成清理后再提交取消终态。
 
-PR review 更新旧 bot comment 的 `PATCH` 返回 404 时，Jarvis Box 会先创建新 comment。只有新建操作仍返回 404，且目标仓库检查成功时，Task 才进入 subject-not-found 终态。目标仓库检查失败、鉴权错误和配置错误仍是普通写回失败，Status 会保留 `needs-attention` 供排查。
+PR review 不按 marker 更新旧 bot comment。新建 review comment 返回 404，且目标仓库检查成功时，Task 才进入 subject-not-found 终态。目标仓库检查失败、鉴权错误和配置错误仍是普通写回失败，Status 会保留 `needs-attention` 供排查。
 
 生产推荐使用专门的 GitHub machine user 或 GitHub App installation token，而不是个人高权限账号。写回身份必须拥有目标 repo 的 issue/PR 读取与评论权限；webhook secret 不能替代 `gh` 写回 token。
 

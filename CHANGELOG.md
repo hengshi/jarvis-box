@@ -2,17 +2,106 @@
 
 ## 未发布
 
+## 0.2.28
+
+- 修复飞书项目 post-check 通过 Workflow Runtime Contract 启动嵌套 customer workflow 后丢失 Meegle 实时读取能力的问题；能力只继承给同一飞书工作项的 Meegle backend 子 Run，plugin 与其他 provider 仍不接收 Meegle credential。
+- Status 按仓库同时展示“未经人工修改”的数量和比例；统计缺失或不完整时继续显示 `—`，并保持窄屏布局不溢出。
+- Status 工作项列表在并发请求下复用同一份构建结果，缓存失效后串行刷新；请求取消不会发布不完整快照，减少任务较多时的重复扫描和 500 响应。
+- 新增客户派生 Docker 镜像指南，说明如何在当前 release 的 digest-pinned 基础镜像上安装系统编译依赖，并覆盖多平台构建、验证、升级、回滚和凭据边界。
+
+## 0.2.27
+
+- 内置 `uv-im-connector v0.0.15`，飞书与企业微信消息会补充可用的发送者和会话显示名称；Status 页面保留 connector 提供的具体来源名称，并在缺少显示名时使用稳定目标标识。
+- Status 页面新增运行 Agent 的计费账号额度，并按实际 provider 路由链展示模型配额，便于识别当前使用的账号和 fallback 路径。
+- IM command mention 支持紧跟中文命令，并优先匹配配置中最长的 mention 名称，避免重叠名称把命令正文截断。
+
+## 0.2.26
+
+- Docker 生产镜像切换到经过双架构验证的不可变 runtime base，普通 Jarvis Box 升级不再重复构建系统依赖和官方工具；部署重建后会自动原子更新官方工具，失败时保留上一套可用版本。
+- 新增 `jarvis-box tools path|status|update|reset` 管理入口；客户自装工具统一保存在持久化 `/home/jarvis/.local/bin`，镜像升级和容器重建后仍保留。
+- Status 页面会在 Delivery Metrics 完成后自动刷新，并防止完成事件之前启动的请求重新写入过期缓存，新的分析结果无需手工刷新即可显示。
+- 飞书项目 command ingress 现在遵循 `JARVIS_MENTION_NAMES` 配置，并正确处理富文本 mention metadata 和 Unicode 文本，不再只识别内置名称。
+- Jira 评论写回改用当前 Jira CLI 支持的 template/non-interactive 参数，避免默认评论命令因无效文件参数失败。
+- Agent Browser 清理不再把已退出进程的瞬时 signal race 保留为最终错误，减少任务收尾时的误报。
+
+## 0.2.25
+
+- 默认分支单分支 Workspace 会重新使用 repo-cache 作为对象来源，但通过非 local 单分支 clone 保持 tag 和其他分支历史隔离；cache 不可用时仍回退权威远端。
+- ChatBridge 只把当前 Run `outbox/` 中的文件作为附件发送，不再从回复正文或历史 Run 制品推断附件，避免旧附件重复发送或正文路径被误判为附件。
+- Status 本机 Task Run 趋势按首条本机记录到今天的连续日期展示，缺失日期补 0；“不显示异常值”按数据分布识别异常日，不再只隐藏最高点。
+
+## 0.2.24
+
+- Status 的本机任务运行统计恢复准确；“本机已记录任务运行”、今日、昨日和趋势图现在按本机实际运行记录展示。
+- Status 的累计产出区域将运行耗时口径改为“已完成运行耗时合计”，按已完成 Task Run 的实际耗时累计；趋势默认展示全部数据，并新增本机时间窗口选择和隐藏最高点选项。
+- Status 工作项 feed 的锚点滚动恢复；系统对话框、详情和弹层中的状态、提交、作者和错误提示文案更一致，不再出现难以理解的原始标签或错误代码。
+
+## 0.2.23
+
+- 默认分支单分支 Workspace clone 现在明确禁止拉取 tag refs，避免默认分支上的可达 tag 突破 default-only 历史边界。
+- 新增客户侧代码归属与 Git 提交身份指南，说明在共享 Jarvis Box deployment 中如何区分 provider 登录身份、runtime agent 身份、commit author/committer 和代码负责人配置边界。
+- Status 页面前端资产拆分为独立 HTML/CSS/JS，修复工作项 feed 锚点滚动；累计产出继续保留 review history，并新增当前保留任务的 Agent 累计运行时长口径。
+- Status 本机运行指标保持 provider-neutral：切换 GitLab、GitHub、Jira、飞书项目或即时消息筛选时，不改变本机 Task Run 趋势和累计运行时长。
+- ChatBridge 出站附件不再额外套用 Jarvis Box 内置文件数、单文件大小或总大小配额；实际可投递边界由 provider/connector 实时能力和 IM 渠道上传、发送限制决定。
+
+## 0.2.22
+
+- Status 的累计产出区域暂时不再展示运行 Agent token 用量；`runtime_token_usage` API 兼容字段仍保留，Delivery Metrics 与本机 Task Run 趋势不受影响。
+
+## 0.2.21
+
+- 修复 0.2.20 升级后飞书项目 webhook 不再处理的问题：Meegle backend 启动预检现在同时识别运行账号持久化 HOME 中已登录的默认 token store，不再要求额外配置 profile 或 token 环境变量；未认证或预检超时仍保持降级启动并拒绝不可执行的读写请求。
+- 飞书项目默认 Meegle backend 的 post-check Agent 现在可以用匹配 Run 专属的 Meegle CLI 身份刷新完整工作项字段、全量评论、所需附件、关系和关联工作项；plugin backend 仍只提供服务端快照，所有最终评论和 provider mutation 继续由 Jarvis Box 服务端执行。
+- 修复飞书项目完成通知把 API `project_key` 拼成无效 `/work_item/` 页面链接的问题；Meegle backend 现在解析空间 `simple_name`，并统一生成可访问的 `/<simple_name>/<work_item_type>/detail/<work_item_id>` 链接，同时 Task、Status Continue 和写回重试仍持有稳定 `project_key`，不会把展示用 `simple_name` 误传给飞书项目 API。
+
+## 0.2.20
+
+- Status 的累计产出区域将 runtime token 用量独立为全局 section，并按 agent 与 model 显示缺少 metadata 的 session 数，避免 token telemetry 不完整时误导交付质量卡片。
+- Delivery Metrics 结果读取更稳健：Agent 输出里只有一个可恢复的严格 JSON 分类结果时仍可进入基线统计，减少有效分析结果被包装文本阻断的情况。
+- Provider command 与 workflow 写回在发现缺失、污染或不符合发布规则的评论 artifact 时会标记为 `agent-output-invalid`，Status 会把任务显示为可 Continue 的 Agent 修复项，而不是普通写回失败。
+- macOS Native 安装会把自定义 `JARVIS_LAUNCHD_LABEL` 写入 launchd 环境，`doctor` 和 Status 诊断会按实际 label 检查服务，避免多实例或自定义 label 环境误判服务状态。
+- 新增多实例部署指南，并明确正式同机多实例推荐 Docker；Native 多实例只适合已批准的迁移、恢复或维护窗口，且 lifecycle 操作前必须单独证明 OS service identity。
+- 飞书项目 Meegle CLI 后端只有在显式配置 profile 或 token 时才做启动预检；身份暂未配置时服务仍可启动并审计 webhook，读写后端在身份修复前保持不可用。
+
+## 0.2.19
+
+- Status 的累计产出与交付质量区域新增本机 Task Run by-day 趋势图，默认按 180 天自然日展示历史 Run 活跃度；历史数据暂不可用时会显示降级状态而不影响 `/status` 页面整体加载。
+- Status 价值指标新增 runtime token KPI，并修复 Status API 示例 schema 与 Claude token telemetry 过滤，便于在同一页面观察运行成本、交付质量与本机吞吐趋势。
+- 自定义定时 prompt 任务现在每次触发都会创建独立工作项，便于在任务列表和 Status 页面分别跟踪，避免长期复用旧 Task。
+- Release 发布重新增加公开 S3 fallback mirror：`jarvis-box update` 会优先使用私有 GitHub Release，失败后自动从 `download.hengshi.com/jarvis-box` 下载同名 release bundle 和 `SHA256SUMS`，并继续以 checksum 校验作为安装 authority。`update --check` 现在显示元数据来源和可用下载源。
+- Docker 部署升级和会停止/重建服务的 Compose 操作现在会先检查同一 deployment home 的 Task 生命周期；存在 active、waiting、finalizing、CI-wait 或 recovery-required Task 时会在停服前拒绝，并打印阻断 Run。显式 `--force` 需要 `JARVIS_DOCKER_UPGRADE_FORCE_STRATEGY`，并会先把策略和受影响 Run 写入 deployment home 后再继续服务变更。
+
+## 0.2.18
+
+- Delivery Metrics lane 现在可以通过 `JARVIS_DELIVERY_METRICS_ENABLED=false` 明确禁用；禁用后 Status 不再启动新的分析 Task，操作台 Start 和恢复入口会拒绝该 lane，已在运行的 Task 与 Continue 收尾不受影响。
+- Status 的价值分析进度更专注于 Delivery Metrics 当前状态，不再把当前 Task 列表混入进度摘要，降低操作台扫描噪音。
+- Agent Run 被调用方取消或进程回收无法证明已停止时，Jarvis Box 会主动终止已启动的受管进程，减少取消、恢复和 workspace 清理之间的残留进程风险。
+- 使用 Workspace 内 vendored Yarn 3+ release 文件（例如 `.yarn/releases/yarn-4.3.1.cjs`）的项目，现在也可以被识别为支持 `nmMode: hardlinks-global`，从而复用全局 Yarn cache 的硬链接；无法证明版本或与 `packageManager` 冲突时仍保持原有保守行为。
+
+## 0.2.17
+
+- 修复飞书项目 Task 从 Status 继续时丢失原工作项身份、以及多 Run 写回重试误用其他 lane 产物目录的问题；Continue 现在按 lane 的既有产物所有权重放回复，投递目标从 Task 的不可变 subject 恢复，成功后 Task 收敛为完成状态。writeback Continue 不重复运行 Agent，也不接受新消息。
+- `jarvis-box workspace create` 现在解析远端默认分支：请求的分支无法解析时回退克隆远端默认分支，并把回退说明追加进 Agent 提示，让 Agent 在改动前确认分支是否合适；工作区目录已存在时拒绝登记 base branch 变更。
+- 飞书项目 webhook 在 Meegle CLI 或插件 API 未配置时 fail closed，返回明确错误而不是进入无法处理的准入状态；Meegle CLI 暂不可用时服务启动降级跳过认证预检，不再因此整体退出。
+- 依赖缓存覆盖扩展：新增 XDG cache、Corepack/Bun/Deno、Playwright/Puppeteer/Cypress 浏览器缓存、Turbo/Nx task cache、pre-commit/Ruff/mypy/Python pycache 和 Coursier 等工具缓存策略。Cargo 构建默认关闭 incremental 编译，检测到 sccache 时自动设置 `RUSTC_WRAPPER`；单一 Cargo Workspace 会把 Rust 中间构建产物放入按仓库身份隔离的共享目录，不跨 Workspace 共享 `target/` 顶层输出。配置了专用 agent browser 时，Puppeteer 使用该浏览器并跳过安装时 Chromium 下载。
+- Delivery Metrics 历史基线改为普通 `delivery-metrics` lane Task：分析 Task 会出现在 `jarvis-box tasks list` 和 Status 工作项列表，可通过普通 Task detail 查看、Continue 或 Cancel；Status 每次 Provider 刷新最多启动一个新的分析 Task，并读取 Task 根目录的 `delivery-metrics-result.json` 写入统计。判断 Agent scope 由 `value-judge` 改为 `delivery-metrics`（`jarvis-box agent set --scope delivery-metrics`），升级时 Flyway 会把旧 scope 变量一次性改写，并移除旧的自定义判断策略变量。
+- 修复 Status 页面同一 work item 的主任务选择：进程仍在运行的任务优先展示，其余按最近活动时间排序。
+- 修复 `tasks start/cancel/continue` 的 help 预扫描把 `--reason help`、`--message help` 等参数值误当作 help 请求的问题；任务操作被服务器拒绝时现在显示 HTTP 状态码和响应正文，而不是笼统的 `exit status 22`。
+- 修复磁盘空间等待任务的恢复：self-improve 等定时任务在空间恢复后可以被正确重新启动，任务存储等待记录会补全任务目录以便恢复，清理恢复不会覆盖已经观察到的终态结果。
+- `jarvis-box update` 与 Docker 部署/升级正式切换到私有 `hengshi-jarvis/jarvis-box` GitHub Release：update 通过 GitHub API 检查并消费私有 Release 资产（需要仓库 access token），不再从公开下载站获取安装脚本；Docker 部署入口从同一 Release 的 release bundle、`SHA256SUMS` 与 `production-image.json` 消费。
+- 修复 release qualification 的 IM protocol-envelope gate 候选镜像供给：gate 脚本对已认证候选镜像自行 `docker pull` 并校验，不再依赖前序步骤清理后残留的本地镜像引用，避免 `pull_policy=never` 的 Compose 启动因镜像缺失而失败。
 ## 0.2.16
 
 - 动态 Workspace 在未显式指定分支或 checkout ref 时，只获取远端默认分支的完整非浅历史；不再经由全 refs repo cache 暴露其他分支 ref 或其他分支独有对象。
+- Jarvis Box 正式二进制分发面收敛到私有 `hengshi-jarvis/jarvis-box` GitHub Release。公开仓库改为 onboarding stub，只保留客户文档、issue 入口和私有 GitHub access 指引；release bundle、checksum、`production-image.json` 和私有 GHCR image 不再通过公开仓库或下载站发布。
 
 ## 0.2.15
 
-- Jarvis Box 私有源码发布面切换到 GitHub 后，公开发布同步增加客户文档空白校验；公开 GitHub Release、`download.hengshi.com` 安装入口、四平台 release bundle、Docker archive 和 `latest.json` 的消费合同保持不变。
+- Jarvis Box 私有源码发布面切换到 GitHub 后，公开发布同步增加客户文档空白校验；本版本当时仍保留旧公开二进制消费合同。
 
 ## 0.2.14
 
-- Jarvis Box 私有工程源码与正式发布流水线迁移到 GitHub；公开 `hengshi/jarvis-box` Release、`download.hengshi.com` 安装入口、四平台 release bundle、Docker archive 和 `latest.json` 的客户消费合同保持不变。
+- Jarvis Box 私有工程源码与正式发布流水线迁移到 GitHub；本版本当时仍保留旧公开二进制消费合同。
 
 ## 0.2.13
 
@@ -122,7 +211,7 @@
 - Docker 提供两条明确认证路径：导入当前 Host 用户的可移植身份，或直接在持久容器 Agent HOME 内登录；provider execution token 和 Agent credential 不进入 `runtime.env`。
 - 重建分层端到端证据模型：release gate 验证 GitHub/GitLab 真实交付与 Docker 认证、企业微信/钉钉真实 IM provider 以及 Jira；MR 阶段验证统一 IM core、飞书 transport stub 和飞书项目 core shim，不再把 stub 或局部测试表述为 provider 认证。
 - Code Review 依次使用源分支 repo skill、目标分支 repo skill 和 Agent 默认方法；缺少 repo-local `code-review` skill 不再中止任务。
-- 统一 GitLab、GitHub 和公共下载站的发布事务；同一版本制品必须逐个 SHA-256 一致，全部验证通过后才更新 `latest.json`。
+- 统一当时的多发布面事务；同一版本制品必须逐个 SHA-256 一致，全部验证通过后才更新稳定版本指针。
 - 修复 `/status` 在 task mutation 后丢失当前选择的问题，并把部署模式、scheduler owner 与 live transport evidence 纳入运行测试方法。
 
 ## 0.1.38
@@ -160,7 +249,7 @@
 - 在正式 jarvis-box 镜像中内置固定版本的 `uv-im-connector` 可执行文件，使两个 Compose service 使用同一个客户可见的镜像 digest。
 - 移除单独选择的 `UVIM_IMAGE` 部署输入，同时保持 connector 凭据、健康、日志和状态与 Agent 隔离。
 - 每个 release bundle 附带客户运维手册，覆盖 Jarvis 生态、首次部署、直接 Docker Compose 操作、升级、回滚、备份、凭据轮换、诊断和移除。
-- 将相同的客户文档发布到公开 GitHub 版本 tag，并在源、bundle 或 GitHub 内容不一致时使 release 验证失败；`latest.json` 仅在上述检查和 GitHub Release 成功后更新。
+- 将相同的客户文档发布到当时的公开版本 tag，并在源、bundle 或 GitHub 内容不一致时使 release 验证失败；稳定版本指针仅在上述检查和版本发布成功后更新。
 
 ## 0.1.34
 

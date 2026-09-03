@@ -24,7 +24,7 @@ Inspect、list、verify、reap 和 clean 是只读或维护操作，不属于 Ta
 | `CommandLauncher` | GitLab、GitHub、Jira 或飞书项目评论中显式命令的 Agent 执行；产出 `comment.md` | 伪造 workflow type、向 Agent 暴露评论 endpoint、直接 provider mutation |
 | `ProviderActionExecutor` | 校验并执行 command 与 workflow-result 中声明的 provider action，持久化 response/action/audit | 命令解释、客户 workflow 选择、Agent 生命周期 |
 
-`@jarvis` 只是各 provider adapter 的命令匹配入口。命中后直接进入 `jarvis-command` lane，不生成 workflow input，也不把命令包装成一个虚构的 workflow type。GitLab、GitHub、Jira 和默认 Meegle backend 都向 command Agent 提供 provider CLI 与稳定 subject identity，并通过同一 read contract 要求其在执行前读取实时正文、完整评论历史和附件清单；Feishu Project plugin 是唯一的服务端预取分支，Agent 只读取 `issue.json` 与 `notes.json`，plugin credential 不越过服务边界。所有 command 的原 subject 写回都由 `ProviderActionExecutor` 执行。GitLab MR 与 GitHub PR follow-up 共用 provider-neutral dispatcher 和状态机，provider adapter 只归一化事件并实现实时读取/状态评论；command mention 永远优先于普通评论 follow-up。MR/PR review 与 follow-up 保留自己的交付器，但消费同一个全局回写开关；IM conversation reply 仍由 ChatBridge reply owner 管理，不属于“原 provider subject 回写”开关的范围。
+`@jarvis` 只是各 provider adapter 的命令匹配入口。命中后直接进入 `jarvis-command` lane，不生成 workflow input，也不把命令包装成一个虚构的 workflow type。GitLab、GitHub、Jira 和默认 Meegle backend 都向 command Agent 提供 provider CLI 与稳定 subject identity，并通过同一 read contract 要求其在执行前读取实时正文、完整评论历史和附件清单；默认 Meegle post-check Agent 同样获得只用于当前 Feishu Project Run 的 CLI 能力，并必须刷新工作项、全量评论、所需附件、关系和关联工作项。Feishu Project plugin 是唯一的服务端预取分支，Agent 只读取 `issue.json` 与 `notes.json`，plugin credential 不越过服务边界。所有 command 和 post-check 的原 subject 写回都由 `ProviderActionExecutor` 执行。GitLab MR 与 GitHub PR follow-up 共用 provider-neutral dispatcher 和状态机，provider adapter 只归一化事件并实现实时读取/状态评论；command mention 永远优先于普通评论 follow-up。MR/PR review 与 follow-up 保留自己的交付器，但消费同一个全局回写开关；review 写回是 append-only，follow-up 状态评论才按 marker 更新同一条 provider 评论。IM conversation reply 仍由 ChatBridge reply owner 管理，不属于“原 provider subject 回写”开关的范围。
 
 能力矩阵是路由和写回校验的单一语义源；不从 provider 名称推导隐含组合：
 
@@ -311,9 +311,10 @@ Agent 切换不是 import/export。jarvis-box 不转换历史记录。目标 run
 规则：
 
 - 只在 writeback pending 或 failed，且待发送内容存在时启用。
-- GitLab/GitHub/Jira comment 和 ChatBridge reply 使用各自 provider writer。
+- GitLab/GitHub/Jira/飞书项目 comment 和 ChatBridge reply 使用各自 provider writer。
 - 不启动 runtime agent，不创建 Run，不修改终态 Run。
-- 成功或失败都追加 writeback audit event，并更新 provider-facing projection。
+- 重放目录服从 lane 的既有产物所有权：provider command 重放 `latest_run_id` 对应 Run 的 provider-ready 产物；post-check、MR review 和 ChatBridge 重放 Task 根目录中由各自 launcher 持有的产物。投递目标从 Task 的不可变 `subject` 恢复，历史 Run context 只补充经过该 subject 校验的 provider-specific 参数。
+- 成功或失败都追加 writeback audit event，并更新 provider-facing projection；成功后 Task 收敛到 `completed/completed`。
 - 已成功发送或内容缺失时不选择 writeback strategy；Continue 回到 agent strategy 或返回明确 disabled reason。
 
 ChatBridge 的 provider send failure 与 Agent Run failure 是两个事实。Agent 已成功且 `reply.md` 已持久化时，最终 IM 回复失败不得把 Run 改成 failed，也不得让 Continue 重新执行 agent：
@@ -322,7 +323,7 @@ ChatBridge 的 provider send failure 与 Agent Run failure 是两个事实。Age
 - `reply-error.json` 用 `kind=provider-delivery` 与非投递类 Artifact 错误区分，记录 delivery source，并保存 provider-neutral `failure`：`category`、`retryable`、`delivery_state`，以及可选的 provider HTTP status/code、Retry-After 和 request id；
 - ChatBridge 只对 `retryable=true` 且 `delivery_state=rejected|not-attempted` 的结果做最多 3 次有界自动重试；`delivery_state=unknown` 不自动重放，避免实际已送达时重复发送；
 - 自动重试耗尽、永久失败或投递结果不确定时，Status 直接展示结构化原因。操作者可以用 Continue 重放 Task 根目录的 `reply.md`，不需要读取 service log，也不需要提供 agent prompt；
-- 只有带 durable `provider-delivery` kind 与 source 的 failed reply action 选择 writeback strategy。缺少该分类的历史 Artifact 和无效 `reply-decision.json` 保持 `completion-finalization-failed / inspect-artifacts`，防止 Continue 发送被本地合同禁止的内容。
+- 只有带 durable `provider-delivery` kind 与 source 的 failed reply action 选择 writeback strategy。缺少该分类的历史 Artifact 保持 `completion-finalization-failed / inspect-artifacts`，防止 Continue 发送未证明可投递的内容。
 
 Jarvis Box 不解析 provider 名称、`detail`、HTTP 502 文本或日志。错误分类属于 `uv-im-connector` adapter；重试次数、Task 状态和人工介入策略属于 Jarvis Box。
 

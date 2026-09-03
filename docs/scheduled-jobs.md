@@ -26,4 +26,4 @@ jarvis-box tasks start --prompt <text> --lane memory-consolidation --reason <rea
 
 CLI 从 canonical runtime env 定位 loopback-only `/server/api/tasks/start`。服务只对上表三个 lane 推导 internal launch authority，使磁盘准入等待可在服务重启后继续恢复；provider lane、远端请求和所有会改变状态的 public `/status` mutation 在 `read-only` 下仍被拒绝。该入口不会启用 provider ingress、comment poller、provider writeback 或代码托管通知。
 
-服务端生成 Task identity、登记 intake、创建首 Run 并启动；job 不创建 Task 目录、不读取 `task_dir`、不写 `prompt.txt`。迁移前的 `maintenance` / `self-improve` 不能用于新 Start；合并后 repo-local `self-skills-improve` 是独立能力，不属于本页分类。
+服务端生成 Task identity、登记 intake、创建首 Run 并启动；job 不创建 Task 目录、不读取 `task_dir`、不写 `prompt.txt`。迁移前的 `maintenance` / `self-improve` 不能用于新 Start；合并后 repo-local `self-skills-improve` 是由 GitLab MR / GitHub PR webhook 触发的独立能力，不属于本页分类。

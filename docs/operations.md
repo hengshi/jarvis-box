@@ -13,6 +13,8 @@ home=/absolute/deployment-home
 
 后续示例中的 `"$ops" "$home"` 始终使用同一个 release 和 deployment home。
 
+同一台机器运行多个实例时，推荐使用 Docker。Docker 始终通过对应 deployment home 调用 `"$ops" "$home"`，隔离 Compose project、端口、auth、state 和 workspace。Native 多实例不推荐；Native shell 设置 `JARVIS_ENV_FILE` 或 `JARVIS_RUNTIME_ROOT` 只能选择 runtime path，先用 `jarvis-box status --smart` 确认 `runtime_root`、`env_file` 和 `workspace_root`，但 service lifecycle 还必须单独确认 OS service identity。完整隔离规则见 [多实例部署](multi-instance.md)。
+
 ## Docker deployment 边界
 
 Jarvis Box 运维脚本只管理当前 deployment home 和对应 Compose project 明确登记的资源。它不会重启或重新配置 Docker daemon，不会修改宿主网络或 DNS，不会执行宿主级 `docker system prune`、`docker container prune`、`docker network prune` 或 `docker volume prune`，也不会操作其他 deployment 的容器、network 或 volume。
@@ -53,14 +55,14 @@ Native 在本机访问 `http://127.0.0.1:8787/status`。Docker 默认发布到�
 
 ### 查看或恢复 Delivery Metrics 历史基线
 
-Delivery Metrics 由 Status 服务运行，不属于 Task。它不会出现在 `jarvis-box tasks list`。打开 `/status` 或读取一次 value API，就会加载持久化队列并继续未完成分析：
+Delivery Metrics 由 Status 服务管理枚举和启动节奏，实际分析是普通 `delivery-metrics` lane Task。打开 `/status` 或读取一次 value API，就会同步 Provider 历史并按节奏启动 pending Task：
 
 ```bash
 curl -fsS 'http://127.0.0.1:8787/status/api/value?provider=gitlab' |
   jq '{warnings, analysis_progress, totals: (.snapshot.totals // null)}'
 ```
 
-GitHub 使用 `provider=github`。阶段、错误码、Agent 切换和完整恢复步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。
+GitHub 使用 `provider=github`。阶段、Task Continue/Cancel、Agent scope 和完整恢复步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。
 
 ## 看日志
 
@@ -100,36 +102,39 @@ jarvis-box stop
 jarvis-box restart
 ```
 
-默认会检查 active Task。存在 active Run 时操作被阻断，并列出下一步。先等待、继续或取消任务。
+默认会检查当前会阻断 lifecycle 的 Task。存在 active/running、waiting、ci-wait、finalizing 或 recovery-required Task 时操作被阻断，并列出下一步。用 `jarvis-box tasks list` 快速查看当前阻断项；需要历史排查时再用 `jarvis-box tasks list --all`。先等待、继续或取消任务。
 
 `jarvis-box stop --force` 和 `jarvis-box restart --force` 会按 Task/Run 所有权执行停止与清理，只用于客户明确决定放弃当前运行的场景。安装器本身没有 force 模式。
 
+这些 Native lifecycle 命令适用于单 Native 实例。Native 多实例主机不能只靠 `JARVIS_ENV_FILE` 或 `JARVIS_RUNTIME_ROOT` 选择 systemd unit；Linux 内置路径操作安装时的 `jarvis-box` unit。长期同机多实例应使用 Docker deployment home。
+
 ## 升级
+
+`jarvis-box update --check` 会显示当前版本、目标版本、元数据来源和可用下载源。`jarvis-box update` 通过已安装 release bundle 中的 `install.sh` 自动下载目标版本：优先使用私有 `hengshi-jarvis/jarvis-box` GitHub Release，无法访问或下载失败时改用 `https://download.hengshi.com/jarvis-box` 的公开 S3 mirror；最后仍以 `SHA256SUMS` 校验为准。安装器发现已有服务仍在运行时会在替换 artifact 前停止并提示先规范停服。它不会自动取消 Task。
 
 ### Native
 
 ```bash
+jarvis-box tasks list
 jarvis-box stop
 sudo bash install.sh
 jarvis-box doctor
 jarvis-box agent smoke
 ```
 
-安装器发现已有服务仍在运行时会在替换 artifact 前停止并提示先规范停服。它不会自动取消 Task。
+默认 `tasks list` 应为空；若列出 Task，先等待、Continue 或 Cancel。历史排查使用 `jarvis-box tasks list --all`。安装器发现已有服务仍在运行时会在替换 artifact 前停止并提示先规范停服。它不会自动取消 Task。
 
 ### Docker
 
-确认没有正在执行的 Task，然后使用稳定公网入口完成运维包、镜像、配置更新、部署和验证：
+先用默认快速列表确认没有正在执行或等待恢复的 Task，然后从私有 `hengshi-jarvis/jarvis-box` GitHub Release 获取同一版本的 release bundle、`SHA256SUMS` 和 `production-image.json`；GitHub Release 下载不可用时使用 `https://download.hengshi.com/jarvis-box/releases/v<version>/` 下的同名 mirror 文件。下载需要 GitHub repository access，mirror 可读性只控制获取制品；运行时 license enforcement 是独立边界。校验制品后，把目标 `production-image.json` 中的 `image_ref` 写入现有 `$home/deployment.env` 的 `JARVIS_IMAGE`，再使用目标 release bundle 内的 `deploy-production.sh`。不要手工判断部署模式后直接执行 Docker 停服命令。
 
 ```bash
-curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
-  | bash -s -- <version> /absolute/deployment-home
-```
-
-```bash
+jarvis-box tasks list
 "$ops" "$home" deploy
 "$ops" "$home" verify
 ```
+
+`deploy` 会在任何 `docker compose down` 或重建前读取 `$home/data/state/runs` 的 Task 生命周期。存在 active、waiting、finalizing、CI-wait 或 recovery-required Task，或无法证明没有这类 Task 时，脚本会先退出并打印阻断 Run。客户明确决定放弃当前运行时才使用 `"$ops" "$home" --force deploy`；force 要求 jarvis-box 容器仍在运行，并要求设置 `JARVIS_DOCKER_UPGRADE_FORCE_STRATEGY`。脚本会把策略和受影响 Run 写入 `$home/data/upgrade-preflight/` 后再停止 Run、继续服务变更。
 
 Docker 部署脚本把容器的持久机器身份记录在 `<deployment-home>/data/runtime-hostname`。首次接管旧部署时，它会在替换容器前保留旧容器的实际 hostname，使依赖 hostname 的加密凭据在升级后仍可读取。不要绕过 `deploy-production.sh` 重建服务，也不要单独删除、复制或编辑该文件；身份与现存容器不一致时，脚本会在 `down` 前拒绝继续。
 
@@ -154,7 +159,7 @@ Docker 部署脚本把容器的持久机器身份记录在 `<deployment-home>/da
 
 Native 备份实际 runtime root 中的 state、workspace、logs、Agent identity/config。路径以安装器输出和运行配置为准，不假设固定历史目录。
 
-Docker 备份 deployment home 和需要保留的 named volumes：
+Docker 备份完整 deployment home；持久数据都位于其中的 bind directories：
 
 - `<deployment-home>/data/agent-home`
 - `<deployment-home>/data/workspaces`
@@ -164,7 +169,7 @@ Docker 备份 deployment home 和需要保留的 named volumes：
 - `<deployment-home>/data/connector-state`（启用 IM 时）
 - `<deployment-home>/data/runtime-hostname`
 
-备份可变数据前先规范停服，或使用客户认可的一致性备份方案。
+备份脚本通过同一个部署入口执行 `compose stop`，因此也会先做 active-task preflight。存在未完成 Task 时先等待、继续或取消；不要绕过脚本直接停容器。
 
 ## 出问题时按这个顺序
 

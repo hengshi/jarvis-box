@@ -20,6 +20,10 @@ Jarvis Box 看到的是统一后的事件：
 provider + connector + conversation + sender + message + attachments
 ```
 
+其中 conversation 和 sender 都保留 provider-native 稳定 ID，并可携带 `channel.name`、`user.name` / `user.display_name` 展示快照。Jarvis Box 把名称写入任务运行上下文供 Status 展示和搜索，但 Target 绑定、ACL、排重与回复路由始终只使用稳定 ID。名称查询失败或旧事件没有名称时，任务仍正常执行，Status 回退到带 provider 前缀的 ID。
+
+飞书/Lark 名称由 `uv-im-connector` 使用应用 OpenAPI 做短时、可失败的缓存查询。企业微信 AI Bot 长连接只返回 `userid` / `chatid`，Bot secret 不能查询企业通讯录或群名；需要名称的部署应在 connector 侧配置显式 ID→名称映射，Jarvis Box 不直接持有企业微信目录凭据。
+
 因此 Jarvis Box 不需要知道企业微信或飞书的原生 token，也不需要为每个 IM provider 实现一套 webhook parser。
 
 ## 配置 Jarvis Box
