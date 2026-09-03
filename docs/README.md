@@ -9,8 +9,9 @@
 - [产品概览](product-overview.md)：jarvis-box 在 Jarvis 生态中的职责
 - [三仓职责与发布关系](../REPOSITORY-MODEL.md)：create-jarvis、公开发行仓库和内网源码仓库的边界
 - [认证](../AUTHENTICATION.md)：Native、Docker Host 导入和 Docker 内直接登录
+- [多实例部署](multi-instance.md)：同一台机器运行多个 Jarvis Box 实例时的隔离规则；Docker 推荐，Native 多实例不推荐
 
-第一次使用不需要阅读完整文档。客户还没有自己的 Jarvis 时，直接让 Host Agent 读取 [create-jarvis](https://github.com/hengshi/create-jarvis)。
+第一次使用不需要阅读完整文档。客户还没有自己的 Jarvis 时，直接让 Host Agent 读取 [create-jarvis](https://github.com/hengshi-jarvis/create-jarvis)。
 
 ## 接入 provider
 
@@ -24,11 +25,14 @@
 ## 按需查询
 
 - [Docker 部署合同](deployment.md)
+- [客户派生 Docker 镜像](custom-docker-image.md)：通过 `apt` 增加编译器、头文件和系统共享库，并保持 digest 固定、非 root 运行与可回滚升级
+- [多实例部署](multi-instance.md)
 - [配置参考](configuration.md)
 - [CLI 参考](cli.md)
 - [Runtime Agent](runtime-agents.md)
 - [Delivery Metrics 历史基线](delivery-metrics.md)：查看进度、恢复中断分析和处理重试
 - [Task/Run 执行模型](execution-model.md)
+- [代码归属与 Git 提交身份](code-attribution.md)：共享 Jarvis 运行时下的代码负责人、commit author 和机器账号边界
 - [持久化与恢复](storage-model.md)
 - [外部资源与清理](task-external-resource-lifecycle.md)
 - [状态 API](status-api.md) 与 [状态页面](status-ui.md)

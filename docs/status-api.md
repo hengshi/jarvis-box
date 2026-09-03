@@ -10,8 +10,14 @@
 - `total` / `counts`：整个 Status task projection 的统计，不受分页 `limit` 影响。
 - 可选 `provider=gitlab|github|jira|feishu-project|im` 在分页前筛选 Task 的规范化来源；`lark`、`wecom`、`dingtalk`、`uvim` 等消息来源归入 `im`。response 的 `provider` 返回实际筛选，未筛选时为 `all`。
 - 分页游标绑定生成它的 Provider 范围；游标不能跨 Provider 重用，避免页间混入其他来源。
+- `metrics.historical_accepted`、`metrics.processing`、`metrics.task_run_trend` 和 `metrics.agent_runtime_duration_ms` 是本机运行指标；`provider` 筛选只改变工作项列表、`total` 和 `counts`，不得改变这些机器级指标。
 - 每个 item 的 `provider` 是 Task subject、run context 或 source URL 的保守规范化投影，不改变外部 Provider 的权威对象。
+- IM item 可返回 `requester_display_name` 和 `conversation_display_name`。它们是入站消息时的可选展示快照，用于 Status 文案、搜索和请求人筛选；缺失时继续使用 provider-scoped sender ID / Task ID，且永远不替代 Target、ACL、排重或回复路由使用的稳定 ID。
 - 每个 item 的 `status_group` 是服务端确定的页面筛选分组，取值为 `doing`、`needs-human`、`failed`、`completed` 或 `all`；Status 页面不得从状态文本重复推断分组。
+- `metrics.task_run_trend` 返回本机最近 180 天按自然日聚合的 Agent Run started 趋势，来源为本机工作台账中的 `kind=started` 追加事件。该趋势是机器级口径，`provider` 筛选只影响 work items，不改变 trend 统计。
+- `metrics.task_run_trend.runtime_duration_ms` 返回本机工作台账中已完成运行记录的耗时合计，来源为 `kind=completed` 事件携带的运行耗时字段。它是本机工作台账可观测口径，不代表机器在线时间，也不等同于当前保留 Task state 的 Agent 执行时长。
+- `metrics.agent_runtime_duration_ms` 返回当前保留 Task state 中可见的 Agent 执行时长累计值，优先使用 `agent_metrics.total_agent_duration_ms`，缺失时从 process segments 的 duration 字段兜底。它是 `retained-task-state` 口径，不包含已经清理掉的历史 Task。
+- `task_run_trend.status` 取值为 `ready`、`empty`、`stale` 或 `unavailable`。Ledger 暂时不可读时，接口保留 work-items HTTP 200：有旧 rollup 返回 `stale`，无旧 rollup 返回 `unavailable`，并在 trend warnings 中说明原因。
 
 分组时 lifecycle 事实优先于 feed kind：`waiting`、`stopped` 和 `needs-attention` 进入 `needs-human`，失败终态进入 `failed`，`completed` 和 `cancelled` 进入 `completed`；`progress_checkpoint` 等 kind 不得把这些状态重新归入 `doing`。历史持久化状态 `failed-terminal` 和 `retry-exhausted` 在读取时兼容投影为 `needs-attention`，仍按失败终态分组，不会被旧的 `monitor_status=active` 覆盖。
 
@@ -35,13 +41,13 @@ Run 从被 claim 到 Agent 进程真正启动之间，Task detail 公开准备�
 
 ## GitLab / GitHub Provider-native Delivery Metrics 读模型
 
-完整的查看、恢复和排障步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。Delivery Metrics 是 Status 服务维护的持久化读模型，不是 Task；`jarvis-box tasks list` 不会列出它。
+完整的查看、恢复和排障步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。Delivery Metrics 的分析执行是普通 `delivery-metrics` lane Task；Status API 是读取 Task 结果后形成的持久化读模型。
 
-`GET /status/api/value?provider=gitlab|github` 从所选 Provider 的已配置仓库生成 typed、只读的交付指标快照；缺省 Provider 为 `gitlab`。顶层 `configured` 表示该 Provider 是否配置了统计仓库。GitLab 与 GitHub 分别维护 snapshot、queue、evidence 和刷新状态，API 不返回跨 Provider 合计。
+`GET /status/api/value?provider=gitlab|github` 从所选 Provider 的已配置仓库生成 typed、只读的交付指标快照；缺省 Provider 为 `gitlab`。顶层 `configured` 表示该 Provider 是否配置了统计仓库。GitLab 与 GitHub 分别维护 snapshot、evidence 和刷新状态，API 不返回跨 Provider 合计。
 
-普通 GET 会读取持久化 snapshot、待分析队列和 cursor，并为未完成基线安排后台批次。追加 `refresh=1` 会跳过该 Provider 的 15 分钟 fresh TTL；已有刷新时，请求会加入同一轮刷新。fresh hit 仍会验证对应 CLI 的 authenticated principal，登录主体变化会使前一主体的 snapshot 和队列失效。
+普通 GET 会复用该 Provider 的 15 分钟 fresh snapshot；fresh hit 仍会验证对应 CLI 的 authenticated principal，登录主体变化会使前一主体的 snapshot 失效。`delivery-metrics` Task 的完成或 Continue 事件会让 fresh snapshot 在下一次普通 GET 时重新刷新，读取现有 Task 结果并按节奏启动下一个 pending Task；Cancel 事件也会触发刷新，但 cancelled Task 的结果不会进入统计，仍 pending 的 MR/PR 可启动替代 Task。追加 `refresh=1` 会手动跳过 TTL；已有刷新时，请求会加入同一轮刷新。
 
-服务把派生状态写入 `JARVIS_STATE_DIR/status-value`。每批最多消费 5 个待分析 MR/PR，正常批次间隔 10 秒；429、5xx、timeout 和 Runtime Agent 失败会保留 pending 项并退避重试。MR/PR 的 SHA 或 `updated_at` 变化会产生新的证据键。Provider host、仓库集合、schema、判断合同或判断策略变化时，服务不会复用不兼容的 snapshot。
+服务把派生状态写入 `JARVIS_STATE_DIR/status-value`，但分析过程只通过 Task 存在。Status 每次 Provider 刷新最多启动一个新的 `delivery-metrics` Task；没有全局 FIFO queue、私有分析状态或后台 cursor。MR/PR 的 SHA 或 `updated_at` 变化会产生新的证据键。Provider host、仓库集合、schema 或 Delivery Metrics 合同变化时，服务不会复用不兼容的 snapshot。
 
 历史累计窗口从当前 `glab` 或 `gh` 登录账号的 `created_at` 开始，到本轮采集固定的 `generated_at` 为止。actor 直接读取对应 provider 的 authenticated-user endpoint，不需要独立账号环境变量，也不假设账号名是 `jarvis`。GitLab 优先使用带 `mergedAfter` / `mergedBefore` 的 GraphQL count fast path，并对 actor MR 取有界近期明细；不支持时才回退到稳定的 `merged_at` REST 排序分页。GitHub 使用 `UPDATED_AT DESC` GraphQL cursor 分页；两个 collector 都执行双边时间校验。按仓库返回：
 
@@ -52,31 +58,32 @@ Run 从被 claim 到 Agent 进程真正启动之间，Task detail 公开准备�
 
 Provider merge 是 provider-native 工程交付 proxy，不代表终端客户业务验收。登录账号 change request 只按 author 识别，不涵盖该账号在其他作者 MR/PR 中的贡献；Jira、飞书项目、跨来源关联、聚合和去重均不在此 response 中。
 
+同一 snapshot 仍可能返回 `runtime_token_usage` 兼容字段，但 Status 页面暂不展示运行 Agent token KPI。该字段来自普通 Task store 已计算的 `agent_metrics.process_segments`，按 runtime agent 再按 model 汇总 `session_count`、`input_tokens`、`output_tokens`、`cached_tokens`、`reasoning_tokens` 和 `total_tokens`。没有 token metadata 的 Run 不会让接口失败；`status=not_available|partial|known` 以及整体、agent 级和 model 级 `unknown_session_count` 表示可用程度。它的 `window` 固定标为 `retained-task-state`，代表当前保留 Task 记录内的运行用量，不等同于 Provider merge 历史累计窗口。接口不返回价格、预算、费用预测或 raw native session 内容。
+
 后端从以下 classification 派生两个面向人的代码质量问题；Status UI 直接消费 typed count/rate：
 
 - `unchanged`：change request 创建后未发现 source revision；
-- `self-revised`：发生过 revision，但当前策略未判断为公开人类反馈促成；
-- `human-corrected`：当前策略判断公开人类反馈促成了后续 revision；
-- `judgment-unknown`：Provider evidence 完整，但 Runtime Agent 无法判断；
-- `evidence-unknown`：Provider 时间线或参与者身份采集不完整；
-- `pending`：历史基线尚待后台分析，不是最终分类。
+- `self-revised`：发生过 revision，但 Agent 未判断为人类指正原 MR/PR 错误后促成；
+- `human-corrected`：非 author、非 jarvis 的人类指正原 MR/PR 错误，并促成后续 source revision；
+- `judgment-unknown`：Delivery Metrics Task 无法按合同判断；
+- `evidence-unknown`：Provider MR/PR 明细不完整；
+- `pending`：历史基线尚待对应 lane Task 产出有效结果，不是最终分类。
 
 `未发现人工纠正 = unchanged + self_revised`，`发现人工纠正 = human_corrected`。两者共享 `correction_known = unchanged + self_revised + human_corrected` 分母。`judgment_unknown`、`evidence_unknown` 和 `evidence_pending` 不进入比例分母。
 
-首次建立历史基线时，merged counts 先显示，尚未分析的记录进入 `evidence_pending`。pending 归零前，聚合质量比例为 `null`。后台持续小批量补齐并复用落盘结果。
+首次建立历史基线时，merged counts 先显示，尚未分析的记录进入 `evidence_pending`。pending 归零前，聚合质量比例为 `null`。后续普通 Provider 刷新或 `refresh=1` 会继续按节奏启动 pending 项对应的 `delivery-metrics` Task，并复用已落盘的有效结果。
 
 ### 分析进度
 
 快照存在或历史发现正在进行时，顶层 `analysis_progress` 返回：
 
-- `phase`：`discovering_history`、`scheduled`、`collecting_evidence`、`judging`、`persisting`、`retry_wait` 或 `complete`；
-- `agent`：当前 value-judge 使用的 Runtime Agent；
+- `phase`：`discovering_history`、`task-running` 或 `complete`；
+- `lane`：固定为 `delivery-metrics`；
 - `analyzed`、`pending`、`total`：历史基线数量；
-- `current_batch`：当前批次的 Provider、仓库和 MR/PR number；
-- `started_at`、`updated_at`、`next_attempt_at`：分析与重试时间；
-- `last_error_code`：`judge_timeout`、`judge_failed`、`persistence_failed` 或 `evidence_retry`。
+- `current_batch`：当前已发现但还没有有效 Task 结果的 Provider、仓库和 MR/PR number；
+- `started_at`、`updated_at`：分析时间。
 
-`current_batch` 和错误码是用户安全的 typed 状态。API 不返回 Agent 命令、stderr、Provider 正文或 state 路径。
+`current_batch` 是用户安全的 typed 状态。API 不返回 Agent 命令、stderr、Provider 正文或 state 路径。
 
 ### Response 状态
 
@@ -99,7 +106,7 @@ Provider merge 是 provider-native 工程交付 proxy，不代表终端客户业
   "analysis_progress": {
     "provider": "gitlab",
     "phase": "complete",
-    "agent": "codex",
+    "lane": "delivery-metrics",
     "analyzed": 20,
     "pending": 0,
     "total": 20,
@@ -108,13 +115,37 @@ Provider merge 是 provider-native 工程交付 proxy，不代表终端客户业
     "updated_at": "2026-08-11T14:03:20Z"
   },
   "snapshot": {
-    "schema_version": 6,
+    "schema_version": 8,
     "generated_at": "2026-08-11T14:00:00Z",
     "baseline_updated_at": "2026-08-11T14:03:20Z",
     "observed_from": "2026-06-09T07:34:53Z",
     "actor": {"username": "customer-agent", "name": "Customer Agent", "created_at": "2026-06-09T07:34:53Z"},
     "source": {"provider": "gitlab", "host": "gitlab.example.com"},
-    "judgment": {"mode": "runtime-agent", "agent": "codex", "policy_digest": "sha256:..."},
+    "delivery_metrics": {"mode": "lane-task", "lane": "delivery-metrics", "contract_version": "jarvis-box-delivery-metrics/v1", "enabled": true},
+    "runtime_token_usage": {
+      "status": "known",
+      "window": "retained-task-state",
+      "generated_at": "2026-08-11T14:00:00Z",
+      "session_count": 2,
+      "unknown_session_count": 0,
+      "total": {"input_tokens": 1300, "output_tokens": 250, "cached_tokens": 20, "reasoning_tokens": 0, "total_tokens": 1550},
+      "agents": [
+        {
+          "agent": "codex",
+          "session_count": 2,
+          "unknown_session_count": 0,
+          "total": {"input_tokens": 1300, "output_tokens": 250, "cached_tokens": 20, "reasoning_tokens": 0, "total_tokens": 1550},
+          "models": [
+            {
+              "model": "gpt-5",
+              "session_count": 2,
+              "unknown_session_count": 0,
+              "total": {"input_tokens": 1300, "output_tokens": 250, "cached_tokens": 20, "reasoning_tokens": 0, "total_tokens": 1550}
+            }
+          ]
+        }
+      ]
+    },
     "repository_coverage": {"configured": 2, "succeeded": 2, "partial": 0, "failed": 0},
     "totals": {
       "merged_change_requests": 100,
@@ -272,6 +303,50 @@ Status Artifact endpoint 只解析经过授权的 safe ref。它拒绝 `payload.
 系统操作 UI 必须把这些 endpoint 解释成用户任务，而不是原样暴露 API 名称。默认 Agent 和 scope response 的成功只证明未来路由配置已保存，不代表 active Run 已切换；ChatBridge reset 的成功要继续以重新读取的 running/provider connected 状态为证据；operator prompt 的 `result.task_id` / `result.run_id` 是进入 Status 工作项跟踪的凭据；clean response 的 `status=dry-run|cleaned|deferred|error` 必须被汇总并保留逐项原因。
 
 `GET|HEAD /server` 使用 permanent redirect 转到 `/status`。旧的人类 `/server/api/*` endpoint 不做 POST redirect；`POST /server/api/tasks/start` 是 loopback-only prompt admission，scheduled authority 只由 internal route 与当前 lane allowlist 推导。
+
+### Runtime Agent 模型资源与额度
+
+`GET /status/api/system/agents` 在既有 Agent inventory 和 scope 配置之外，为每个 `agents[]` 返回可选 `resource`，并为每个 `scopes[]` 返回可选 `target`。这些字段描述实际计费主体，不把 Agent 名称当作模型或账户：
+
+```json
+{
+  "name": "claude",
+  "available": true,
+  "resource": {
+    "status": "unavailable",
+    "provider": "deepseek",
+    "provider_host": "api.deepseek.com",
+    "model": "deepseek-v4-pro[1m]",
+    "account_type": "api-wallet",
+    "account_ref": "acct_1a2b3c4d5e6f",
+    "source": "deepseek-balance-api",
+    "checked_at": "2026-08-26T12:00:00Z",
+    "quota": {
+      "kind": "wallet",
+      "available": false,
+      "balances": [
+        {
+          "currency": "CNY",
+          "total_balance": "-1.05",
+          "granted_balance": "0.00",
+          "topped_up_balance": "-1.05"
+        }
+      ]
+    }
+  }
+}
+```
+
+- `resource.status=ready|unavailable|unsupported|error` 分别表示额度可用、计费账户不可用、计费方没有安全公开的自动读取接口、读取失败；它不替代 Agent 自身的 `available`。
+- `provider` 和 `model` 来自 canonical runtime env、实际 base URL、Agent 模型变量、Codex prefix args 和持久 Agent HOME 中的本机配置。Codex 会按实际优先级合并 `config.toml`、`$CODEX_HOME/<profile>.config.toml` 与 `-c/--config`、`-m/--model`，并解析 `model_provider`、`model_providers.<id>.base_url`、`env_key` 和内置 OpenAI provider 的 `openai_base_url`；每个 scope 都使用自己的 prefix args 独立求值，所以 `scopes[].target` 的 provider、model 和 account 都可能与默认 Agent 不同。
+- `account_ref` 是当前有效高熵 credential 的短哈希引用，只用于判断多个 Agent 是否共享计费账户；response 不返回 credential、邮箱、组织名或原始账户对象。
+- `quota.kind=wallet` 返回 Provider 声明的余额和可用性；`quota.kind=rolling-window` 返回命名额度池的主/次窗口、已用比例、窗口长度和重置时间，并可返回完整重置机会。余额保留 Provider 的十进制定点字符串，不转换为浮点数。
+- `source=codex-app-server` 使用本机 Codex 账户接口读取 ChatGPT 套餐和滚动窗口；`source=deepseek-balance-api` 只在有效模型路由的 host 恰好是 `api.deepseek.com` 时，将该 Agent 实际使用的 credential 发送到固定的 DeepSeek 官方余额 endpoint。服务不向自定义 base URL 回传 credential，避免配置 URL 形成 SSRF/credential exfiltration。
+- 同一 Provider 和 `account_ref` 的实时查询在一次 request 内去重。普通 GET 复用 60 秒 snapshot，避免浏览器重连和系统事件反复查询计费方；`refresh=1` 跳过 snapshot，供“重新检查”使用。每类上游查询最多等待 5 秒；失败只投影到对应 `resource`，不让 Agent inventory 整体失败，也不发起模型推理。
+- Anthropic、OpenAI API、GitHub Copilot、Google AI / Vertex AI 和自定义网关当前只做 provider/model 解析；没有适用的安全公开账户额度接口时返回 `unsupported / provider-quota-api-unavailable`，而不是猜测余额。
+- Codex 的 profile 缺失、配置无法解析或 `model_provider` 没有对应定义时返回 `unsupported / provider-route-unresolved`；此时 provider 为 `unknown`，不会回退到 ChatGPT/OpenAI 账户探测。命令型 `model_providers.<id>.auth` 不由 Status 执行，避免额度页面触发外部认证命令。
+
+`resource.reason` 是 credential-safe 的稳定 code。Status UI 必须翻译成人类文案，不得把 `rolling-window`、`api-wallet`、probe source 或错误 code 原样直出。
 
 服务重启会恢复服务能力、RuntimeAgentRouter cooldown timer，并自动重放已经持久化的 terminalization intent；它不会自动 Continue、重新启动 agent，或把失联 Run 当成成功。执行态恢复仍由用户选择 Continue/Cancel。
 

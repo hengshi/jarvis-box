@@ -2,12 +2,14 @@
 
 ## 前置条件
 
-- 已下载并校验 public release bundle；
+- 已从私有 `hengshi-jarvis/jarvis-box` GitHub Release 下载并校验 release bundle；GitHub Release 不可用时可从公开 S3 mirror `https://download.hengshi.com/jarvis-box` 下载同名文件，但仍必须使用同一份 `SHA256SUMS` 校验；
 - `JARVIS_IMAGE` 固定到 OCI digest；
 - 客户批准正式 Agent/provider 权限和可选 Docker socket；
 - 若需要客户 Jarvis，Jarvis repo 已交付可执行 Runtime Foundation。
 
 Jarvis 构建由 Host Runtime Agent + create-jarvis 完成，不依赖 jarvis-box。
+
+基础镜像无法满足客户代码仓库的系统编译依赖时，使用[客户派生 Docker 镜像](custom-docker-image.md)。派生镜像必须以当前 release 的正式 digest 为基础、推送到客户私有 registry，并把派生镜像 digest 写入 `JARVIS_IMAGE`；不要在运行中的容器里执行 `apt install`。
 
 ## Deployment home
 
@@ -20,6 +22,7 @@ Jarvis 构建由 Host Runtime Agent + create-jarvis 完成，不依赖 jarvis-bo
 ```
 
 这里不保存或挂载 Jarvis repo，不存在 `jarvis-context.json`、`deployment-lock.json` 或替代 manifest。
+同一宿主机部署多个 Jarvis Box 时推荐使用 Docker。每个实例必须使用独立 deployment home、Compose project name、端口和 provider webhook URL。不要共享 `data/`、`auth/` 或 runtime env file。操作细则见 [多实例部署](multi-instance.md)。
 
 ## Start and identity
 
@@ -34,7 +37,7 @@ scripts/deploy-production.sh /absolute/deployment-home shell
 
 宿主机已有多个 GitHub 账号时，在 `deployment.env` 设置 `JARVIS_GITHUB_USER` 明确选择 machine user。无法导出的系统 Keychain 身份可在宿主机交互终端执行一次 `auth-import`；无交互环境使用 `JARVIS_GITHUB_TOKEN`、`JARVIS_GITLAB_TOKEN`、`JARVIS_CODEX_API_KEY` 或 `JARVIS_ANTHROPIC_API_KEY`。这些变量只供导入命令读取，不写入 `runtime.env`。
 
-**Path B：只在容器 Agent HOME 中登录。** 在 `deployment.env` 设置 `JARVIS_AUTH_IMPORT=skip`，启动后进入持久 Agent HOME 完成需要的 `gh auth login`、`glab auth login`、`codex login` 或 `claude` 登录，再重建服务并执行 `verify`。容器重建不会清除该身份；删除 Agent HOME volume 才会清除。
+**Path B：只在容器 Agent HOME 中登录。** 在 `deployment.env` 设置 `JARVIS_AUTH_IMPORT=skip`，启动后进入持久 Agent HOME 完成需要的 `gh auth login`、`glab auth login`、`codex login` 或 `claude` 登录，再重建服务并执行 `verify`。容器重建不会清除该身份；删除 deployment home 下的 `data/agent-home` 才会清除。
 
 ```bash
 scripts/deploy-production.sh /absolute/deployment-home start
@@ -101,6 +104,8 @@ Native 部署不要求客户另行下载或维护 connector。release archive �
 jarvis-box 升级只替换 digest-pinned image 并重跑 generic verify；持久 volumes 保留。Jarvis 更新由其 remote → cache → sync → discovery roots 处理，不要求改变 image。回滚 image 与回滚 Jarvis revision 是两个独立操作。
 
 Native 与 Docker 是并列部署面；迁移时不得让两套服务同时消费同一 provider identity 或 webhook。
+
+Docker 升级、`start` 和会停止或重建服务的 `compose` 子命令会先读取同一 deployment home 的 Task state。存在 active、waiting、finalizing、CI-wait 或 recovery-required Task 时，脚本会在 `docker compose down`、`stop` 或 `up --force-recreate` 前退出并打印阻断 Run。只有客户明确决定放弃当前运行时，才使用 `--force`；force 要求当前 jarvis-box 容器仍在运行，并要求 `JARVIS_DOCKER_UPGRADE_FORCE_STRATEGY` 记录取消/恢复策略。脚本会先把策略和受影响 Run 写入 `<deployment-home>/data/upgrade-preflight/`，再在容器 PID namespace 内停止受影响 Run。无法枚举 Task state、缺少 force 策略或运行容器不可达时默认 fail closed。
 
 ## Docker 非 root 部署契约
 

@@ -15,7 +15,7 @@
 没有 Company Jarvis 时，从 create-jarvis 最新代码开始：
 
 ```text
-https://github.com/hengshi/create-jarvis
+https://github.com/hengshi-jarvis/create-jarvis
 ```
 
 ## 2. 选择部署模式
@@ -25,20 +25,30 @@ https://github.com/hengshi/create-jarvis
 | 适合 | 单机、最少配置、复用当前用户 | 容器隔离、独立持久化、标准化迁移 |
 | runtime owner | 发起安装的现有 OS 用户 | 容器内持久 runtime identity |
 | 认证 | 当前用户已有的原生认证 | 导入可移植 Host 身份，或直接在容器内登录 |
-| Jarvis Box state | 安装器报告的实际 runtime root | 独立 named volume |
+| Jarvis Box state | 安装器报告的实际 runtime root | deployment home 下的 `data/` 持久目录 |
 | Runtime Foundation scheduler | Host 直接执行 inner job | Host 经 `runtime-job` 执行容器内 inner job |
 
 不要创建默认 `jarvis` 用户，不要复制或挂载整个 Host HOME，不要把 Token 写入 Company Jarvis 仓库、Construction Workspace 或镜像。
 
 部署模式是正式部署选择，不是 scheduler failover。首次部署后只允许同模式升级；从 Native 迁移到 Docker 或反向迁移必须作为单独的停服、备份、验证和回滚项目处理，安装器不会自动完成。
 
+同一台机器运行多个 Jarvis Box 实例时，推荐使用 Docker。每个 Docker 实例必须有独立的 deployment home、端口、runtime env file、state、workspace 和 credential 边界。Native 多实例不推荐；即使 runtime env 已选中，service lifecycle 仍需要单独证明 systemd unit 或 launchd label。完整规则见 [多实例部署](docs/multi-instance.md)。
+
 ## 3. 下载并校验 release
 
-从 [GitHub Releases](https://github.com/hengshi/jarvis-box/releases/latest) 下载同一版本的：
+向 HENGSHI 申请 `hengshi-jarvis/jarvis-box` 私有 GitHub repository access 后，从该私有仓库的目标 GitHub Release 下载同一版本的：
 
 - 当前平台 release bundle；
 - `SHA256SUMS`；
 - `production-image.json`。
+
+如果 GitHub Release 下载不可用，可从公开 S3 fallback mirror 下载同名文件：
+
+```text
+https://download.hengshi.com/jarvis-box/releases/v<version>/
+```
+
+两条路径都以 `SHA256SUMS` 校验为准；mirror 可读性不替代运行时 license enforcement。
 
 Linux：
 
@@ -56,7 +66,7 @@ grep -E "  (${artifact}|production-image.json)$" SHA256SUMS | shasum -a 256 -c -
 tar -xzf "$artifact"
 ```
 
-Docker 客户不需要手工解析 `production-image.json` 或校验 checksum；公开加载脚本会自动完成这些步骤。
+Docker 客户需要具备私有 GHCR pull access。`production-image.json` 将 release 绑定到 digest-pinned image；operator 把其中的 `image_ref` 写入 `deployment.env` 的 `JARVIS_IMAGE`，部署脚本据此拉取私有镜像。
 
 ## 4. Native 上线
 
@@ -88,14 +98,32 @@ jarvis-box status
 
 ## 5. Docker 上线
 
-### 5.1 一键安装或升级
+### 5.1 安装或升级
+
+从私有 GitHub Release 下载并校验 release bundle、`SHA256SUMS` 和 `production-image.json`。首次部署先创建当前用户拥有的私有 deployment home，再从 bundle 复制配置样例：
 
 ```bash
-curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
-  | bash -s -- <version> /absolute/deployment-home
+release_dir=/absolute/path/to/extracted-release
+deployment_home=/absolute/deployment-home
+ops="$release_dir/scripts/deploy-production.sh"
+
+install -d -m 0700 "$deployment_home"
+install -m 0600 "$release_dir/deploy/production/deployment.env.example" "$deployment_home/deployment.env"
+install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deployment_home/runtime.env"
+# 仅启用 IM connector 时复制并填写：
+# install -m 0600 "$release_dir/deploy/production/connector.env.example" "$deployment_home/connector.env"
 ```
 
-脚本自动识别系统和 amd64/arm64，下载并校验该版本运维包和镜像。已有 deployment home 时，它会拒绝 active Task、保留客户配置、更新 `JARVIS_IMAGE`、重建服务并执行验证；全新目录首次运行只生成三个私有配置文件，填写后再次执行同一命令即可上线。不要手工下载 checksum，也不需要登录任何镜像仓库。底层 `docker-load.sh` 只用于仅加载镜像的特殊场景。
+在 `deployment.env` 中把 `JARVIS_DEPLOYMENT_HOME` 改为上面的绝对路径，把 `JARVIS_IMAGE` 改为已校验 `production-image.json` 中的 `image_ref`，并设置当前实例唯一的 `JARVIS_DEPLOYMENT_NAME`、端口和认证选择。在 `runtime.env` 中填写所需 Agent、provider、allowlist 和 verification secret；首次保持 read-only。配置完成后执行：
+
+```bash
+"$ops" "$deployment_home" deploy
+"$ops" "$deployment_home" verify
+```
+
+升级时保留原 deployment home，从新版本 `production-image.json` 读取 `image_ref` 并手工更新现有 `deployment.env` 的 `JARVIS_IMAGE`，然后使用新 bundle 的同一部署命令。脚本会在停服或重建前拒绝 active、waiting、finalizing、CI-wait 或 recovery-required Task，并保留客户配置和 `data/` 持久目录。
+
+客户代码仓库需要基础镜像未包含的编译器、头文件或系统共享库时，先按[客户派生 Docker 镜像](docs/custom-docker-image.md)从当前 release 的正式 digest 构建并推送客户镜像，再把派生镜像 digest 写入 `JARVIS_IMAGE`。不要在运行中的容器里执行 `apt install`。
 
 选择客户控制的私有绝对路径：
 
@@ -104,10 +132,12 @@ curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
 ├── deployment.env
 ├── runtime.env
 ├── auth/              # 仅 Host 身份导入路径使用，目录 0700、文件 0600
+├── data/              # Agent HOME、state、workspace、cache、logs 等持久目录
 └── connector.env      # 仅启用 IM connector 时存在
 ```
 
-`deployment.env` 保存已加载的本地 release tag、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 必须位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外，不保存 Host HOME dump 或临时 context。
+`deployment.env` 保存 digest-pinned 私有镜像引用、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 必须位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外，不保存 Host HOME dump 或临时 context。
+同机多个 Docker 实例必须使用不同的 `JARVIS_DEPLOYMENT_HOME`、`JARVIS_DEPLOYMENT_NAME`、`JARVIS_PORT` 和 provider webhook URL，不共享 `auth/` 或 `data/`。
 
 首次 onboarding 在 `runtime.env` 保持：
 
@@ -276,18 +306,28 @@ jarvis-box status
 
 ### Docker
 
-确认没有 active Task 后执行同一个安装命令：
+执行同一个安装命令；不要直接运行 `docker compose down`、`stop` 或 `up --force-recreate`：
 
 ```bash
-curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
-  | bash -s -- <version> /absolute/deployment-home
+"$ops" "$home" deploy
+"$ops" "$home" verify
 ```
 
-安装器自动下载运维包和镜像、保留 deployment config、更新 `JARVIS_IMAGE`、重建服务并验证。最后重跑一条真实业务链路。发现 active Task、状态 API 不可用或配置属于其他 deployment home 时，安装器会拒绝升级。
+先把目标版本 `production-image.json` 中的 `image_ref` 写入现有 `deployment.env` 的 `JARVIS_IMAGE`，再使用目标版本 bundle 的部署脚本。脚本会保留 deployment config 和 `data/`、拉取该镜像、重建服务并验证；最后重跑一条真实业务链路。发现 active、waiting、finalizing、CI-wait 或 recovery-required Task，无法读取 Task state，或配置属于其他 deployment home 时，部署脚本会在任何停服/重建前拒绝升级并打印阻断 Run。
+
+只有客户明确决定放弃当前运行时，才使用：
+
+```bash
+"$ops" "$home" --force deploy
+```
+
+force 要求 jarvis-box 容器仍在运行，并要求设置 `JARVIS_DOCKER_UPGRADE_FORCE_STRATEGY` 记录客户认可的取消/恢复策略。脚本会把策略和受影响 Run 写入 `<deployment-home>/data/upgrade-preflight/` 后再停止 Run、继续服务变更。若容器不可用，先按 Task 的 Continue/Cancel/恢复路径处理，不要用 Docker shutdown 代替 Task 决策。
 
 Docker 同模式升级必须保留完整 deployment home。部署脚本在重建前解析并固定 `data/runtime-hostname`，确保依赖容器机器身份的加密 provider profile 可继续解密；身份缺失、非法或与现存容器冲突时不会执行替换。
 
-回滚时一键加载目标旧版本、恢复对应 release tag，并执行同样的部署、验证和真实链路检查。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
+部署脚本在容器重建后自动更新 Jarvis 管理的官方工具；失败时保留上一套可用工具并让部署失败，修复网络或上游问题后重跑同一个部署命令。可在容器内使用 `jarvis-box tools status` 查看状态、`jarvis-box tools update` 手工重试、`jarvis-box tools reset` 回到镜像基线。客户自装的独立用户级工具放在 `/home/jarvis/.local/bin`，不要覆盖 Jarvis 管理的官方同名命令；该目录属于持久化 deployment home，升级和容器重建后仍保留。需要 `apt` 管理的编译器、头文件或系统共享库通过[客户派生 Docker 镜像](docs/custom-docker-image.md)提供。
+
+回滚时下载并校验目标旧版本的私有 release bundle 和 image metadata、恢复对应 release tag，并执行同样的部署、验证和真实链路检查。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
 
 ## 10. 备份
 
@@ -307,7 +347,7 @@ Docker 备份完整 deployment home；其中的持久数据目录包括：
 
 ## 11. 故障诊断
 
-Delivery Metrics 不属于 Task，也不会出现在 `jarvis-box tasks list`。历史基线的进度、恢复入口和重试错误码见 [Delivery Metrics 历史基线操作手册](docs/delivery-metrics.md)。
+Delivery Metrics 历史基线分析使用普通 `delivery-metrics` lane Task。正在执行或等待恢复时会出现在默认 `jarvis-box tasks list`；历史排查使用 `jarvis-box tasks list --all --lane delivery-metrics`。进度、恢复入口和重试错误码见 [Delivery Metrics 历史基线操作手册](docs/delivery-metrics.md)。
 
 | 现象 | 先看哪里 |
 | --- | --- |

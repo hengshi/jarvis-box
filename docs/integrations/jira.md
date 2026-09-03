@@ -22,7 +22,7 @@ JIRA_PROJECTS=APP,OPS
 JIRA_ISSUE_TYPES=Bug,故障
 JIRA_WEBHOOK_SECRET=<shared-secret>
 JIRA_CMD=jira
-JIRA_COMMENT_ARGS=issue,comment,add,{key},--body-file,{body_file}
+JIRA_COMMENT_ARGS=issue,comment,add,{key},--template,{body_file},--no-input
 JARVIS_JIRA_COMMAND_ALLOWED_USERS=alice,bob
 
 # JSON 为 provider -> source scope -> repository[]。一个 work item 可同时关联 GitLab 和 GitHub。
@@ -58,7 +58,7 @@ Atlassian 风格请求也可以使用 `X-Atlassian-Webhook-Token`。
 Jarvis Box 通过可配置 CLI 写回 Jira 评论。默认参数：
 
 ```text
-jira issue comment add {key} --body-file {body_file}
+jira issue comment add {key} --template {body_file} --no-input
 ```
 
 可用占位符：

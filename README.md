@@ -9,12 +9,14 @@ Jarvis Box 是 Jarvis 的任务执行运行时。它接收 GitHub、GitLab、IM�
 还没有 Company Jarvis 时，让一个已经授权的 Host Agent 从 create-jarvis 最新代码开始：
 
 ```text
-请用 git clone https://github.com/hengshi/create-jarvis 获取最新代码，记录 commit 和提交信息，读取其中的 SKILL.md，然后帮我构建一套 Jarvis。
+请用 git clone https://github.com/hengshi-jarvis/create-jarvis 获取最新代码，记录 commit 和提交信息，读取其中的 SKILL.md，然后帮我构建一套 Jarvis。
 ```
 
 Host Agent 会引导你完成资料范围确认、Company Jarvis 构建、Runtime Foundation 安装和 Jarvis Box 正式部署。你只需要在部署阶段选择 Native 或 Docker，不需要自己编写 scheduler 或定时认知工作脚本。
 
-已经拥有 Company Jarvis 时，从 [GitHub Releases](https://github.com/hengshi/jarvis-box/releases/latest) 下载同一版本的 release bundle 和 `SHA256SUMS`，校验后再安装。
+已经拥有 Company Jarvis 时，向 HENGSHI 申请 `hengshi-jarvis/jarvis-box` 私有 GitHub repository access。正式 release bundle、`SHA256SUMS`、`production-image.json` 和私有 GHCR image 以该私有仓库的 GitHub Release 为规范来源；`https://download.hengshi.com/jarvis-box` 仅作为公开 S3 fallback mirror，提供同名 release 文件和 `latest.json` 元数据。公开仓库只保留产品说明、客户文档和 issue 入口，不提交二进制 artifact。
+
+GitHub seat/repository access 只控制 release 制品下载权限，不等同于客户运行时 license enforcement。License 是否允许启动和使用 Jarvis Box 是部署后的独立产品边界。
 
 ## 选 Native 还是 Docker
 
@@ -27,49 +29,12 @@ Host Agent 会引导你完成资料范围确认、Company Jarvis 构建、Runtim
 
 部署模式在首次正式部署时确定，之后只做同模式升级。Jarvis Box 不会在 Native 与 Docker 之间自动切换；发现另一模式的 scheduler 或配置残留时应停止并按正式迁移方案处理。
 
-## Native 安装
+## 获取 Release
 
-先以准备运行 Jarvis Box 的当前 OS 用户完成所需认证，例如 `gh`、`glab`、Codex 或 Claude。然后执行：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/hengshi/jarvis-box/main/install.sh -o /tmp/install-jarvis-box.sh
-sudo bash /tmp/install-jarvis-box.sh
-
-jarvis-box doctor
-jarvis-box agent smoke
-jarvis-box status
-```
-
-安装器即使通过 `sudo` 启动，也会把服务安装为发起安装的现有 OS 用户，复用该用户的 HOME 和认证。它不会创建 `jarvis` 或 `jarvis-box` 服务用户。
-
-## Docker 安装
-
-已有 deployment home 时，一条命令下载运维包和镜像、保留配置、升级并验证；脚本会自动识别系统和 amd64/arm64：
-
-```bash
-curl -fsSL https://download.hengshi.com/jarvis-box/docker-install.sh \
-  | bash -s -- <version> /absolute/deployment-home
-```
-
-全新 deployment home 首次运行会生成三个私有配置文件；填写后再次执行同一命令即可上线。客户不需要登录镜像仓库、下载第二份发布包、手工修改 `JARVIS_IMAGE` 或处理 checksum。只需要单独加载镜像时，才使用底层 `docker-load.sh`。
-
-配置一键安装器生成的私有 dedicated deployment home，并选择一种认证路径：
-
-- 路径 A：从当前 Host 用户导入受支持的可移植身份；
-- 路径 B：Host 不保存身份，启动后直接在持久容器 Agent HOME 中登录。
-
-```bash
-release_dir=/absolute/path/to/extracted-release
-deployment_home=/absolute/path/to/deployment-home
-ops="$release_dir/scripts/deploy-production.sh"
-
-"$ops" "$deployment_home" start
-"$ops" "$deployment_home" verify
-```
-
-路径 B 在 `deployment.env` 设置 `JARVIS_AUTH_IMPORT=skip`，首次 `start` 后执行 `"$ops" "$deployment_home" shell` 完成原生登录，再执行 `verify`。不要挂载 Host HOME，也不要把 provider execution token 或 Agent credential 写入 `runtime.env`。
-
-完整配置和认证步骤见[客户部署与运维指南](CUSTOMER-OPERATIONS.md)与[认证指南](AUTHENTICATION.md)。
+1. 确认当前 GitHub 账号可以访问 `hengshi-jarvis/jarvis-box`。
+2. 从该私有仓库的目标 GitHub Release 下载当前平台 release bundle、`SHA256SUMS` 和 `production-image.json`；GitHub Release 下载不可用时，从 `https://download.hengshi.com/jarvis-box/releases/v<version>/` 下载同名 mirror 文件。
+3. 按 [客户部署与运维指南](CUSTOMER-OPERATIONS.md) 校验 checksum，并使用 bundle 内的 `install.sh` 或 `scripts/deploy-production.sh` 完成部署。
+4. Docker 模式使用 `production-image.json` 中的私有 GHCR digest；运行部署脚本的账号或主机需要具备相应 GHCR pull access。
 
 ## 上线完成标准
 
@@ -90,19 +55,15 @@ GitHub / GitLab / IM / Jira ingress
 ## 常用入口
 
 - [完整使用文档](docs/README.md)：Provider 接入、配置、执行模型、状态和清理合同
+- [客户派生 Docker 镜像](docs/custom-docker-image.md)：通过 `apt` 增加客户代码仓库需要的编译器、头文件和系统共享库
 - [Delivery Metrics 历史基线](docs/delivery-metrics.md)：查看分析进度、恢复中断基线和处理重试
+- [多实例部署](docs/multi-instance.md)：同一台机器运行多个 Jarvis Box 实例时的隔离规则；Docker 推荐，Native 多实例不推荐
 - [客户部署与运维指南](CUSTOMER-OPERATIONS.md)：上线、日常操作、升级、回滚、备份和诊断
 - [认证指南](AUTHENTICATION.md)：Native 身份以及 Docker 两种认证路径
-- [仓库与发布模型](REPOSITORY-MODEL.md)：create-jarvis、私有工程源码、公开发行仓库和 Company Jarvis 的职责
+- [仓库与发布模型](REPOSITORY-MODEL.md)：create-jarvis、私有工程源码、公开产品仓库和 Company Jarvis 的职责
 - [更新日志](CHANGELOG.md)：当前版本的客户可见变化
 - [安全策略](SECURITY.md)：支持版本和漏洞报告方式
 
 ## 许可证
 
 Jarvis Box 依据 HENGSHI 商业许可证发行。
-
-## Docker 用户与数据目录
-
-请始终使用负责运行 Jarvis Box 的现有普通 OS 用户执行部署脚本，不要使用 `root` 或 `sudo`。Jarvis Box 不会创建专用系统用户；镜像以非 root 身份运行，并由部署脚本映射当前用户的 UID/GID。
-
-部署脚本会拒绝 Git checkout 内的 deployment home，然后在 `$JARVIS_DEPLOYMENT_HOME/data/` 下创建 Agent HOME、workspace、配置、Task/Run state、依赖缓存、日志和 connector state，随后以 bind mount 交给容器。所有目录都归当前用户所有，不使用 Docker named volume。需要备份时归档整个 deployment home。

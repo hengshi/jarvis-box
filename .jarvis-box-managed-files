@@ -1,20 +1,27 @@
+# Canonical public-repository ownership ledger.
+# Keep retired publisher-owned paths here so the first sync after a removal can
+# delete them without trusting target-repository metadata.
 .jarvis-box-managed-files
 AUTHENTICATION.md
 CHANGELOG.md
 CONTRIBUTING.md
 CUSTOMER-OPERATIONS.md
 LICENSE
+NOTICE
 README.md
 REPOSITORY-MODEL.md
 SECURITY.md
+install.sh
 docker-install.sh
 docker-load.sh
 docs/README.md
 docs/architecture.md
 docs/cli.md
+docs/code-attribution.md
 docs/configuration.md
-docs/delivery-metrics.md
+docs/custom-docker-image.md
 docs/deployment.md
+docs/delivery-metrics.md
 docs/execution-model.md
 docs/guide/getting-started.md
 docs/guide/provider-loop.md
@@ -24,6 +31,7 @@ docs/integrations/github.md
 docs/integrations/gitlab.md
 docs/integrations/im.md
 docs/integrations/jira.md
+docs/multi-instance.md
 docs/network-ingress.md
 docs/operations.md
 docs/product-overview.md
@@ -33,4 +41,3 @@ docs/status-api.md
 docs/status-ui.md
 docs/storage-model.md
 docs/task-external-resource-lifecycle.md
-install.sh

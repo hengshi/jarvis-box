@@ -25,11 +25,6 @@ JARVIS_RUNTIME_ROOT/
         snapshots/
           gitlab.json
           github.json
-        queues/
-          <provider>/
-            <generation>/
-              manifest.json
-              <shard>.json
         evidence/
           <provider>/
             <hash>.json
@@ -44,6 +39,7 @@ JARVIS_RUNTIME_ROOT/
             attachments/
             result.json              # final provider-facing projection
             reply.md                 # final provider-facing projection
+            delivery-metrics-result.json  # delivery-metrics lane classification
             runs/
               <run-id>/
                 run-state.json
@@ -74,17 +70,22 @@ Linux system install 可以将 config、state 和 logs 映射到 `/etc/jarvis-bo
 
 ## Delivery Metrics 派生状态
 
-`JARVIS_STATE_DIR/status-value/` 保存 GitLab 和 GitHub Delivery Metrics 的可重建派生状态：
+`JARVIS_STATE_DIR/status-value/` 保存 GitLab 和 GitHub Delivery Metrics 的可重建读模型派生状态：
 
-- `snapshots/<provider>.json` 保存当前快照、Provider scope、登录主体、queue generation、cursor 和 pending 数量；
-- `queues/<provider>/<generation>/` 保存 manifest 与分片的待分析 MR/PR；
+- `snapshots/<provider>.json` 保存当前快照、Provider scope、登录主体和 pending 数量；
 - `evidence/<provider>/<hash>.json` 保存已完成的 typed classification 和固定 evidence code。
 
-这些文件不属于 Task 或 Run。它们没有 `task-state.json`，不会进入 `jarvis-box tasks list`，也不受 Start、Continue、Cancel 或 `tasks clean` 控制。打开 `/status` 或读取 `/status/api/value` 后，服务加载兼容的 snapshot、queue 和 cursor，并继续 pending 批次。
+分析执行属于普通 `delivery-metrics` lane Task。Task 根目录保存 prompt、run context、审计事件、Run Artifact 和 `delivery-metrics-result.json`；当前执行或等待恢复的这些 Task 会进入默认 `jarvis-box tasks list`，历史记录用 `jarvis-box tasks list --all --lane delivery-metrics` 查看，并受 Start、Continue、Cancel 和 `tasks clean` 的统一生命周期控制。
 
-服务只复用 scope、actor 和 schema 均匹配的状态。scope 包含 Provider、Provider host、配置仓库集合、判断合同和判断策略。Runtime Agent 选择不进入缓存 identity，因此切换 Agent 不会重算已完成 evidence；判断策略变化会创建新 scope。单个 MR/PR 的 SHA 或 `updated_at` 变化会创建新 evidence key。
+服务只复用 scope、actor 和 schema 均匹配的状态。scope 包含 Provider、Provider host、配置仓库集合和 Delivery Metrics 合同版本。Runtime Agent 选择不进入缓存 identity，因此切换 Agent 不会重算已完成 evidence。单个 MR/PR 的 SHA 或 `updated_at` 变化会创建新 evidence key。
 
-status-value 只保存 typed 派生结果，不保存 raw note、review body、Agent stderr、token 或命令。不要手工修改 queue shard 或 cursor。文件损坏、版本不兼容或 scope 不匹配时，服务忽略旧状态并在下一次 Provider 请求中重建。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md)。
+status-value 只保存 typed 派生结果，不保存 raw note、review body、Agent stderr、token 或命令。不得为 Delivery Metrics 增加全局 FIFO queue、cursor 或私有分析状态；pending 项只能通过 Provider 刷新和 Task store 重新派生。`delivery-metrics` Task 事件只会让 fresh snapshot 提前过期，使下一次普通 GET 执行同一 Provider 刷新。文件损坏、版本不兼容或 scope 不匹配时，服务忽略旧状态并在下一次 Provider 请求中重建。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md)。
+
+## Status Metrics 派生状态
+
+`JARVIS_STATE_DIR/status-metrics/task-runs-daily.json` 保存本机 Task Run by-day 趋势的可重建 rollup。主数据源是 `JARVIS_WORK_LEDGER_FILE` 指向的 `work-ledger.jsonl`，默认回落到 `JARVIS_STATE_DIR/work-ledger.jsonl` 或 Run 根目录旁的 `work-ledger.jsonl`。
+
+该 rollup 只记录 schema、source、timezone、180 天窗口、按天 count、异常时间/格式计数、rollup 完整性 hash，以及 ledger path、size、mtime、已消费 offset、文件身份。Ledger append 时服务从上次 offset 增量读取；ledger 截断、轮转、替换、rollup 损坏或 schema/window 不兼容时重建。无文件身份的平台额外使用 checkpoint hash 避免错误复用同 size/mtime 的替换文件。
 
 ## Task Directory
 
@@ -107,11 +108,13 @@ status-value 只保存 typed 派生结果，不保存 raw note、review body、A
 
 Run Artifact 是证据，不是 conversation memory。产生 provider output 的 Run 保存自己的 `reply.md` 或 `comment.md` 快照；Task 根目录的同名文件是 Continue writeback strategy 使用的最终 provider-facing projection。Task 连续性由 Task state、AgentConversation lineage 和 runtime-native resume 负责，不由 reply、prompt、runtime log 或 jarvis-box 自己拼接的 history prompt 负责。
 
+`custom-user-task` 是 providerless prompt job。它的 `job_id` 保存在 `task-state.json`、`run-context.json`、`payload.json` 和 intake/conflict event 中，用于日志、Status、筛选、防并发和排障；`reason` 保留可读触发来源。jarvis-box 不为它创建 provider writeback projection，IM、webhook 或 GitLab 投递结果必须由 agent task 自己写入结果证据。重复触发同一 active `job_id` 时，服务在已有 Task 的 `task-events.jsonl` 中写入 `custom_user_task_start_conflict`，并向调用方返回 conflict；这不是全局队列、cursor 或自动补跑机制。
+
 `chat-bindings/bindings/` 每个 IM Target 只保存默认 Task 指针。`chat-bindings/messages/` 保存同一 Target 内 message id 到 Task 的引用索引，包括已确认发送的机器人回复 id。两者都不保存 Run id、Run 状态、reply token、native session 或 provider credential；Task/Run artifact 始终是执行状态的唯一事实来源。
 
 ChatBridge 附件下载目录属于单个 Run。`attachments/` 中的文件只供 runtime agent 使用；`prompt.txt` 和 `run-context.json` 可以保存下载后的本地路径，方便 agent 定位文件，但 Status task projection 和 Status Artifact endpoint 不得枚举或读取该目录，也不得通过 symlink alias 绕过该限制。provider 下载 URL、provider 文件密钥、raw IM payload 和 reply token 不写入 Status response。
 
-ChatBridge 出站 `outbox/` 也属于单个 Run。jarvis-box 只接受目录根部的普通非空文件，先对数量、单文件大小和总大小做整批校验，再依据精确 provider + connector 的 live capability 上传和发送；任何预检失败都不开始远端发送。发送开始前写 private recovery marker，因此超时、进程崩溃或重试不会自动重放可能已经送达的附件。`outbox/` 及其 symlink alias 不得由 Status Artifact endpoint 枚举或读取。
+ChatBridge 出站 `outbox/` 也属于单个 Run。jarvis-box 只接受目录根部的普通非空文件，不额外设置出站文件数量、单文件大小或总大小配额；实际可投递边界由精确 provider + connector 的 live capability 和 IM 渠道上传 / 发送限制决定。发送开始前写 private recovery marker，因此超时、进程崩溃或重试不会自动重放可能已经送达的附件。`outbox/` 及其 symlink alias 不得由 Status Artifact endpoint 枚举或读取。
 
 ## Runtime Agent Log 与 Native AgentSession
 
@@ -144,7 +147,7 @@ Native AgentSession jsonl 属于 runtime agent，不属于 Run Artifact。它保
 `task-state.json` 记录 Task 当前事实；每个 `runs/<run-id>/run-state.json` 记录该 Run 当前事实：
 
 - Target 和 Task 标识
-- lane、status、phase、lifecycle summary
+- lane、`custom-user-task` 的 `job_id`、status、phase、lifecycle summary
 - current Run metadata
 - runtime agent name
 - process metadata
@@ -160,9 +163,9 @@ Native AgentSession jsonl 属于 runtime agent，不属于 Run Artifact。它保
 
 `JARVIS_TASK_STORE_MIN_FREE_GB` 定义启动新工作前必须保留的磁盘余量，默认 10 GB，只有显式 `0` 才禁用；空值或畸形的 Run 环境不会把保护静默关闭，服务与 scheduled job 的非法显式配置会直接拒绝启动。TaskService 先原子登记 Task identity、canonical subject 和完整的 1:N `workspaces[]`，再检查 Task Artifact 所在卷和每一项已登记 Workspace 路径；准入通过前不创建 Run、不 mkdir/clone Workspace，也不启动进程。Runner 在进程启动前再次检查这些卷，覆盖准入与 spawn 之间以及多个独立卷之间的容量变化。
 
-`repo-cache` 是 box-owned 的 bare mirror。缓存刷新使用 exclusive lease，local clone 全程持有 shared lease，避免另一个 Task 在 Git 读取 object 时改写同一 mirror。缓存刷新成功且 cache 与 Workspace 位于同一文件系统时，Workspace 通过 Git local clone 复用不可变 object 的硬链接，随后立即把 `origin` 恢复为权威远端；Workspace 不写 `objects/info/alternates`，所以 cache 删除或重建不会让已有 Workspace 失效。缓存刷新失败、本地 clone 不可用、lease 获取失败或跨文件系统时，创建流程退回权威远端 clone。这里共享的是 Git object 的物理块，不共享工作树、构建产物或可变运行数据；单独对一个 Workspace 执行 `du` 仍可能显示这些硬链接的完整逻辑大小。
+`repo-cache` 是 box-owned 的 bare mirror。缓存刷新使用 exclusive lease，cache clone 全程持有 shared lease，避免另一个 Task 在 Git 读取 object 时改写同一 mirror。缓存刷新成功且 cache 与 Workspace 位于同一文件系统时，显式 branch/ref Workspace 通过 Git local clone 复用不可变 object 的硬链接，随后立即把 `origin` 恢复为权威远端；Workspace 不写 `objects/info/alternates`，所以 cache 删除或重建不会让已有 Workspace 失效。显式 branch/ref 的本地硬链接 clone 在缓存刷新失败、本地 clone 不可用、lease 获取失败或跨文件系统时退回权威远端 clone。默认分支单分支 Workspace 也使用 repo-cache，但通过非 local 的单分支 clone 从 mirror 读取对象，避免暴露 mirror 中其他分支的 refs 或 object；跨文件系统不影响这条非 local cache clone，只有缓存刷新、lease、cache clone 或 origin 绑定失败时才退回权威远端。这里共享的是 Git object 的物理块，不共享工作树、构建产物或可变运行数据；单独对一个 Workspace 执行 `du` 仍可能显示这些硬链接的完整逻辑大小。
 
-Active Run 中通过 `workspace create` 创建且未显式提供 `--base-branch` 或 checkout ref 的仓库具有更窄的历史边界：jarvis-box 直接从权威 remote 做非浅的 `--single-branch --no-local` clone，由 remote symbolic `HEAD` 选择默认分支，不读取 bare mirror，也不把其他分支 ref 或其他分支独有 object 暴露给该 Workspace。需要显式 branch/ref 的 Provider 路径继续使用其已声明的 checkout 合同和 repo cache；两类路径不能互相降级。
+Active Run 中通过 `workspace create` 创建且未显式提供 `--base-branch` 或 checkout ref 的仓库具有更窄的历史边界：jarvis-box 由 remote symbolic `HEAD` 选择默认分支，随后在 repo-cache 可用时从刷新后的 bare mirror 做非浅的 `--single-branch --no-local --no-tags` clone，并把 Workspace `origin` 恢复为权威 remote。cache 不可用时才直接从权威 remote 做相同边界的 clone。该路径不把 tag ref、其他分支 ref 或其他分支独有 object 暴露给 Workspace。需要显式 branch/ref 的 Provider 路径继续使用其已声明的 checkout 合同和 repo cache；两类路径不能互相降级。
 
 Workspace clone 和 Jarvis 执行的 checkout 默认设置 `GIT_LFS_SKIP_SMUDGE=1`，只检出 LFS pointer，不在 Task 启动路径自动下载图片、视频或其他 LFS 内容。这避免 cached clone 因 bare mirror 不是 LFS endpoint 而被误判失败，也避免与任务无关的 LFS 内容同时占用 `.git/lfs` 和工作树两份空间。确实需要二进制内容的任务应在已绑定权威 `origin` 的 Workspace 中用 `git lfs pull --include=<path>` 按路径 materialize；Operator 可以显式覆盖该环境变量恢复 Git LFS 的标准全量 checkout。Status 的 clone 进度会显示 `LFS 按需下载`，使该策略对操作者可见。
 
@@ -170,7 +173,7 @@ Start 准入遇到 `low-disk`、`ENOSPC` 或 `EDQUOT` 时，Task 进入 `status=
 
 Task-store 的一次 `ENOSPC`、权限或原子写失败是当前 persistence fault，不是只能随进程重启清除的配置状态。健康检查、Run 准入和周期 terminalization recovery 都走和正式状态写入相同的文件锁及 crash-durable 原子替换路径执行 create/write/file-fsync/rename/directory-fsync/delete 探测；探针若不完成文件和目录同步，不得解除 latch。同一时刻的并发检查合并为一次探测，探测本身失败不会覆盖原始业务写入的故障证据，成功也只解除它开始时观察到的错误 generation，期间出现的更新错误不能被旧探测误清除。多个终态 Task 采用 250 ms 到 5 s 的有界指数退避，不会在磁盘故障时形成固定频率的探测惊群。`JARVIS_TASK_STORE_MIN_FREE_GB` 只约束新 Run/clone 准入；终态恢复以实际可写为提交条件，不要求磁盘先回到新工作余量，也不提前删除当前 Task 的 Workspace。当前 fault 解除后，新 Run 或 finalization 清除 Task 的 `task_store_degraded` 并记录恢复时间；workspace 卷恢复后同样清除 `workspace_storage_degraded`。最后一次错误和恢复时间继续作为历史诊断信息保留，但不得继续阻塞调度。
 
-准入检查与运行期写入属于两道不同的保护。agent 启动后，runtime log、AgentSession stream、result、`reply.md` 或其他关键 Artifact 的持久化失败都绑定到当前 Run；即使进程 exit code 为 0，也必须提交 `persistence-failed / needs-attention`，保留已登记 Workspace，不能伪装成 completed。Artifact 已持久化之后发生的 provider delivery failure 不属于 Run persistence failure：Run 保持 succeeded，Task 投影为 `completed / writeback-failed`，`reply-error.json` 与 `writeback_failure` 用 durable `provider-delivery` kind 和 source 保存 normalized failure，后续 Continue 只重放 provider-ready 内容。无效 reply decision 等本地 Artifact 合同错误继续投影为 `completion-finalization-failed / needs-attention`，并禁止直接重放 `reply.md`。其他 completion callback 或 Task 终态提交失败使用相同的 inspect 路径。最终事件和 jarvis-command 通知只在 provider 回写及 Task 终态提交之后触发。准入检查通过后，创建 `runs/`、创建具体 Run 目录或 Workspace clone/create 直接返回 `ENOSPC` / `EDQUOT`，都必须回到同一 `storage-wait` 准入状态；已经取得 owner 的未启动 Run 先终态化为 failed，再释放 owner。TaskService 完成这次转换后必须向所有 lane 返回 Waiting，provider/lane wrapper 不得把 canonical `storage-wait` 重写为 `launch-failed`。错误只登记在对应 Task 的存储证据中，不得误锁无关 Task。周期恢复重新检查实时容量，并在成功取得新 Run 后清除等待错误、记录 recovery。
+准入检查与运行期写入属于两道不同的保护。agent 启动后，runtime log、AgentSession stream、result、`reply.md` 或其他关键 Artifact 的持久化失败都绑定到当前 Run；即使进程 exit code 为 0，也必须提交 `persistence-failed / needs-attention`，保留已登记 Workspace，不能伪装成 completed。Artifact 已持久化之后发生的 provider delivery failure 不属于 Run persistence failure：Run 保持 succeeded，Task 投影为 `completed / writeback-failed`，`reply-error.json` 与 `writeback_failure` 用 durable `provider-delivery` kind 和 source 保存 normalized failure，后续 Continue 只重放 provider-ready 内容。其他 completion callback、Task 终态提交或本地 Artifact 合同失败使用 `completion-finalization-failed / needs-attention` 的 inspect 路径，不能直接重放未证明可投递的 `reply.md`。最终事件和 jarvis-command 通知只在 provider 回写及 Task 终态提交之后触发。准入检查通过后，创建 `runs/`、创建具体 Run 目录或 Workspace clone/create 直接返回 `ENOSPC` / `EDQUOT`，都必须回到同一 `storage-wait` 准入状态；已经取得 owner 的未启动 Run 先终态化为 failed，再释放 owner。TaskService 完成这次转换后必须向所有 lane 返回 Waiting，provider/lane wrapper 不得把 canonical `storage-wait` 重写为 `launch-failed`。错误只登记在对应 Task 的存储证据中，不得误锁无关 Task。周期恢复重新检查实时容量，并在成功取得新 Run 后清除等待错误、记录 recovery。
 
 文件锁不可用时不得退化成只有进程内 mutex 的写入。锁创建、`flock`、状态写入或 rename 任一步失败都必须让本次 mutation fail closed 并登记新的 persistence fault。低磁盘准入只阻止会继续放大写入的新 Workspace/Run；已终态 Task 的登记式自动清理和 Status 手工删除仍是释放空间的通道，不受进程内 persistence fault 阻断，释放后由真实写探测解除 fault。不得通过扫描目录、猜测归属或删除 active/needs-attention Task 来应急回收；Workspace 由登记驱动的终态清理负责，terminal Task Artifact 由 retention clean 负责。
 
@@ -212,6 +215,7 @@ Adapter 可以把 runtime-native session id、thread id、checkpoint ref 或 opa
 
 - safe Target key/hash 和标题
 - Task id、标题、状态、更新时间
+- lane、`custom-user-task` 的 `job_id`、触发 reason、最近成功/失败时间
 - current/latest Run id
 - safe agent name
 - safe resume status
@@ -255,9 +259,11 @@ Run 内的 runtime agent log 属于 Run Artifact。Service log 只能通过 CLI 
 
 ## Workspace
 
-`JARVIS_DEPENDENCY_CACHE_ROOT` 保存跨 Task 复用的包管理器缓存，默认是 `${JARVIS_RUNTIME_ROOT}/dependency-cache`，Docker 为独立持久卷 `/var/cache/jarvis-box`。它不属于 `workspaces[]`，workspace cleanup 和 Task retention 都不得删除它。Jarvis Box 只注入标准缓存环境；如配置 `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER`，则在 lane 完成 checkout 后、Agent 启动前调用 Operator 提供的程序。该 hook 失败必须让 Run 启动失败，不能带着半配置 workspace 继续执行；hook 内容仍由客户 Runtime Foundation 负责。
+`JARVIS_DEPENDENCY_CACHE_ROOT` 保存跨 Task 复用的包管理器缓存，默认是 `${JARVIS_RUNTIME_ROOT}/dependency-cache`，Docker 为独立持久卷 `/var/cache/jarvis-box`。它不属于 `workspaces[]`，workspace cleanup 和 Task retention 都不得删除它。Jarvis Box 只注入标准缓存环境；如配置 `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER`，则在 lane 完成 checkout 后、Agent 启动前调用 Operator 提供的程序。该 hook 可配置依赖工具，也可写 workspace-local Git identity 等仓库本地策略；失败必须让 Run 启动失败，不能带着半配置 workspace 继续执行；hook 内容仍由客户 Runtime Foundation 负责。
 
-缓存根目录只承载各工具的原生下载缓存、内容寻址缓存和工具自身支持的共享安装目录。它与 `repo-cache` 在 Workspace 准备流水线中协同，但不混用生命周期或目录：repo cache 复用 Git object，dependency cache 复用包管理器依赖，LFS 内容默认按需 materialize。Bundler 是共享安装目录的明确例外：`BUNDLE_USER_CACHE` 保存用户级索引与下载缓存，`BUNDLE_PATH` 保存可跨 Workspace 复用的已安装 gems；Ruby ABI 与 native extension 平台隔离沿用 Bundler 自己的目录结构。通用 Workspace 准备接口负责调用各工具 policy；生命周期调用方不识别语言或包管理器。当前只有实际使用 Yarn 的 Workspace 会生成并通过 `.git/info/exclude` 隐藏 `.jarvis-yarnrc.yml`；能严格确认 Yarn 3+ 时加入 `hardlinks-global`，其他 Yarn 版本保留自身兼容行为，非 Yarn Workspace 不写入该文件。这个 Workspace-local 边界允许同一 Agent 在运行中新增不同 Yarn major，而不会保留旧目录推导出的 Agent-wide mode；Operator 显式环境仍优先。文件系统支持跨目录硬链接时，Yarn 可以让各 Workspace 的 `node_modules` 复用 global content store 的物理文件。单独对一个 Workspace 执行 `du` 仍可能显示这些硬链接的完整逻辑大小，不能把该数值直接与 cache 目录相加当作物理占用。跨项目共享整个 `target/`、`node_modules`、`build/` 等编译结果不属于默认模型。需要编译缓存时，应使用 ccache/sccache 或由 workspace configurer 按 OS、架构、工具链和项目建立隔离键。缓存属于单个 Jarvis 安装的信任边界，不跨客户共享，清理由独立运维策略负责。
+缓存根目录只承载各工具的原生下载缓存、内容寻址缓存和工具自身支持的共享安装目录。它与 `repo-cache` 在 Workspace 准备流水线中协同，但不混用生命周期或目录：repo cache 复用 Git object，dependency cache 复用包管理器依赖，LFS 内容默认按需 materialize。内置 policy 覆盖常见生态的标准缓存入口：XDG cache、Go module/build cache，npm/Yarn/pnpm/Corepack/Bun/Deno，Playwright/Puppeteer/Cypress 浏览器缓存，Turbo/Nx task cache，Python 包管理器、pre-commit、Ruff、mypy 和 pycache，Gradle/Maven/Coursier，Cargo 和 Rust 编译缓存，C/C++ 的 ccache/sccache、Conan、vcpkg，以及 NuGet、Composer、Bundler。`CARGO_INCREMENTAL=0` 是默认 Agent policy，用于压低短生命周期 Workspace 的 Rust incremental build 状态；若运行环境可找到 `sccache`，Jarvis 把 `RUSTC_WRAPPER` 设置为解析后的 sccache 可执行文件路径，否则不设置 wrapper，避免 Cargo 在缺少工具时失败；完整注册集合中只有一个 Cargo Workspace 时，Jarvis 会通过 `CARGO_BUILD_BUILD_DIR` 把 `debug/deps`、`debug/build` 等中间构建目录放到按 repo identity 隔离的共享 cache，但不改变 `CARGO_TARGET_DIR`。如果 Agent 运行中动态注册第二个 Cargo Workspace，Jarvis 会清除自己管理的 `CARGO_BUILD_BUILD_DIR`，让后续 Cargo 构建回到工具原生 workspace-local 行为。配置了可执行 agent browser 时，Jarvis 还向 Agent 暴露 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 与 `PUPPETEER_EXECUTABLE_PATH`；这是显式 executable handoff，不会把 Playwright 和 Puppeteer 的 revision cache 合并成一个目录。
+
+Bundler 是共享安装目录的明确例外：`BUNDLE_USER_CACHE` 保存用户级索引与下载缓存，`BUNDLE_PATH` 保存可跨 Workspace 复用的已安装 gems；Ruby ABI 与 native extension 平台隔离沿用 Bundler 自己的目录结构。通用 Workspace 准备接口负责调用各工具 policy；生命周期调用方不识别语言或包管理器。当前只有实际使用 Yarn 的 Workspace 会生成并通过 `.git/info/exclude` 隐藏 `.jarvis-yarnrc.yml`；能严格确认 Yarn 3+ 时加入 `hardlinks-global`，其他 Yarn 版本保留自身兼容行为，非 Yarn Workspace 不写入该文件。严格确认支持基于 vendored release 文件名：`.yarnrc.yml` 顶层 `yarnPath` 在 Workspace 内存在且文件名符合 `yarn-<版本>.cjs` 约定、版本 major ≥ 3，并与 `packageManager` 声明交叉验证；`yarnPath` 为 `${ENV}` 插值、URL、非字符串或文件缺失时无法证明，保持不注入。这个 Workspace-local 边界允许同一 Agent 在运行中新增不同 Yarn major，而不会保留旧目录推导出的 Agent-wide mode；Operator 显式环境仍优先。文件系统支持跨目录硬链接时，Yarn 可以让各 Workspace 的 `node_modules` 复用 global content store 的物理文件。单独对一个 Workspace 执行 `du` 仍可能显示这些硬链接的完整逻辑大小，不能把该数值直接与 cache 目录相加当作物理占用。跨项目共享整个 `target/`、`node_modules`、`build/`、`.next/`、`dist/` 等编译结果不属于默认模型；Cargo 只共享中间 build-dir，最终 binary 和脚本常用的 `target/` 顶层输出仍留在 Workspace。需要项目级 build cache 时，应使用工具自带内容寻址缓存，或由 workspace configurer 按 OS、架构、工具链和项目建立隔离键。缓存属于单个 Jarvis 安装的信任边界，不跨客户共享，清理由独立运维策略负责。
 
 `JARVIS_WORKSPACE_ROOT` 保存 Task Workspace。一个 Task 可以拥有零个到多个 Workspace；唯一归属记录是 append-only 的 `task-state.workspaces[]`。每项包含稳定的 Task-local id、服务端分配的绝对路径、可选 repository metadata 和 `primary` 标记。路径由 `task_id + task_instance_id + workspace_id` 共同派生；同一个 task id 被重新创建后也不会复用旧实例目录。非空集合恰好有一个 `primary=true`，只负责选择 Run 的默认 `cwd`；空集合不合成目录，Run 使用 launcher 的普通工作目录。
 
