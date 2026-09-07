@@ -20,7 +20,7 @@ jarvis-box tools update
 jarvis-box tools reset
 ```
 
-Jarvis 管理的官方工具通过持久化 overlay 原子更新，失败时继续使用镜像内基线。Docker 安装或升级会自动尝试一次更新。客户自装的独立用户级工具放到 `${JARVIS_USER_TOOL_BIN:-/home/jarvis/.local/bin}`；该目录随 deployment home 持久化，容器重建后仍保留。需要 `apt` 管理的编译器、头文件或系统共享库通过[客户派生 Docker 镜像](custom-docker-image.md)提供。
+Jarvis 管理的官方工具通过持久化 overlay 原子更新，失败时继续使用镜像内基线。Docker 安装或升级会自动尝试一次更新。客户自装的独立用户级工具放到 `${JARVIS_USER_TOOL_BIN:-/home/jarvis/.local/bin}`；显式值必须是绝对目录，Jarvis 会把它加入每个 Agent 进程的 `PATH`，同时保留用户默认的 `.local/bin`。Docker 默认目录随 deployment home 持久化，容器重建后仍保留。需要 `apt` 管理的编译器、头文件或系统共享库通过[客户派生 Docker 镜像](custom-docker-image.md)提供。
 
 ## Server and Task/Run
 
