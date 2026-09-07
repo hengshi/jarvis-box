@@ -29,6 +29,7 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | `JARVIS_RUNTIME_AGENT_SCOPE_DELIVERY_METRICS` | optional Runtime Agent override for the Delivery Metrics lane; prefer `jarvis-box agent set --scope delivery-metrics <agent>` |
 | `JARVIS_RUNTIME_AGENT_SCOPE_DELIVERY_METRICS_PREFIX_ARGS` | arguments inserted before generated Delivery Metrics lane arguments; use for scope-specific model/runtime options |
 | `JARVIS_DELIVERY_METRICS_ENABLED` | Delivery Metrics lane 启停开关，默认 `true`；设为 `false` 后 Status 不再启动新的 `delivery-metrics` Task，操作台 Start/恢复入口拒绝该 lane，已在运行的 Task 与 Continue 收尾不受影响。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md#启用和禁用-lane)。 |
+| `JARVIS_USER_TOOL_BIN` | optional absolute directory for customer-specific executable tools; Jarvis adds it to every Agent process `PATH` before the user-local default bin |
 | `AGENT_BROWSER_EXECUTABLE_PATH` | optional dedicated automation-browser executable; on macOS the default is agent-browser's managed Chrome for Testing cache, and a missing managed browser fails closed instead of launching desktop Chrome |
 | `JARVIS_CONNECTOR_PROFILE` | empty or `uvim`; sole connector lifecycle switch |
 | `GITLAB_HOST` / `GITLAB_PROJECTS` | GitLab host and operator allowlist |
@@ -48,7 +49,7 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | `JARVIS_UV_IM_CONNECTOR_URL/TOKEN` | jarvis-box → connector access when profile is `uvim` |
 | `JARVIS_TASK_STORE_MIN_FREE_GB` | workspace admission floor |
 | `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` | 可选的 workspace 准备程序；在 checkout 后、Agent 启动前调用，可配置依赖缓存和 workspace-local Git identity |
-| `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND` | 可选的绝对可执行路径；每次新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前调用 |
+| `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND` | 可选的绝对可执行路径；每次新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前调用；其父目录也会自动加入 Agent `PATH`，使同目录安装的 runtime 工具可直接发现 |
 | `JARVIS_AGENT_RUNTIME_PREPARE_TIMEOUT_SECONDS` | Agent runtime preparer 超时；默认 `120` |
 | `GIT_LFS_SKIP_SMUDGE` | Jarvis workspace clone/checkout 默认 `1`，LFS 按需下载；显式设为 `0` 恢复全量 materialize |
 

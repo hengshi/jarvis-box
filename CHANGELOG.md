@@ -2,6 +2,11 @@
 
 ## 未发布
 
+## 0.2.29
+
+- 托管 Agent 自动发现与运行时准备命令安装在同一目录的工具；新任务统一使用最新运行时配置，修改或移除工具路径配置后不再沿用旧值，取消与恢复时也能正确找到浏览器清理工具。
+- 修复 macOS 深层任务目录下浏览器因 socket 路径过长无法启动的问题；浏览器使用受任务归属校验保护的短路径，并在任务结束、取消和启动失败时清理。
+
 ## 0.2.28
 
 - 修复飞书项目 post-check 通过 Workflow Runtime Contract 启动嵌套 customer workflow 后丢失 Meegle 实时读取能力的问题；能力只继承给同一飞书工作项的 Meegle backend 子 Run，plugin 与其他 provider 仍不接收 Meegle credential。
