@@ -66,7 +66,37 @@ grep -E "  (${artifact}|production-image.json)$" SHA256SUMS | shasum -a 256 -c -
 tar -xzf "$artifact"
 ```
 
-Docker 客户需要具备私有 GHCR pull access。`production-image.json` 将 release 绑定到 digest-pinned image；operator 把其中的 `image_ref` 写入 `deployment.env` 的 `JARVIS_IMAGE`，部署脚本据此拉取私有镜像。
+### Docker 镜像包：公开下载并加载
+
+从 v0.2.30 起，Docker 镜像包可从同一个下载站直接获取，无需 GitHub 账号或 GHCR 登录。先下载与安装包相同版本、匹配 Docker 主机架构的镜像包：
+
+```bash
+version=0.2.31
+arch=amd64
+# Linux ARM64 或 Apple 芯片 Mac 使用 arch=arm64
+base="https://download.hengshi.com/jarvis-box/releases/v$version"
+image_archive="jarvis-box_${version}_linux_${arch}.docker.tar.gz"
+curl -fLO "$base/$image_archive"
+curl -fLO "$base/$image_archive.sha256"
+sha256sum -c "$image_archive.sha256"
+docker load --input "$image_archive"
+```
+
+macOS 将校验命令替换为 `shasum -a 256 -c "$image_archive.sha256"`。校验成功后才运行 `docker load`。
+
+在 `deployment.env` 中填写导入后的镜像标签：
+
+```dotenv
+JARVIS_IMAGE=hengshi/jarvis-box:v0.2.31
+```
+
+然后按第 5 节使用同版本安装包内的部署脚本。镜像包不能代替安装包；`docker load` 只导入镜像，不创建运行中的服务。
+
+版本目录中的 `docker-images.json` 列出镜像包 URL、SHA-256、大小、导入后的标签以及对应 GHCR source digest；`latest.json` 的 `docker_images.url` 指向最新镜像包清单。镜像包有各自的 `.sha256` 文件，安装包仍使用原来的 `SHA256SUMS`。
+
+### GHCR 直接拉取
+
+拥有 GHCR pull access 的客户也可继续使用 `production-image.json` 中的 `image_ref` 作为 `JARVIS_IMAGE`。这条路径需要 `docker login ghcr.io`；公开镜像包路径不需要 registry 认证。
 
 ## 4. Native 上线
 
@@ -114,14 +144,14 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 # install -m 0600 "$release_dir/deploy/production/connector.env.example" "$deployment_home/connector.env"
 ```
 
-在 `deployment.env` 中把 `JARVIS_DEPLOYMENT_HOME` 改为上面的绝对路径，把 `JARVIS_IMAGE` 改为已校验 `production-image.json` 中的 `image_ref`，并设置当前实例唯一的 `JARVIS_DEPLOYMENT_NAME`、端口和认证选择。在 `runtime.env` 中填写所需 Agent、provider、allowlist 和 verification secret；首次保持 read-only。配置完成后执行：
+在 `deployment.env` 中把 `JARVIS_DEPLOYMENT_HOME` 改为上面的绝对路径，把 `JARVIS_IMAGE` 改为已校验并加载的 `hengshi/jarvis-box:v<version>`，或 GHCR 路径的 `production-image.json` 中的 `image_ref`，并设置当前实例唯一的 `JARVIS_DEPLOYMENT_NAME`、端口和认证选择。在 `runtime.env` 中填写所需 Agent、provider、allowlist 和 verification secret；首次保持 read-only。配置完成后执行：
 
 ```bash
 "$ops" "$deployment_home" deploy
 "$ops" "$deployment_home" verify
 ```
 
-升级时保留原 deployment home，从新版本 `production-image.json` 读取 `image_ref` 并手工更新现有 `deployment.env` 的 `JARVIS_IMAGE`，然后使用新 bundle 的同一部署命令。脚本会在停服或重建前拒绝 active、waiting、finalizing、CI-wait 或 recovery-required Task，并保留客户配置和 `data/` 持久目录。
+升级时保留原 deployment home，先校验并加载新版本镜像包，再更新 `deployment.env` 的 `JARVIS_IMAGE` 为新版本标签；GHCR 路径则使用新版本 `production-image.json` 中的 `image_ref`，然后使用新 bundle 的同一部署命令。脚本会在停服或重建前拒绝 active、waiting、finalizing、CI-wait 或 recovery-required Task，并保留客户配置和 `data/` 持久目录。
 
 客户代码仓库需要基础镜像未包含的编译器、头文件或系统共享库时，先按[客户派生 Docker 镜像](docs/custom-docker-image.md)从当前 release 的正式 digest 构建并推送客户镜像，再把派生镜像 digest 写入 `JARVIS_IMAGE`。不要在运行中的容器里执行 `apt install`。
 
@@ -136,7 +166,7 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 └── connector.env      # 仅启用 IM connector 时存在
 ```
 
-`deployment.env` 保存 digest-pinned 私有镜像引用、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 必须位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外，不保存 Host HOME dump 或临时 context。
+`deployment.env` 保存已校验并加载的镜像标签或 GHCR digest 引用、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 必须位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外，不保存 Host HOME dump 或临时 context。
 同机多个 Docker 实例必须使用不同的 `JARVIS_DEPLOYMENT_HOME`、`JARVIS_DEPLOYMENT_NAME`、`JARVIS_PORT` 和 provider webhook URL，不共享 `auth/` 或 `data/`。
 
 首次 onboarding 在 `runtime.env` 保持：
@@ -313,7 +343,7 @@ jarvis-box status
 "$ops" "$home" verify
 ```
 
-先把目标版本 `production-image.json` 中的 `image_ref` 写入现有 `deployment.env` 的 `JARVIS_IMAGE`，再使用目标版本 bundle 的部署脚本。脚本会保留 deployment config 和 `data/`、拉取该镜像、重建服务并验证；最后重跑一条真实业务链路。发现 active、waiting、finalizing、CI-wait 或 recovery-required Task，无法读取 Task state，或配置属于其他 deployment home 时，部署脚本会在任何停服/重建前拒绝升级并打印阻断 Run。
+先校验并加载目标版本镜像包，将对应标签写入 `deployment.env` 的 `JARVIS_IMAGE`；GHCR 路径则填写目标版本 `production-image.json` 中的 `image_ref`，再使用目标版本 bundle 的部署脚本。脚本会保留 deployment config 和 `data/`、使用指定镜像、重建服务并验证；最后重跑一条真实业务链路。发现 active、waiting、finalizing、CI-wait 或 recovery-required Task，无法读取 Task state，或配置属于其他 deployment home 时，部署脚本会在任何停服/重建前拒绝升级并打印阻断 Run。
 
 只有客户明确决定放弃当前运行时，才使用：
 

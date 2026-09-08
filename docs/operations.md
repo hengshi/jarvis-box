@@ -126,7 +126,7 @@ jarvis-box agent smoke
 
 ### Docker
 
-先用默认快速列表确认没有正在执行或等待恢复的 Task，然后从私有 `hengshi-jarvis/jarvis-box` GitHub Release 获取同一版本的 release bundle、`SHA256SUMS` 和 `production-image.json`；GitHub Release 下载不可用时使用 `https://download.hengshi.com/jarvis-box/releases/v<version>/` 下的同名 mirror 文件。下载需要 GitHub repository access，mirror 可读性只控制获取制品；运行时 license enforcement 是独立边界。校验制品后，把目标 `production-image.json` 中的 `image_ref` 写入现有 `$home/deployment.env` 的 `JARVIS_IMAGE`，再使用目标 release bundle 内的 `deploy-production.sh`。不要手工判断部署模式后直接执行 Docker 停服命令。
+先用默认快速列表确认没有正在执行或等待恢复的 Task，然后从私有 `hengshi-jarvis/jarvis-box` GitHub Release 获取同一版本的 release bundle、`SHA256SUMS` 和 `production-image.json`；GitHub Release 下载不可用时使用 `https://download.hengshi.com/jarvis-box/releases/v<version>/` 下的同名 mirror 文件。GitHub 下载需要 repository access，公开 mirror 无需登录；运行时 license enforcement 是独立边界。校验制品后，将已加载的目标镜像包标签 `hengshi/jarvis-box:v<version>` 或 `production-image.json` 中的 GHCR `image_ref` 写入现有 `$home/deployment.env` 的 `JARVIS_IMAGE`，再使用目标 release bundle 内的 `deploy-production.sh`。不要手工判断部署模式后直接执行 Docker 停服命令。
 
 ```bash
 jarvis-box tasks list
