@@ -74,6 +74,8 @@ Run id 是 compact canonical id，例如 `r_4P8X6C2N7J5K`。来源 provider、co
 
 文件类消息由 connector 下载或代理。Jarvis Box 在 Run 启动前把附件保存到该 Run 的 `attachments/` 目录，并把本地路径注入给 agent。
 
+单聊与群聊共用附件处理路径。Jarvis Box 不额外限制入站附件数量、单文件大小或单条消息的附件总大小；下载流式写入磁盘，所有附件记录和本地路径都交给 Agent。默认 connector HTTP client 不设置传输总超时，下载响应调用方 context 的取消或 deadline。IM 平台自身的限制、访问权限以及部署主机的可用磁盘空间仍然适用。
+
 这些内容不得进入 public artifact：
 
 - provider 下载 URL；
