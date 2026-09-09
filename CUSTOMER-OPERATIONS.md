@@ -336,6 +336,59 @@ jarvis-box status
 
 ### Docker
 
+#### 宿主机自助升级
+
+Docker 安装不会在宿主机安装 `jarvis-box` 命令。包含此能力的 release 会在每个 deployment home 写入独立的 `update.sh`，升级时只需运行：
+
+```bash
+bash /absolute/deployment-home/update.sh
+bash /absolute/deployment-home/update.sh --version X.Y.Z
+```
+
+首次使用的旧 Docker 部署可从公开 mirror 的 `latest.json` 读取 `docker_update`，下载其中的 `url`，并用同一版本 `sha256sums_url` 指向的 `SHA256SUMS` 校验 `update.sh`。只有 `latest.json` 明确包含 `docker_update` 时才表示自助入口已经随 release 发布；没有该字段时，继续使用本节下方的手工 bundle/镜像包升级流程，不要拼接或猜测下载 URL。bootstrap 需要当前部署用户可执行的 Bash、Python 3、`curl`、`tar` 和本机 Docker Compose；它不要求宿主机有 `jarvis-box`，也不支持远程 Docker daemon。
+
+```bash
+(
+set -euo pipefail
+work="$(mktemp -d "${TMPDIR:-/tmp}/jarvis-box-docker-update.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+curl -fL https://download.hengshi.com/jarvis-box/latest.json -o "$work/latest.json"
+python3 - "$work/latest.json" "$work" <<'PY'
+import hashlib
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+latest_path, work = Path(sys.argv[1]), Path(sys.argv[2])
+data = json.loads(latest_path.read_text(encoding="utf-8"))
+update = data.get("docker_update") or {}
+version = data.get("version")
+if (not isinstance(update.get("url"), str) or
+    not isinstance(data.get("sha256sums_url"), str) or
+    not re.fullmatch(r"[0-9a-fA-F]{64}", str(update.get("sha256", ""))) or
+    not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", str(version or ""))):
+    raise SystemExit("latest release does not publish valid docker_update")
+update_path, sums_path = work / "update.sh", work / "SHA256SUMS"
+subprocess.run(["curl", "-fL", update["url"], "-o", str(update_path)], check=True)
+subprocess.run(["curl", "-fL", data["sha256sums_url"], "-o", str(sums_path)], check=True)
+manifest_sha = next((line.split()[0] for line in sums_path.read_text().splitlines()
+                     if len(line.split()) >= 2 and line.split()[1].lstrip("*") == "update.sh"), "")
+expected_sha = update["sha256"].lower()
+if not re.fullmatch(r"[0-9a-fA-F]{64}", manifest_sha) or manifest_sha.lower() != expected_sha:
+    raise SystemExit("SHA256SUMS does not match latest Docker updater metadata")
+actual_sha = hashlib.sha256(update_path.read_bytes()).hexdigest()
+if actual_sha != expected_sha:
+    raise SystemExit("downloaded Docker updater checksum mismatch")
+update_path.chmod(0o700)
+subprocess.run(["bash", str(update_path), "--deployment-home", "/absolute/deployment-home", "--version", version], check=True)
+PY
+)
+```
+
+脚本只支持官方标准 Compose 和官方 Jarvis Box image；客户派生 image、自定义 Compose 或其他布局继续走下方手工流程。原有 Compose 文件和 profile 选择必须保留并能通过目标 release 的合同校验，脚本拒绝 downgrade，并解析当前实例和目标版本，在停服前下载、校验并加载所有需要的 release 与 Docker 制品；active、waiting、finalizing、CI-wait 或 recovery-required Task 会阻止停服。它只接管指定的已有标准 deployment home，不会调用 Native 安装器或创建新实例。升级成功后继续使用 `<deployment-home>/update.sh`；旧镜像、bundle 和完整备份会保留。目标部署已经开始后若失败，不会只替换镜像进行自动回滚，应按输出的备份和人工恢复指引处理。
+
 执行同一个安装命令；不要直接运行 `docker compose down`、`stop` 或 `up --force-recreate`：
 
 ```bash
@@ -357,7 +410,7 @@ Docker 同模式升级必须保留完整 deployment home。部署脚本在重建
 
 部署脚本在容器重建后自动更新 Jarvis 管理的官方工具；失败时保留上一套可用工具并让部署失败，修复网络或上游问题后重跑同一个部署命令。可在容器内使用 `jarvis-box tools status` 查看状态、`jarvis-box tools update` 手工重试、`jarvis-box tools reset` 回到镜像基线。客户自装的独立用户级工具放在 `/home/jarvis/.local/bin`，不要覆盖 Jarvis 管理的官方同名命令；该目录属于持久化 deployment home，升级和容器重建后仍保留。需要 `apt` 管理的编译器、头文件或系统共享库通过[客户派生 Docker 镜像](docs/custom-docker-image.md)提供。
 
-回滚时下载并校验目标旧版本的私有 release bundle 和 image metadata、恢复对应 release tag，并执行同样的部署、验证和真实链路检查。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
+回滚时不能只恢复旧 image digest：必须下载并校验匹配的旧版本私有 release bundle 和 image metadata，同时恢复同一 deployment home 的完整备份（包括 `auth/`、`data/connector-state/`、`data/runtime-hostname` 以及其他 `data/` 状态），再恢复对应 release tag，执行同样的部署、验证和真实链路检查。升级目标已经开始后不自动替换 image 或 state；按 updater 输出的备份与人工恢复指引操作。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
 
 ## 10. 备份
 

@@ -126,6 +126,12 @@ jarvis-box agent smoke
 
 ### Docker
 
+#### 使用宿主机自助升级入口
+
+Docker 部署不要求宿主机安装 `jarvis-box` 二进制。包含此能力的 release 会在 deployment home 写入由该实例拥有的 `update.sh`，以后直接运行 `bash /absolute/deployment-home/update.sh`，或用 `--version X.Y.Z` 锁定目标版本。完整的首次 bootstrap、`latest.json`/`SHA256SUMS` 校验、失败边界和 prerequisites 见同一 release bundle 根目录的 `CUSTOMER-OPERATIONS.md` 的“宿主机自助升级”章节。
+
+只有 `latest.json` 明确提供 `docker_update` 时才表示当前 latest 已发布该入口；没有该字段时继续使用下方手工流程，不要猜测下载 URL。
+
 先用默认快速列表确认没有正在执行或等待恢复的 Task，然后从私有 `hengshi-jarvis/jarvis-box` GitHub Release 获取同一版本的 release bundle、`SHA256SUMS` 和 `production-image.json`；GitHub Release 下载不可用时使用 `https://download.hengshi.com/jarvis-box/releases/v<version>/` 下的同名 mirror 文件。GitHub 下载需要 repository access，公开 mirror 无需登录；运行时 license enforcement 是独立边界。校验制品后，将已加载的目标镜像包标签 `hengshi/jarvis-box:v<version>` 或 `production-image.json` 中的 GHCR `image_ref` 写入现有 `$home/deployment.env` 的 `JARVIS_IMAGE`，再使用目标 release bundle 内的 `deploy-production.sh`。不要手工判断部署模式后直接执行 Docker 停服命令。
 
 ```bash
@@ -138,7 +144,7 @@ jarvis-box tasks list
 
 Docker 部署脚本把容器的持久机器身份记录在 `<deployment-home>/data/runtime-hostname`。首次接管旧部署时，它会在替换容器前保留旧容器的实际 hostname，使依赖 hostname 的加密凭据在升级后仍可读取。不要绕过 `deploy-production.sh` 重建服务，也不要单独删除、复制或编辑该文件；身份与现存容器不一致时，脚本会在 `down` 前拒绝继续。
 
-回滚时恢复旧 digest，再执行同样两条命令。Jarvis revision 更新由 Runtime Foundation 完成，不与 jarvis-box image 升级绑定。
+回滚时不能只恢复旧 digest：必须同时保留并恢复匹配旧 release 的完整 deployment-home 备份（包括 `auth/`、`data/connector-state/`、`data/runtime-hostname` 和其他 `data/` 状态），再执行同样两条命令。目标部署已经开始后不要只替换 image 盲目回滚；按 updater 输出的备份和人工恢复指引处理。Jarvis revision 更新由 Runtime Foundation 完成，不与 jarvis-box image 升级绑定。
 
 ## 更新认证
 

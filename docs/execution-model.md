@@ -26,6 +26,8 @@ Inspect、list、verify、reap 和 clean 是只读或维护操作，不属于 Ta
 
 `@jarvis` 只是各 provider adapter 的命令匹配入口。命中后直接进入 `jarvis-command` lane，不生成 workflow input，也不把命令包装成一个虚构的 workflow type。GitLab、GitHub、Jira 和默认 Meegle backend 都向 command Agent 提供 provider CLI 与稳定 subject identity，并通过同一 read contract 要求其在执行前读取实时正文、完整评论历史和附件清单；默认 Meegle post-check Agent 同样获得只用于当前 Feishu Project Run 的 CLI 能力，并必须刷新工作项、全量评论、所需附件、关系和关联工作项。Feishu Project plugin 是唯一的服务端预取分支，Agent 只读取 `issue.json` 与 `notes.json`，plugin credential 不越过服务边界。所有 command 和 post-check 的原 subject 写回都由 `ProviderActionExecutor` 执行。GitLab MR 与 GitHub PR follow-up 共用 provider-neutral dispatcher 和状态机，provider adapter 只归一化事件并实现实时读取/状态评论；command mention 永远优先于普通评论 follow-up。MR/PR review 与 follow-up 保留自己的交付器，但消费同一个全局回写开关；review 写回是 append-only，follow-up 状态评论才按 marker 更新同一条 provider 评论。IM conversation reply 仍由 ChatBridge reply owner 管理，不属于“原 provider subject 回写”开关的范围。
 
+Command 与 workflow 评论由 `ProviderActionExecutor` 在发送前统一处理可识别的本机路径：行内 Markdown 本机链接降为可读标签，裸路径降为文件名并保留行号；不生成未经验证的远端链接。处理范围是 macOS 标准 Users 用户目录树中的路径、包含 Jarvis Box 隐藏运行目录的绝对路径及对应的本机文件链接。HTTP(S) 链接、仓库相对引用和其余说明保持原文。原始 Agent Artifact 保留，基于文件发送的 provider 必须读取与校验后正文一致的派生文件。转换后仍执行 publication guard；串入的命令输出、内部运行字段及无法消除的本机信息继续拒绝发送。可转换路径本身不要求 Agent 重生成或 failover，首次投递和重试使用同一规则。
+
 能力矩阵是路由和写回校验的单一语义源；不从 provider 名称推导隐含组合：
 
 | Provider | work-item.create | comment.command | subject.lifecycle | comment.write | repo association | repo host | change review | follow-up | issue labels/status |

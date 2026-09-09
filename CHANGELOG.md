@@ -1,6 +1,10 @@
 # 更新日志
 
-## 未发布
+## 0.2.32
+
+- Docker release 新增独立宿主机升级入口：支持从 `latest.json` 校验并 bootstrap `update.sh`，以后可在指定 deployment home 运行 `bash update.sh [--version X.Y.Z]` 完成同模式升级；不要求宿主机安装 Native `jarvis-box`。支持版本会在 release 的 `SHA256SUMS` 和 `latest.json.docker_update` 中发布该入口，历史 release 保持不变。
+- Docker 镜像升级保留 deployment 配置中的 shell 设置；新部署尚未启动、升级在配置写入前后被中断时，会恢复升级前的配置并尝试重启原服务。
+- 命令和工作流评论写回前会将支持的本地文件引用转换为可读标签或文件名，避免把宿主机路径作为可访问链接发布；原始 Agent 产物保持不变，不支持的链接目标仍按原有规则校验。
 
 ## 0.2.31
 
