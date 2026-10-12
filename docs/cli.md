@@ -50,6 +50,53 @@ Delivery Metrics 历史基线由 Status 服务管理枚举和节奏，实际分�
 
 在 `tasks start --prompt` 中，`--lane` 仅用于 prompt Start。默认 lane 是 `jarvis-command`；`delivery-metrics` 是普通 lane，可由 Status 服务或 operator 通过同一 Start 入口创建。`custom-user-task` 是 operator 创建或宿主定时触发的 providerless prompt job lane；lane 表示运行时行为类，`--job-id` 表示用户任务身份，例如 `customer-daily-report`。任意自定义 lane 会被拒绝，`--job-id` 只允许与 `custom-user-task` 一起使用。同一 `job_id` 已有 active/running Task 时，新的 Start 返回可解释的 conflict，不创建第二个 Task。已完成的 `custom-user-task` 不能从 detail 上直接 Start 重跑；补跑必须显式发起新的 prompt Start，避免重复发送日报、周报或客户报告。`custom-user-task` 不注入 provider writeback contract；IM、webhook 或 GitLab 投递证据由 agent task 自己在结果中记录。`read-only` 模式不会给 `custom-user-task` 本地定时任务特权。`memory-consolidation`、`daily-reflection` 和 `cognitive-evolution` 等 scheduled lane 只接受服务端 loopback internal route，不存在调用方 authority flag。
 
+## License
+
+```bash
+jarvis-box license status
+jarvis-box license activate
+jarvis-box license refresh
+jarvis-box license deactivate --yes
+jarvis-box license request --out request.json
+jarvis-box license import license.json
+```
+
+授权服务地址编译在二进制里，不是配置项（见[配置参考](configuration.md#runtimeenv)）。这些命令在授权 Pending、Expired、Revoked、Invalid 时都能用——它们正是从这些状态里出来的手段，所以没有任何「先有有效授权才继续」的前置检查。
+
+`request` 与 `import` 是不通外网的机器走的两个动作：本机出请求文件交给服务商、把服务商签回来的授权文件导入，两步都不发网络请求。离线授权的有效期由签发时写死（最长一年），到期或换机器同样由服务商重签一份。离线机器不需要配任何授权地址。完整流程见[离线授权](https://github.com/hengshi/jarvis-box/blob/main/CUSTOMER-OPERATIONS.md#9-离线授权不通外网的机器)。
+
+`status` 不联网，只读本机状态，并且不创建状态目录、设备私钥或锁文件：以另一个用户（典型是 `sudo`）运行不会把状态目录里的文件改成那个用户的，服务用户随后拿到的是正常的「未激活」而不是 `EACCES`。未激活时如实报告「激活 否（本机还没有验签通过的决定）」并以退出码 `0` 结束——退出码不跟随授权状态，`status` 的职责是报告事实，不是替脚本下判断。
+
+在线激活时，直接执行 `jarvis-box license activate`。命令显示 `激活码: ` 后，输入或粘贴激活码，按回车提交。输入不回显，按 Ctrl+C 取消；结束或取消后恢复终端。激活成功后显示本机授权状态。
+
+Docker 使用相同的交互。通过 release bundle 的部署入口执行，会使用该实例的正式部署文件和环境：
+
+```bash
+scripts/deploy-production.sh /srv/jarvis-box compose exec jarvis-box jarvis-box license activate
+```
+
+已进入容器 shell 时，直接执行 `jarvis-box license activate` 即可。直接从 Host 执行 `docker exec` 时，必须带 `-it`，将 `CONTAINER` 替换为实际容器名：
+
+```bash
+docker exec -it CONTAINER jarvis-box license activate
+```
+
+自动化可用管道或文件重定向传入激活码，此时直接读标准输入，不显示交互提示：
+
+```bash
+printf '%s' "$CODE" | jarvis-box license activate
+```
+
+也可使用 `activate CODE` 或 `activate --code CODE`，两种写法不能同时使用。显式参数优先于标准输入；命令行参数可能留在 shell 历史或进程列表里。所有输入方式使用同一套激活码校验，命令输出不回显激活码。从管道传激活码或导入授权文件时，`docker exec` 带 `-i`，`docker compose exec` 带 `-T`；交互输入使用带 TTY 的命令。
+
+macOS Native 安装后，直接运行授权命令会使用 `${JARVIS_RUNTIME_ROOT}/state/license`，默认是 `~/.jarvis-box/state/license`。服务、授权命令与诊断使用相同的状态目录解析规则，显式的 `JARVIS_STATE_DIR` 或 `JARVIS_LICENSE_STATE_DIR` 仍可覆盖默认值。
+
+`refresh` 立即发起一次签到，换取新的签名决定。后台签到循环是常驻的，所以这是排障手段而不是日常操作：签到失败由 stderr 和状态页报告，不需要手工触发。
+
+`deactivate` 单向、本机不可撤销：它在本地落一个标记并通知服务端，`--yes` 跳过一次性确认。通知服务端那一步失败时，命令会重新读取本机状态再给结论——本地标记已落盘就是已经停用（重发这次通知不会改变本机状态），未落盘才是可以重试。笼统报一句「停用失败」会让运维对这台机器的真实状态得出相反的结论。
+
+授权状态在 `jarvis-box license status` 和状态页的授权面板里是同一张字段表，`jarvis-box status` 另外输出一段 `key=value` 摘要供脚本读取。三处都不发网络请求。
+
 ## Task workspace
 
 ```bash

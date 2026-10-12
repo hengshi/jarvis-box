@@ -18,6 +18,7 @@
 - `metrics.task_run_trend.runtime_duration_ms` 返回本机工作台账中已完成运行记录的耗时合计，来源为 `kind=completed` 事件携带的运行耗时字段。它是本机工作台账可观测口径，不代表机器在线时间，也不等同于当前保留 Task state 的 Agent 执行时长。
 - `metrics.agent_runtime_duration_ms` 返回当前保留 Task state 中可见的 Agent 执行时长累计值，优先使用 `agent_metrics.total_agent_duration_ms`，缺失时从 process segments 的 duration 字段兜底。它是 `retained-task-state` 口径，不包含已经清理掉的历史 Task。
 - `task_run_trend.status` 取值为 `ready`、`empty`、`stale` 或 `unavailable`。Ledger 暂时不可读时，接口保留 work-items HTTP 200：有旧 rollup 返回 `stale`，无旧 rollup 返回 `unavailable`，并在 trend warnings 中说明原因。
+- `server` 是本机运行面的小投影（构建版本、serve mode、只读、可用智能体、ChatBridge 状态）。它可带 `license_expiry`，字段为 `text`、`detail`、`level`：还有 7 天以内就要失去授权时 `level=warn`，已经过期时 `level=overdue`，其余情况整条键不出现。它是展示，不是问题，也不参与 Run 门——同一句话的完整版由服务端在授权面板的“到期提醒”一行与 `jarvis-box license status` 里给出，页面不得自行推算哪一天算到期（离线与在线是两套判据）。
 
 分组时 lifecycle 事实优先于 feed kind：`waiting`、`stopped` 和 `needs-attention` 进入 `needs-human`，失败终态进入 `failed`，`completed` 和 `cancelled` 进入 `completed`；`progress_checkpoint` 等 kind 不得把这些状态重新归入 `doing`。历史持久化状态 `failed-terminal` 和 `retry-exhausted` 在读取时兼容投影为 `needs-attention`，仍按失败终态分组，不会被旧的 `monitor_status=active` 覆盖。
 
