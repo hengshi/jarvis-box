@@ -316,7 +316,124 @@ jarvis-box restart
 
 路径 B 在 `shell` 中使用 provider 原生命令登录、轮换或退出，再执行 `verify`。
 
-## 9. 升级与回滚
+## 9. 离线授权（不通外网的机器）
+
+默认的授权是**在线**的：盒子定期向授权服务签到，换取一段短期决定（最长 72 小时），
+签不上就停新 Run。这类机器必须能出站访问授权服务（`https://jarvis-license.hengshi.com`）。
+
+首次在线激活直接执行 `jarvis-box license activate`，在 `激活码: ` 提示处输入或粘贴激活码，
+按回车提交。输入不回显，按 Ctrl+C 取消。Docker 同样使用交互输入，通过正式部署入口执行：
+
+```bash
+scripts/deploy-production.sh /srv/jarvis-box compose exec jarvis-box jarvis-box license activate
+```
+
+已进入容器 shell 时，直接执行 `jarvis-box license activate`；从 Host 用 `docker exec` 执行时带 `-it`。
+
+**完全不通外网的机器**（私有部署、隔离网段）走另一条路：授权文件由服务商在网外签发，
+人带进来，`jarvis-box license import` 导一次，之后本机自己验签判期——**一个请求都不发**。
+
+| | 在线授权 | 离线授权 |
+| --- | --- | --- |
+| 机器要不要出网 | 要，授权服务必须可达 | 不要 |
+| 有效期 | 靠签到滚动，最长 72 小时 | 签发时写死，最长一年 |
+| 续期 | 自动 | 到期前联系服务商重签一份，再 `import` |
+| 撤销 | 服务端一撤，下次签到即停 | **做不到**。机器不联网，签出去就收不回 |
+| 换机器 | `deactivate` + `activate` | 新机器出请求文件 → 服务商签发 → `import` |
+| 不签到 | 故障（服务端计入「静默停摆」） | 正常（服务端单独计 `offline_licensed`） |
+
+**是哪种，由签发时决定**，不是客户在本机挑的：类型写在授权文件里，本机照它执行。
+两个方向都能换，都要服务商重签一份文件（见 9.3）。
+
+### 9.1 首次授权
+
+```bash
+# 1. 本机生成请求文件（不联网；不给 --out 就打到标准输出）
+jarvis-box license request --out request.json
+
+# 2. 把 request.json 整份交给服务商（工单、邮件，任何能过隔离网的方式）
+#    服务商在网内签发一份授权文件，带回来，形如 jarvis-box-license-XXXX.json
+
+# 3. 导入（不联网；文件走标准输入时是 jarvis-box license import - < license.json）
+jarvis-box license import jarvis-box-license-XXXX.json
+
+# 4. 确认：应看到「激活 是」和「授权方式 离线（不需要联网…）」
+jarvis-box license status
+```
+
+Docker 形态在容器里执行，`docker exec` 必须带 `-i`（`docker compose exec` 默认带）：
+不加它标准输入不转发，`import` 从管道读不到内容。
+
+**离线机器不需要配任何授权地址。** 授权服务地址是编译进二进制的常量，不是配置项，也没
+有「关掉授权」的开关——离线这条路上一个请求都不发，所以那台机器也不用能出网。
+
+请求文件里是本机的安装 ID、设备公钥和机器标识，**没有机密**，可以走普通通道传递。
+反过来，**授权文件不要手工改**：它是签名过的，改一个字节就导入失败，正规做法是让
+服务商重签一份。导入后的状态文件在 `JARVIS_LICENSE_STATE_DIR`（默认
+`${JARVIS_STATE_DIR}/license`），同样不要手工编辑或从别的机器拷过来——机器标识对不上
+时盒子不会开工。
+
+### 9.2 到期与续期
+
+离线授权**不会自己续期**，到期时间是签发时写死的。到期后本机不再开新 Run，`license
+status` 会说明是哪一条（租约截止已过）。已经到期的机器照样能出请求文件、能导入——
+`request` 和 `import` 不依赖当前授权是否有效。
+
+续期就是再走一遍 9.1：
+
+```bash
+jarvis-box license request --out request.json   # 交给服务商
+jarvis-box license import jarvis-box-license-XXXX.json
+```
+
+**建议提前一两个月做**，不要等停了我们才发现——隔离网的传递、服务商那边的签发都不是
+当天能完成的。续期签的是同一台机器：请求文件还是那台机器的安装 ID 和机器标识。
+
+到期前 7 天开始，状态页右上角（版本号旁边）和 `jarvis-box license status` 会提醒还有几天
+到期，状态页上悬停那一格能看到该做什么。那是**最后的兜底**，不是可以照着排的节奏——
+看到它的时候按上面的建议已经偏晚了，走完 9.1 至少还要几天。
+
+### 9.3 换成在线，或换回离线
+
+- **离线 → 在线**：要求那台机器**从此能出网**。客户重新出请求文件，服务商把这条授权
+  改回在线重签一份，客户 `import` 导入后盒子开始正常签到。**如果网没通就换，最多 72
+  小时（即租约上界）后停**——这是这个方向唯一的代价。
+- **在线 → 离线**：服务商把这条授权改成离线重签一份，客户 `import` 导入。之后机器可以
+  断网，也不再需要任何签到。**代价是从此撤销不了**（见上面那张表）。
+
+两个方向都不需要重装、不需要换激活码，导入完就生效，不用等重启。
+
+### 9.4 换机器（离线）
+
+离线的机器换了（主板、整机替换、机房迁移），新机器上：
+
+```bash
+jarvis-box license request --out request.json   # 在新机器上出请求文件
+```
+
+把这份请求文件连同**一句话的换机说明**（旧机已报废 / 已停用 / 迁到哪台）交给服务商，
+服务商确认后签发一份绑在新机器上的授权文件，导入即可。**不需要等任何窗口期**。
+
+旧机器即使还开着也拦不住（它不联网，服务端撤不到它）——这正是「离线授权撤销不了」的
+代价。所以换机的确认是人工的：**一台授权仍然只服务一台机器**，两台同时用是被这条
+约定挡住的，不是被技术挡住的。
+
+### 9.5 别做的事
+
+- 不要把整个部署目录（含 `JARVIS_LICENSE_STATE_DIR`）拷到另一台机器上顶替：机器标识不在
+  部署目录里，拷过去那台机器不会开工——离线授权下 `license status` 会多出一行
+  「机器绑定 不符：这份授权绑的是 <原来那台>」，新的 Run 全部被拒（在线授权则是在下一次
+  签到时被服务端拒）。
+- 不要手工修改或复制授权状态文件、不要手工改机器标识。
+
+## 10. 升级与回滚
+
+**升级前先把授权准备好。** 从带授权功能的版本起，每台盒子都必须有授权才能开新 Run：
+在线授权的机器备好激活码（升级后 `jarvis-box license activate`），离线授权的机器备好
+服务商签发的授权文件（升级后 `jarvis-box license import`，见第 9 节）。升级本身不受
+影响——服务照常起、状态页照常开——但**未激活的机器会拒绝所有新 Run**。已经激活过的
+机器不受影响：授权状态在 `JARVIS_LICENSE_STATE_DIR` 里，随 runtime state 一起保留，
+正常升级不需要重新激活。
 
 ### Native
 
@@ -389,6 +506,8 @@ PY
 
 脚本只支持官方标准 Compose 和官方 Jarvis Box image；客户派生 image、自定义 Compose 或其他布局继续走下方手工流程。原有 Compose 文件和 profile 选择必须保留并能通过目标 release 的合同校验，脚本拒绝 downgrade，并解析当前实例和目标版本，在停服前下载、校验并加载所有需要的 release 与 Docker 制品；active、waiting、finalizing、CI-wait 或 recovery-required Task 会阻止停服。它只接管指定的已有标准 deployment home，不会调用 Native 安装器或创建新实例。升级成功后继续使用 `<deployment-home>/update.sh`；旧镜像、bundle 和完整备份会保留。目标部署已经开始后若失败，不会只替换镜像进行自动回滚，应按输出的备份和人工恢复指引处理。
 
+升级期间会显示下载、镜像加载、备份、部署和容器内运行时工具更新阶段。耗时操作超过 1 秒后会打印已耗时，之后每 10 秒刷新并在完成时报告总耗时，避免把仍在执行误判为无响应。按 `Ctrl+C` 会中断当前阶段，updater 在信号处理器外回收子进程后明确报告中断，并继续遵循上一段的恢复或人工诊断边界。
+
 执行同一个安装命令；不要直接运行 `docker compose down`、`stop` 或 `up --force-recreate`：
 
 ```bash
@@ -412,7 +531,7 @@ Docker 同模式升级必须保留完整 deployment home。部署脚本在重建
 
 回滚时不能只恢复旧 image digest：必须下载并校验匹配的旧版本私有 release bundle 和 image metadata，同时恢复同一 deployment home 的完整备份（包括 `auth/`、`data/connector-state/`、`data/runtime-hostname` 以及其他 `data/` 状态），再恢复对应 release tag，执行同样的部署、验证和真实链路检查。升级目标已经开始后不自动替换 image 或 state；按 updater 输出的备份与人工恢复指引操作。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
 
-## 10. 备份
+## 11. 备份
 
 Native 备份安装器报告的实际 runtime root。不要假设客户使用某个历史目录，也不要只备份当前 shell 中 `which jarvis-box` 指向的位置。
 
@@ -428,7 +547,7 @@ Docker 备份完整 deployment home；其中的持久数据目录包括：
 
 备份可变数据前先规范停服，或使用客户批准的一致性方案。不要把备份写回 release bundle 或公共仓库。
 
-## 11. 故障诊断
+## 12. 故障诊断
 
 Delivery Metrics 历史基线分析使用普通 `delivery-metrics` lane Task。正在执行或等待恢复时会出现在默认 `jarvis-box tasks list`；历史排查使用 `jarvis-box tasks list --all --lane delivery-metrics`。进度、恢复入口和重试错误码见 [Delivery Metrics 历史基线操作手册](docs/delivery-metrics.md)。
 
@@ -442,10 +561,38 @@ Delivery Metrics 历史基线分析使用普通 `delivery-metrics` lane Task。�
 | 记忆固化/日省/心智进化不运行 | 部署模式、Host scheduler owner、Runtime Foundation status、Docker transport reachability |
 | 新 Task 停在 Agent runtime prepare | Runtime Foundation prepare 命令、Company repo 网络/认证、discovery root 健康和 Task preparation event |
 | Docker helper 无法进入环境 | Host operator/scheduler logs、容器状态和 inner job 是否安装 |
+| 授权被拒：这台机器不是被授权的那台 | 盒子换了机器（或整盘克隆了一台）。在线授权走下面「换机器与灾备切换」；离线授权走第 9.4 节（离线那台机器永不签到，换机由服务商重签一份） |
+| 授权被拒：本机读不到机器标识 | 部署不完整——容器不是 `scripts/deploy-production.sh` 起的，或 native 装的时候跳过了 systemd 单元。重装 / 重建容器即可，不要手工补文件 |
+| 离线授权到期了（`租约截止` 已过） | 正常到期，不是故障。走 9.2 续期：本机出请求文件 → 服务商重签 → `import` |
+| 明明有授权，Run 却不开工 | `jarvis-box license status` 逐行看：`判定`、`机器绑定`、`时钟`、`租约截止` 各是一条独立的拒绝理由 |
 
 不要先手工修改 state 文件，不要用挂载 Host HOME 的方式修复认证。先保留 Task state、event、日志、版本、部署模式和路径证据，再处理恢复。
 
-## 12. 安全边界
+### 换机器与灾备切换（一个授权码只授权一台机器）
+
+一个授权码在同一时刻只服务**一台**机器：盒子报上来的机器标识和上一次被承认的那台不符，
+就不再开工，`jarvis-box license status` 会说「这台机器不是被授权的那台，请联系服务商确认是否
+迁移」。这是**正常运维会碰到**的一次误伤（换主板、整机替换、机房迁移、灾备切回本机），处理
+成本是一次放行，不是永久关在门外。
+
+- **正规路径**：先在原机 `jarvis-box license deactivate`，再在新机上用同一个激活码
+  `jarvis-box license activate`。换机是「一台下线、另一台上线」，不是「两台同时用」。
+- **原机已经拿不到了**（硬件坏了、机器没了）：联系服务商在后台放行。放行之后**下一次签到
+  的那台机器**被认下，原机反过来就进不来了。
+- **机器标识从哪来**：`jarvis-box license status` 会显示读到的那一串和它的来源（文件 /
+  固件）。它由部署面从机器上读出来——native 是 systemd 单元里那一步（以 root 读固件 UUID，
+  读不到退 `/etc/machine-id`），Docker 是 `scripts/deploy-production.sh` 起容器前读一次、
+  写在部署目录**之外**再只读挂进去。**没有任何环境变量、配置项或命令行参数可以设置它**，
+  这是有意的：能设就等于能被拷贝的部署一起带走。
+- **不要把部署目录拷到另一台机器上顶替**：整个部署目录 `cp -a` 过去，机器标识**不会**跟着
+  走（它在部署目录之外），那台机器签到会被拒。这是这个机制的主要用途。
+- **别绕过 `scripts/deploy-production.sh` 手写 compose 起容器**：那样容器读不到机器标识，
+  它会照常跑起来、但一个 Run 都不开（拒绝的理由会写在 `jarvis-box license status` 里）。
+- **离线授权不是这条路**：那台机器永不签到，`deactivate` 也通知不到服务端，换机只能在
+  新机器上出请求文件、由服务商重签一份（第 9.4 节）。上面「后台放行」那一步对离线机器
+  没有用——服务端根本收不到它的签到。
+
+## 13. 安全边界
 
 - Docker socket 默认关闭；容器 root 加 Docker socket 等价 Host root。
 - Provider execution token 和 Agent credential 不进入 `runtime.env`。
@@ -453,6 +600,15 @@ Delivery Metrics 历史基线分析使用普通 `delivery-metrics` lane Task。�
 - IM provider secret 只属于 connector，不传给 Agent child process。
 - Jarvis Box 不拥有客户知识和 workflow，不读取 Company Jarvis repo。
 - `/status` 是运行诊断面，不是客户业务知识源。
+- 「一个授权码只授权一台机器」里的那串机器标识由盒子自己从机器上读、自报给服务端。它挡的是
+  「把部署拷到另一台机器上跑起来」这一类复制；机器上有 root 的人**刻意**去改它（改
+  `/etc/machine-id`、给容器挂一份假文件、换掉二进制）不在这一层的承诺范围内，和本文件其它
+  几条一样，这里不承诺强 DRM。真被这么做了，服务端的异常检测里看得见（来源 IP 变化、并存
+  时段相交），需要有人去看告警。
+- **离线授权签出去就收不回**：那台机器不联网，撤销、停用、租约上界都到不了它身上——它对
+  服务端是「什么都不发」。所以离线这条路上，授权的终点是**到期日**，控制点只有签发那一次
+  （谁签、签给哪台机器、签多久，都在授权文件里写死）。这是有意的商业安排，不是漏洞；
+  需要能撤销时就不要选离线授权。
 
 ## Docker 权限与备份原则
 

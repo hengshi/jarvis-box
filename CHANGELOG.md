@@ -1,5 +1,26 @@
 # 更新日志
 
+## 0.2.36
+
+- 在线激活默认使用交互输入：执行 `jarvis-box license activate` 后，按提示输入或粘贴激活码，输入不回显，回车提交；Ctrl+C 取消并恢复终端。Docker 支持相同交互，直接执行 `docker exec` 时带 `-it`。自动化可使用标准输入，也支持 `activate CODE` 和 `activate --code CODE`。
+- 修复 macOS Native 授权命令错误访问 Linux 状态目录的问题。服务、授权命令和诊断共用状态目录规则，macOS 默认 `${JARVIS_RUNTIME_ROOT}/state`（通常为 `~/.jarvis-box/state`），显式状态目录与授权目录配置仍然优先。
+
+## 0.2.35
+
+- 新增授权：每台机器必须有授权才能创建新的 Run。能出网的机器用激活码激活（`jarvis-box license activate`），此后定期向授权服务签到、滚动续租（单次租约最长 72 小时），签到断了就停新 Run；不通外网的机器走离线授权——`jarvis-box license request` 生成请求文件，交给服务商在网外签发授权文件，`jarvis-box license import` 导入后本机自己判期，一个请求都不发（最长一年）。`jarvis-box license status` 与状态页显示完整的授权状态：激活与判定、租约截止、机器标识、时钟异常，离线授权标明是离线、在线授权另外给出合同截止；不能开新 Run 时同时给出原因和该做什么。`jarvis-box status` 报结论与原因。授权快到期（7 天以内）或已经到期时，状态页顶栏与 `jarvis-box license status` 给出剩余天数或已到期。
+- 升级注意：升级后**未激活的机器会拒绝所有新 Run**（服务照常启动、状态页照常打开）。升级前先备好激活码（在线授权要求机器能出站访问 `https://jarvis-license.hengshi.com`）或服务商签发的授权文件（离线授权，不需要机器出网，也不需要配任何授权地址）；已经激活过的机器不受影响，授权状态随 runtime state 一起保留，不需要重新激活。详见[客户部署与运维指南](CUSTOMER-OPERATIONS.md)第 9、10 节。
+- 一个激活码只授权一台机器：换机器或灾备切换要先在旧机器上 `jarvis-box license deactivate`，再用新机器激活；离线授权的机器不联网，换机器由服务商重签一份授权文件。
+
+## 0.2.34
+
+- 内置 `uv-im-connector v0.0.19`，飞书群消息在建立长连接前先查询机器人自身身份，正确判断群里是否 @ 本机器人并移除 mention 文本，不再把被 @ 的消息当成未定向事件；显式配置的 `UV_LARK_BOT_OPEN_ID` 或 `UV_LARK_BOT_UNION_ID` 仍然优先。
+- 升级注意：飞书部署若两个 bot ID 都留空，身份查询会成为新的启动前置依赖；身份无法确认时 connector 不会降级接收群消息，并按现有共享进程生命周期停掉同进程的 HTTP API 和其他 provider，服务管理器可能持续重启。填好与当前应用对应的 `UV_LARK_BOT_OPEN_ID`（或已核实的 union ID）可跳过该查询。
+- Docker 自助升级分阶段显示进度（下载、镜像加载、备份、部署、容器内运行时工具更新）：耗时操作超过 1 秒后打印已耗时，之后每 10 秒刷新并在完成时报告总耗时；按 `Ctrl+C` 会把中断转发给当前阶段，updater 在信号处理器外回收子进程后明确报告中断，并进入既有恢复或人工诊断边界。
+
+## 0.2.33
+
+- 内置 `uv-im-connector v0.0.18`，飞书引用消息会保留 quoted parent 的文本、文件和文件夹上下文，钉钉 Stream 入站资源可通过 `downloadCode` 下载，企业微信与钉钉资源日志保留脱敏后的可排查信息。
+
 ## 0.2.32
 
 - Docker release 新增独立宿主机升级入口：支持从 `latest.json` 校验并 bootstrap `update.sh`，以后可在指定 deployment home 运行 `bash update.sh [--version X.Y.Z]` 完成同模式升级；不要求宿主机安装 Native `jarvis-box`。支持版本会在 release 的 `SHA256SUMS` 和 `latest.json.docker_update` 中发布该入口，历史 release 保持不变。

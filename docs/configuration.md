@@ -25,6 +25,7 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 
 | Variable | Meaning |
 |---|---|
+| `JARVIS_STATE_DIR` | 本机运行状态目录；macOS Native 默认 `${JARVIS_RUNTIME_ROOT}/state`（Runtime root 默认 `~/.jarvis-box`），Linux 默认 `/var/lib/jarvis-box`；服务、授权命令和诊断共用同一解析规则 |
 | `JARVIS_RUNTIME_AGENT` | selected Runtime Agent |
 | `JARVIS_RUNTIME_AGENT_SCOPE_DELIVERY_METRICS` | optional Runtime Agent override for the Delivery Metrics lane; prefer `jarvis-box agent set --scope delivery-metrics <agent>` |
 | `JARVIS_RUNTIME_AGENT_SCOPE_DELIVERY_METRICS_PREFIX_ARGS` | arguments inserted before generated Delivery Metrics lane arguments; use for scope-specific model/runtime options |
@@ -52,6 +53,16 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND` | 可选的绝对可执行路径；每次新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前调用；其父目录也会自动加入 Agent `PATH`，使同目录安装的 runtime 工具可直接发现 |
 | `JARVIS_AGENT_RUNTIME_PREPARE_TIMEOUT_SECONDS` | Agent runtime preparer 超时；默认 `120` |
 | `GIT_LFS_SKIP_SMUDGE` | Jarvis workspace clone/checkout 默认 `1`，LFS 按需下载；显式设为 `0` 恢复全量 materialize |
+| `JARVIS_LICENSE_URL` | **只在开发构建（`-tags jarvisdev`）里生效**：授权服务基地址，非回环地址必须是 `https`。发布构建连的是编译进二进制的常量 `https://jarvis-license.hengshi.com`，这个变量被忽略（`serve` 启动时告警）。开发构建里留空表示该实例不受本地授权控制约束 |
+| `JARVIS_LICENSE_STATE_DIR` | 本机授权状态目录，默认 `${JARVIS_STATE_DIR}/license`；设备身份、已验签的服务端决定和租约都在这里，必须在持久化存储上 |
+| `JARVIS_LICENSE_CHANNEL` | 报给授权服务的发布通道，默认 `stable` |
+| `JARVIS_LICENSE_DEPLOYMENT` | 报给授权服务的部署形态，`native` 或 `docker`；Docker 镜像已设为 `docker`，Native 安装用默认值 |
+
+授权配置和其余 runtime 配置一样只有 `JARVIS_ENV_FILE` 一个来源。`jarvis-box serve`、`jarvis-box status` 的授权段和 `jarvis-box license` 的子命令读的是同一份合并结果（进程环境优先，`runtime.env` 只补空位），所以写进 `runtime.env` 的 `JARVIS_LICENSE_CHANNEL` 它们立刻都看得见；不要为此在进程环境里再写一份，授权配置也不属于 `deployment.env`。授权服务地址不是配置项：它编译在二进制里（发布构建是常量），只有开发构建才读环境变量。
+
+发布构建没有「不受本地授权控制约束」这个状态：地址是编译进去的常量，每台盒子都必须有授权（在线激活或离线授权文件）才能开 Run。不受约束只可能是开发构建（`-tags jarvisdev` + 未配 `JARVIS_LICENSE_URL`），`serve` 启动时会打印 WARN。受约束的构建还必须内置签名公钥——否则 `serve` 直接拒绝启动，而不是降级成「没有限制」：静默降级成不设防正是这个机制最怕的失败模式，所以 `jarvis-box status` 报 `configured=but-unusable` 时的正确动作是修配置，不是去找「为什么 Run 没被拦」。
+
+授权服务是公网服务，jarvis-box 需要能出站访问 `https://jarvis-license.hengshi.com`。离线授权的机器不需要出站访问它——那条路一个请求都不发。服务端证书由**系统信任根**校验，客户端没有跳过校验的开关；私有 CA 签发时必须在运行 jarvis-box 的机器上安装该 CA（Docker 形态是容器内，见[客户派生 Docker 镜像](custom-docker-image.md)）。执行 `jarvis-box license activate` 后按提示输入激活码，输入不回显，回车提交；Docker 也支持同样的交互。自动化可使用标准输入、`activate CODE` 或 `--code CODE`，不从环境变量读取激活码。详见 [CLI 授权命令](cli.md#license)。
 
 Delivery Metrics 默认继承 `JARVIS_RUNTIME_AGENT`。Status 服务为待分析 MR/PR 启动 `delivery-metrics` lane Task；后续 Start/Continue 都从 canonical runtime env 重新读取该 scope 的 Agent、命令、prefix args 和模型配置。操作步骤见 [Delivery Metrics 历史基线](delivery-metrics.md#选择判断-agent)。
 
