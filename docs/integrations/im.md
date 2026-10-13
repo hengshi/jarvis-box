@@ -44,6 +44,21 @@ JARVIS_CHAT_ALLOWED_CONVERSATIONS=wecom:wecom:room-1
 
 `JARVIS_CONNECTOR_PROFILE` 是唯一启用开关。仅保留 URL 不会启动 ChatBridge connector client；把 profile 设为空并通过正式部署脚本重建，会同时移除旧 connector service。
 
+`JARVIS_BRAND_NAME` 可选，用来替换客户看到的助手显示名（默认 `Jarvis`）。它同时作用于 IM 回执与完成通知、发给 Agent 的提示词、写回 MR/PR 的评论和 Status 页面的助手文案；定时认知任务保留固定产品名称：JARVIS 记忆固化、JARVIS 日省、JARVIS 心智进化。二进制名、镜像、systemd/launchd 单元、安装路径和所有 `JARVIS_*` 变量名不随之改变。改显示名后，群聊里 `@` 的对象也要和 `JARVIS_MENTION_NAMES`（默认 `jarvis,jarvis-box`）保持一致。这个值会被写进 Status 页面的 JavaScript 字符串和 HTML 标记，也会拼进下面几条默认文案的格式串，所以不能包含 `'` `"` `` ` `` `\` `<` `>` `&` `%` 或控制字符；含这些字符时服务启动失败，并在错误里指出是哪个字符。
+
+以下四条模板可选，用来替换客户最常看到的 IM 文案，留空即使用默认值：
+
+| 变量 | 默认 | `%s` 依次替换为 |
+| --- | --- | --- |
+| `JARVIS_CHAT_LAUNCH_REPLY_TEMPLATE` | `<助手名> 已开始处理。run_id: %s` | run id |
+| `JARVIS_CHAT_QUEUED_REPLY_TEMPLATE` | `<助手名> 已接收任务，%s。task_id: %s` | 等待原因、task id |
+| `JARVIS_CHAT_PROGRESS_REPLY_TEMPLATE` | `<助手名> 处理中：%s。run_id: %s` | phase、run id |
+| `JARVIS_CHAT_HELP_REPLY_TEMPLATE` | `<助手名> 未被唤起。请在群聊中 @<助手名>，或用 \`<触发词> ...\` / \`/start ...\` 开始。` | 助手显示名、触发词 |
+
+这四条模板最终交给 `fmt.Sprintf`，所以服务启动时会按各自的参数真实渲染一次：缺少必需的 `%s`、多写了 `%s`、或用了 `%s` 以外的动词（含运维文案里很自然的裸 `%`）都会启动失败，并指出是哪个变量。字面量 `%` 要写成 `%%`。
+
+`JARVIS_COMMAND_NOTIFY_COMPLETED_TEMPLATE` 不同：它是纯文本标题，不做格式替换，也不做 `%s` 校验，用来替换任务完成通知的首行（默认 `<助手名> 任务已完成`）。
+
 启动后 Jarvis Box 会读取 connector 的 `GET /v1/meta`，要求 `service=uv-im-connector` 且 protocol version 兼容。
 
 ## 会话语义

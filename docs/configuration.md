@@ -48,6 +48,12 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 | `FEISHU_PROJECT_SIMPLE_NAMES` | optional JSON mapping from stable Feishu Project webhook project keys to browser URL `simple_name`; required for plugin-backed stable keys, while the Meegle CLI backend resolves and caches it through `project search` |
 | `JARVIS_*_COMMAND_ALLOWED_USERS` | optional non-bot author allowlists for GitLab, GitHub, Jira, and Feishu Project command comments |
 | `JARVIS_UV_IM_CONNECTOR_URL/TOKEN` | jarvis-box → connector access when profile is `uvim` |
+| `JARVIS_BRAND_NAME` | 助手显示名，默认 `Jarvis`；覆盖 IM 回执与完成通知、发给 Agent 的提示词、写回 MR/PR 的评论、以及 Status 页面的助手文案。定时认知任务保留固定产品名称：JARVIS 记忆固化、JARVIS 日省、JARVIS 心智进化。只改显示名，不改二进制名、镜像、systemd/launchd 单元、安装路径或任何 `JARVIS_*` 变量名。该名字会写进 Status 页面的 JavaScript 字符串和 HTML 标记，也会拼进默认 IM 回执的格式串，因此不能包含 `'` `"` `` ` `` `\` `<` `>` `&` `%` 或控制字符；含这些字符时 serve 启动失败并指明字符 |
+| `JARVIS_CHAT_LAUNCH_REPLY_TEMPLATE` | Task 被接受启动时发出的 IM 回执模板，默认 `<助手名> 已开始处理。run_id: %s`；必须保留 `%s`（run id），字面量 `%` 写成 `%%` |
+| `JARVIS_CHAT_QUEUED_REPLY_TEMPLATE` | Task 进入准入等待时发出的 IM 回执模板，默认 `<助手名> 已接收任务，%s。task_id: %s`；两个 `%s` 依次是等待原因和 task id，字面量 `%` 写成 `%%` |
+| `JARVIS_CHAT_PROGRESS_REPLY_TEMPLATE` | 运行中进度回执模板，默认 `<助手名> 处理中：%s。run_id: %s`；两个 `%s` 依次是 phase 和 run id，字面量 `%` 写成 `%%` |
+| `JARVIS_CHAT_HELP_REPLY_TEMPLATE` | 消息未唤起助手时的提示模板，默认给出 @ 助手名与触发词开头的两种用法；两个 `%s` 依次是助手显示名和触发词（`JARVIS_MENTION_NAMES` 首项），字面量 `%` 写成 `%%`。群聊里 `@` 的对象必须与 `JARVIS_MENTION_NAMES` 一致 |
+| `JARVIS_COMMAND_NOTIFY_COMPLETED_TEMPLATE` | 任务完成通知的标题，默认 `<助手名> 任务已完成`；纯文本，不做格式替换 |
 | `JARVIS_TASK_STORE_MIN_FREE_GB` | workspace admission floor |
 | `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER` | 可选的 workspace 准备程序；在 checkout 后、Agent 启动前调用，可配置依赖缓存和 workspace-local Git identity |
 | `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND` | 可选的绝对可执行路径；每次新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前调用；其父目录也会自动加入 Agent `PATH`，使同目录安装的 runtime 工具可直接发现 |
