@@ -6,6 +6,7 @@
 
 - [开始使用](guide/getting-started.md)：新客户、Native 和 Docker 的最短路径
 - [运维入口](operations.md)：状态、日志、停服、升级、认证和备份
+- [Agent skills](agent-skills.md)：用自然语言配置与使用 Jarvis Box，独立安装产品 skill 包
 - [产品概览](product-overview.md)：jarvis-box 在 Jarvis 生态中的职责
 - [三仓职责与发布关系](../REPOSITORY-MODEL.md)：create-jarvis、公开发行仓库和内网源码仓库的边界
 - [认证](../AUTHENTICATION.md)：Native、Docker Host 导入和 Docker 内直接登录
