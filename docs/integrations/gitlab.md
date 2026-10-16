@@ -1,5 +1,7 @@
 # GitLab 接入
 
+Webhook 通过鉴权、请求校验和可靠落盘后立即返回 `202 Accepted`，业务处理在后台执行；最终结果通过 Status、work ledger 和投递回执观察。重复投递和重启行为见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+
 GitLab 是事件、subject 与安全 writeback 的 provider adapter。它不定义客户状态、标签或 workflow 语义。
 
 ## 认证与 webhook 协调

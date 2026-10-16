@@ -67,6 +67,7 @@ GitHub / GitLab / IM / Jira ingress
 
 ## 常用入口
 
+- [Agent skills](docs/agent-skills.md)：让客户 Agent 按目标查找配置、修改 IM 文案、使用和诊断 Jarvis Box；产品 skills 可独立安装更新
 - [完整使用文档](docs/README.md)：Provider 接入、配置、执行模型、状态和清理合同
 - [客户派生 Docker 镜像](docs/custom-docker-image.md)：通过 `apt` 增加客户代码仓库需要的编译器、头文件和系统共享库
 - [Delivery Metrics 历史基线](docs/delivery-metrics.md)：查看分析进度、恢复中断基线和处理重试

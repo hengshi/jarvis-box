@@ -18,11 +18,13 @@ Inspect、list、verify、reap 和 clean 是只读或维护操作，不属于 Ta
 
 ## Provider lane ownership
 
+`issue-post-check` 必须向原 subject 回写可读结论，包括证据不足、需要补充输入和跳过复核的结论。Agent 在 `summary` 返回提单人可读的结论，完整正文可写入 `comment.md`。外部回写开启时，若 Agent 未声明 `provider.comment.create`，`ProviderActionExecutor` 自动补齐必需的评论动作，优先使用非空 `comment.md`，正文缺失或为空时将 `summary` 保存为 `comment.md`，并先投递结论，再执行其他已声明动作。生成动作使用 exact input subject，进入同一 capability、正文安全校验、投递与幂等重放链路；Agent 原始结果保留，实际动作记录在执行审计中。该补齐只保证结论投递，不从 customer outcome 推测标签、状态或后续 workflow。普通 customer workflow 仍可返回空 actions；`JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 时保留本地结果及跳过审计，不生成外部评论。正文校验或实际投递失败仍由现有失败处理机制收口，不能显示为成功。
+
 | 组件 | 唯一职责 | 不负责 |
 | --- | --- | --- |
 | `IssueLauncher` | 创建类事件的 post-check 与客户 workflow contract 执行 | `@jarvis` 评论命令、直接 provider mutation |
 | `CommandLauncher` | GitLab、GitHub、Jira 或飞书项目评论中显式命令的 Agent 执行；产出 `comment.md` | 伪造 workflow type、向 Agent 暴露评论 endpoint、直接 provider mutation |
-| `ProviderActionExecutor` | 校验并执行 command 与 workflow-result 中声明的 provider action，持久化 response/action/audit | 命令解释、客户 workflow 选择、Agent 生命周期 |
+| `ProviderActionExecutor` | 保证 post-check 结论投递，校验并执行 command 与 workflow-result 中声明的其他 provider action，持久化 response/action/audit | 命令解释、客户 workflow 选择、Agent 生命周期 |
 
 `@jarvis` 只是各 provider adapter 的命令匹配入口。命中后直接进入 `jarvis-command` lane，不生成 workflow input，也不把命令包装成一个虚构的 workflow type。GitLab、GitHub、Jira 和默认 Meegle backend 都向 command Agent 提供 provider CLI 与稳定 subject identity，并通过同一 read contract 要求其在执行前读取实时正文、完整评论历史和附件清单；默认 Meegle post-check Agent 同样获得只用于当前 Feishu Project Run 的 CLI 能力，并必须刷新工作项、全量评论、所需附件、关系和关联工作项。Feishu Project plugin 是唯一的服务端预取分支，Agent 只读取 `issue.json` 与 `notes.json`，plugin credential 不越过服务边界。所有 command 和 post-check 的原 subject 写回都由 `ProviderActionExecutor` 执行。GitLab MR 与 GitHub PR follow-up 共用 provider-neutral dispatcher 和状态机，provider adapter 只归一化事件并实现实时读取/状态评论；command mention 永远优先于普通评论 follow-up。MR/PR review 与 follow-up 保留自己的交付器，但消费同一个全局回写开关；review 写回是 append-only，follow-up 状态评论才按 marker 更新同一条 provider 评论。IM conversation reply 仍由 ChatBridge reply owner 管理，不属于“原 provider subject 回写”开关的范围。
 

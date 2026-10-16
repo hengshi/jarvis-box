@@ -8,6 +8,7 @@ README.md
 REPOSITORY-MODEL.md
 SECURITY.md
 docs/README.md
+docs/agent-skills.md
 docs/architecture.md
 docs/cli.md
 docs/code-attribution.md
@@ -34,3 +35,11 @@ docs/status-api.md
 docs/status-ui.md
 docs/storage-model.md
 docs/task-external-resource-lifecycle.md
+install-skills.py
+skills/jarvis-box-doctor/SKILL.md
+skills/jarvis-box-init/SKILL.md
+skills/jarvis-box-monitor/SKILL.md
+skills/jarvis-box/SKILL.md
+skills/jarvis-box/references/configuration.md
+skills/jarvis-box/references/operations.md
+skills/jarvis-box/references/tasks.md
