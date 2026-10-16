@@ -66,6 +66,10 @@ Linux system install 可以将 config、state 和 logs 映射到 `/etc/jarvis-bo
 
 `JARVIS_STATE_DIR` 不是 service log 目录，也不是 Workspace。
 
+`JARVIS_STATE_DIR/github-webhooks/` 保存 GitHub 投递回执。回执在 HTTP 确认前持久化，以 delivery ID 和正文哈希去重；尚未分派的回执保留原始正文，服务重启后继续处理。分派完成后清除正文并保存处理结果。处理时中断的回执保留为结果未知，禁止自动重放，以免重复创建 Task 或重复执行外部操作。
+
+投递回执只记录传输受理和分派结果，不拥有 Task/Run 生命周期，也不是全局 FIFO 队列。回执与锁文件沿用投递去重记录的保留范围，不随某个 Task 的清理删除；删除去重记录会使同一历史投递再次具备执行资格。
+
 `runtime-agent-route.json` 保存尚未到期的 service-level agent cooldown。`runtime-agent-events.jsonl` 保存 unavailable observation、cooldown extension 和 restored 审计事件；具体 Task 的 cross-agent child conversation 记录在该 Task 的 `task-events.jsonl`。两者不属于 Task Artifact；服务重启时只恢复 timer 和路由状态，不据此恢复或重跑 Task。
 
 ## Delivery Metrics 派生状态
@@ -311,3 +315,13 @@ Provider adapter 只负责把 webhook 归一成 subject terminal event，TaskSer
 - 只有后继 Task 完整成功、subject 一致且存在显式 lineage 时投影才成立。
 
 因此，历史 reconcile 不会把已被取代的 Task 重新加入继续执行或评论回写计划。
+
+## Webhook 受理与恢复
+
+GitHub、GitLab、Jira 和飞书项目共用同一后台受理逻辑。完成鉴权、请求校验和投递回执的文件、目录同步后，立即返回 `202 Accepted`；Provider API、Git、Task/Run 准入、Agent 启动、终态清理和回写在后台继续，使用服务拥有的 context，不受原 HTTP 请求断开影响。202 只表示可靠接收，不表示业务成功，初始响应不包含 Task ID 或业务完成结果。
+
+GitHub 继续使用`JARVIS_STATE_DIR/github-webhooks/` 目录、投递身份和已有回执，升级后不会重放旧的成功投递。GitLab、Jira、飞书项目的回执位于 `JARVIS_RUN_DIR/.webhook-deliveries/<receipt_id>.json`，按渠道、事件、可用的投递 ID 和完整正文摘要确定身份。认证请求头不保存；飞书项目 body token 在存储前清除。目录和回执限当前运行用户访问。
+
+回执阶段为 `pending`、`dispatching`、`completed`、`failed`、`outcome_unknown`，只描述投递责任，不是 Task/Run 状态。相同投递处理中返回 202，完成后返回 200 且不重复派发；失败或结果未知的重复投递返回 409，应先检查 Task 与平台事实再决定新的人工操作。重启只继续 pending；没有活跃派发者的 dispatching 标记为 outcome_unknown，不自动重放外部副作用。正常停止服务时不再认领新的投递，尚未认领的回执保持 pending；服务等待已经认领的派发结束后完成关闭，停服信号不会提前取消该派发。派发返回不确定错误或明确报告未知的准入结果时，回执保持 outcome_unknown，不记成确定失败。
+
+最终业务结果进入回执的 `result.status` / `result.payload`、work ledger 和适用的 Status 事件。完成或确定失败的回执清除请求正文，派发结果未知时保留正文供核查；投递去重依据随实例状态目录备份和保留，Task clean 不删除它。非法鉴权、JSON、超大请求、只读模式和接入未配置仍直接返回错误；各渠道规范路由及别名使用相同受理逻辑。

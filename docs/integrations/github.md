@@ -1,5 +1,7 @@
 # GitHub 接入
 
+Webhook 通过鉴权、请求校验和可靠落盘后立即返回 `202 Accepted`，业务处理在后台执行；最终结果通过 Status、work ledger 和投递回执观察。重复投递和重启行为见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+
 GitHub provider loop 用于把 GitHub issue comment 和 pull request 事件接入 Jarvis Box。
 
 ## 当前支持
@@ -72,6 +74,10 @@ GH_CMD=gh
 
 兼容路径 `/github-webhook` 也可用，但新部署推荐 `/webhooks/github`。
 
+合法投递通过验签并持久化后立即返回 `202`，响应包含 `ok`、`accepted`、`async` 和 `delivery_id`。该响应表示投递已接收，不表示 Task 已启动或执行成功；GitHub API 查询、仓库准备、Agent 启动和终态处理在后台完成，结果通过状态页的工作动态和 Task 详情查看。调用方不能从确认响应读取 Task/Run ID。
+
+相同 delivery ID 与请求正文的重复投递不会重复执行：处理中返回 `202`，已处理返回 `200`。服务重启会恢复尚未开始处理的投递；处理过程中中断、结果未知或处理失败的投递不自动重放，重复投递返回 `409`，应先检查服务日志和对应 Task，确认已有副作用后再决定后续操作。无法持久化投递时返回 `500`，不会确认接收或启动处理。
+
 有仓库 webhook 管理权限时，可用 `gh api` 创建 webhook：
 
 ```bash
@@ -135,7 +141,7 @@ PR review 不按 marker 更新旧 bot comment。新建 review comment 返回 404
 
 按顺序做四层验证：
 
-1. 本机 HMAC smoke：按 [network-ingress.md](../network-ingress.md) 验证 `POST http://127.0.0.1:8787/webhooks/github`，有效签名返回 200，错误签名返回 401。
+1. 本机 HMAC smoke：按 [network-ingress.md](../network-ingress.md) 验证 `POST http://127.0.0.1:8787/webhooks/github`，首次有效投递返回 202，错误签名返回 401。
 2. 公网入口 smoke：从生产机器外部访问 `https://<jarvis-public-url>/webhooks/github`，确认 HTTPS、反向代理和 jarvis-box 串通，并确认 `/server/api/*` 与公网 `:8787` 不可访问。
 3. GitHub delivery smoke：在 GitHub webhook 页面发送 ping，或用 `gh api "repos/OWNER/REPO/hooks/HOOK_ID/pings" -X POST` 触发 ping，再查看最新 delivery。ping 事件应返回 2xx，jarvis-box body 通常包含 `github_event_not_supported`，且不会启动 agent。
 4. 真实 issue post-check 闭环：创建 allowlist 仓库的测试 issue，确认 `issues/opened` 启动且只启动一个 `post-check` Task，普通 edited/labeled 事件不会重跑，最终评论写回原 issue。

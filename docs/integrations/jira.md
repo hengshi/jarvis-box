@@ -1,5 +1,7 @@
 # Jira 接入
 
+Webhook 通过鉴权、请求校验和可靠落盘后立即返回 `202 Accepted`，业务处理在后台执行；最终结果通过 Status、work ledger 和投递回执观察。重复投递和重启行为见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+
 Jira 是 work-item provider，与飞书项目、GitLab Issues 和 GitHub Issues 位于同一逻辑层。Jira issue 本身不隐含代码仓库所属；operator 可以为一个 Jira project 关联零个、一个或多个 GitLab/GitHub 仓库。
 
 ## 当前支持
