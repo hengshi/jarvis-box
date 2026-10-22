@@ -13,7 +13,18 @@ Use the supplied host/deployment context. If multiple instances are plausible, a
 
 Docker operations belong to one explicit deployment home and its release's `scripts/deploy-production.sh`. Execute Agent/provider checks in that deployment's persistent Agent HOME, not the Host's identity. Host Agent discovery roots and container discovery roots are independent installation targets.
 
-This pack describes the 0.2.38 contract. Verify commands and variables against the installed release's help and documentation when its version differs. Prefer that release's local bundle docs, then version-matched official customer docs. Do not apply a newer branch's variables to an older binary. The public documentation repository is [hengshi/jarvis-box](https://github.com/hengshi/jarvis-box); release access and licensing are separate.
+This pack is a customer-facing contract, not a substitute for the installed release. Before applying a command or variable, establish release/version compatibility with [Release compatibility](references/release-contract.md). Prefer the installed binary's help and that release's local bundle docs, then version-matched official customer docs. Do not apply `main` documentation or a newer skill pack to an older binary. The public documentation repository is [hengshi/jarvis-box](https://github.com/hengshi/jarvis-box); release access and licensing are separate.
+
+Route adjacent requests before acting:
+
+| Request | Primary skill |
+| --- | --- |
+| First configuration, deployment, or end-to-end readiness acceptance | `jarvis-box-init` |
+| Read-only diagnosis of an existing deployment | `jarvis-box-doctor` |
+| Read-only activity summary, stuck work, or Delivery Metrics observation | `jarvis-box-monitor` |
+| Maintain this public docs/release-overlay repository | `jarvis-box-release-maintainer` |
+
+Stay here when the task changes a supported runtime setting, installs product skills, chooses a Runtime Agent, manages license/upgrade/deployment operations, or performs an authorized Task recovery. Do not use this skill to edit private Jarvis Box implementation code; use `jarvis-box-release-maintainer` to enforce that repository boundary.
 
 ## Find the customer's intent
 
@@ -25,6 +36,7 @@ Read only the relevant reference:
 | Choose an Agent/model, connect a provider, adjust allowlists, notifications, storage or preparation | [Configuration by intent](references/configuration.md) |
 | Install, upgrade, activate, back up, roll back, or change runtime tools | [Operations](references/operations.md) |
 | Inspect tasks, retry delivery, recover a lost Run, clean history, understand metrics | [Tasks and monitoring](references/tasks.md) |
+| Decide which release/documentation/source is authoritative, or handle a webhook/writeback acceptance question | [Release compatibility and delivery boundaries](references/release-contract.md) |
 
 For an unfamiliar setting, search the matching release's `docs/configuration.md`, `config/env.jarvis-box.sample`, integration docs and CLI help using the customer's behavior terms, then the candidate variable. Confirm its actual consumer when source is available. If the release has no supported setting, say so; do not invent a variable.
 
@@ -38,8 +50,17 @@ For an unfamiliar setting, search the matching release's `docs/configuration.md`
 
 Report the resulting behavior, where the setting was saved, whether it is active, and the evidence or remaining activation step. Keep the answer focused on the customer's goal.
 
+A provider webhook's `202 Accepted` proves durable intake only. It does not prove Task creation, Agent execution, output quality, or writeback. For failed or uncertain delivery, inspect the receipt and existing artifacts before deciding whether Continue is safe; never blindly retry an `outcome_unknown` side effect.
+
 ## Ownership and installation
 
 Jarvis Box owns this pack and `jarvis-box-init`, `jarvis-box-doctor`, `jarvis-box-monitor`. They are customer product skills, separate from repository development skills and Company knowledge/workflows. Install/update this pack explicitly with the pack's `install-skills.py`; it does not require a running Jarvis Box. See the official [skill installation guide](https://github.com/hengshi/jarvis-box/blob/main/docs/agent-skills.md).
 
 Company Runtime Foundation `prepare` may update Company skills before an Agent starts. It does not update this pack or the Jarvis Box binary. Installing into a local Host Agent does not modify any other machine or a Docker Agent HOME. Start a fresh Agent session to verify discovery after installation.
+
+For direct-triggered execution, use the repository depth pack:
+
+- [Six-dimension implementation and risk model](references/skill-depth.md)
+- [Machine-readable package and capability inventory](references/skill-depth.json)
+- [Runtime-hidden eval suite](evals/evals.json); normal tasks must not treat its expectations as task input
+- `python3 scripts/audit_skill_depth.py --repo <repo-root> --router jarvis-box` for the deterministic audit in a source checkout

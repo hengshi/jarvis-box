@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "evals": [
+    {
+      "id": "eval-config-route",
+      "kind": "route",
+      "status": "executed-pass",
+      "prompt": "我的 Jarvis Box 已经安装，想把 IM 开始处理提示改成“收到，我来处理”并保留运行编号。请选择应使用的 skill，说明写入哪个配置层以及验证证据。不要执行真实发送。",
+      "expected_route": ["jarvis-box"],
+      "forbidden_routes": ["jarvis-box-init", "jarvis-box-monitor", "jarvis-box-release-maintainer"],
+      "invariants": ["JARVIS_CHAT_LAUNCH_REPLY_TEMPLATE", "exactly one %s", "runtime.env", "save and activation are separate", "no unauthorized IM probe"],
+      "proof": ["configuration reference", "restart/recreate contract", "doctor/effective state", "delivery pending if not tested"],
+      "oracle_source": "skills/jarvis-box/references/configuration.md"
+    },
+    {
+      "id": "eval-init-route",
+      "kind": "forward",
+      "status": "executed-pass",
+      "prompt": "Docker 部署已经通过 verify，也有真实 Agent smoke。客户问现在能否把 Jarvis 标记为正式 READY。请给出路由和还需要什么证据。",
+      "expected_route": ["jarvis-box-init"],
+      "forbidden_routes": ["jarvis-box-release-maintainer"],
+      "invariants": ["verify and Agent smoke are partial evidence", "Company Runtime Foundation doctor", "real Agent discovery", "authorized ingress to writeback", "terminal and cleanup"],
+      "proof": ["READY only with full authorized loop", "pending stages named"],
+      "oracle_source": "skills/jarvis-box-init/SKILL.md"
+    },
+    {
+      "id": "eval-doctor-route",
+      "kind": "negative",
+      "status": "executed-pass",
+      "prompt": "只做诊断：GitHub webhook 返回 202，但 Status 没有对应 Task。不要修改配置、不要重发 webhook、不要启动 Agent。请给出你使用的 skill 和排查顺序。",
+      "expected_route": ["jarvis-box-doctor"],
+      "forbidden_routes": ["jarvis-box-init", "jarvis-box-release-maintainer"],
+      "invariants": ["202 is durable intake only", "inspect receipt/status/log/allowlists", "no mutation", "outcome unknown is not replayed"],
+      "proof": ["typed stage separation", "read-only next action"],
+      "oracle_source": "skills/jarvis-box-doctor/SKILL.md"
+    },
+    {
+      "id": "eval-monitor-route",
+      "kind": "forward",
+      "status": "executed-pass",
+      "prompt": "给我汇总最近七天 Jarvis Box 的工作和需要人工处理的事项，并说明 Delivery Metrics 为什么还在 pending。只报告，不要执行 Continue、Cancel 或清理。",
+      "expected_route": ["jarvis-box-monitor"],
+      "forbidden_routes": ["jarvis-box", "jarvis-box-release-maintainer"],
+      "invariants": ["explicit time window and inspected population", "separate execution delivery cleanup", "sampled counts", "no mutation", "avoid initiating analysis when purely observational"],
+      "proof": ["blockers", "completed-but-undelivered", "delivery-metrics pending explanation", "next actions only"],
+      "oracle_source": "skills/jarvis-box-monitor/SKILL.md"
+    },
+    {
+      "id": "eval-lifecycle-route",
+      "kind": "adjacent",
+      "status": "executed-pass",
+      "prompt": "一个 Task 显示 completed 但 phase 是 writeback-failed；另一个自定义日报已经完成。我要分别重试评论和创建今天的新日报。请先说明正确的 lifecycle 路由，不要真的执行。",
+      "expected_route": ["jarvis-box"],
+      "forbidden_routes": ["jarvis-box-doctor", "jarvis-box-monitor", "jarvis-box-release-maintainer"],
+      "invariants": ["writeback uses Continue without agent/message", "new scheduled report uses fresh Start with custom-user-task and job-id", "never Continue old completed job as scheduler"],
+      "proof": ["server action policy", "two distinct safe actions"],
+      "oracle_source": "skills/jarvis-box/references/tasks.md"
+    },
+    {
+      "id": "eval-provider-config-route",
+      "kind": "route",
+      "status": "executed-pass",
+      "prompt": "客户要给 GitHub 增加一个新的仓库做 PR follow-up，但现有 GitHub token 只能写 issue comment。请选择 skill，并说明配置、身份和验证边界。",
+      "expected_route": ["jarvis-box"],
+      "forbidden_routes": ["jarvis-box-monitor", "jarvis-box-release-maintainer"],
+      "invariants": ["webhook secret is not writeback identity", "allowlist", "real PR review/follow-up capability", "token not in runtime.env", "real authorized test target"],
+      "proof": ["provider identity/capability separation", "pending stage if no target"],
+      "oracle_source": "docs/integrations/github.md"
+    },
+    {
+      "id": "eval-uncertain-delivery-route",
+      "kind": "negative",
+      "status": "executed-pass",
+      "prompt": "飞书 webhook 回执是 outcome_unknown，上游再次投递了几次。运维想直接自动重放，避免卡住。请判断正确做法和主 skill。",
+      "expected_route": ["jarvis-box-doctor"],
+      "forbidden_routes": ["jarvis-box-init", "jarvis-box-release-maintainer"],
+      "invariants": ["outcome_unknown is not auto-replayed", "inspect receipt and external side effect", "duplicate returns 409", "explicit next operation after evidence", "no blind cross-provider retry"],
+      "proof": ["preserved idempotence boundary", "safe manual decision"],
+      "oracle_source": "skills/jarvis-box/references/release-contract.md"
+    },
+    {
+      "id": "eval-release-version-route",
+      "kind": "adjacent",
+      "status": "executed-pass",
+      "prompt": "机器运行的是较早的 Jarvis Box 版本，但 public main 文档里有新变量。客户要求直接按 public main 修改。请判断权威来源和下一步。",
+      "expected_route": ["jarvis-box"],
+      "forbidden_routes": ["jarvis-box-release-maintainer"],
+      "invariants": ["installed version and matching release bundle outrank public main", "do not apply unsupported variable", "identify target release", "propose version-matched docs or upgrade"],
+      "proof": ["version mismatch stopped before mutation"],
+      "oracle_source": "skills/jarvis-box/references/release-contract.md"
+    },
+    {
+      "id": "eval-identity-route",
+      "kind": "forward",
+      "status": "executed-pass",
+      "prompt": "Docker 主机上同时登录了两个 GitHub 账号；客户希望运行时不复制整个 HOME。请选择 onboarding skill 并给出身份验证计划。",
+      "expected_route": ["jarvis-box-init"],
+      "forbidden_routes": ["jarvis-box-release-maintainer"],
+      "invariants": ["select one explicit machine identity", "narrow auth import or in-container login", "never mount whole Host HOME Keychain SSH agent", "verify in actual runtime Agent HOME"],
+      "proof": ["explicit identity", "persistent container check", "real provider capability"],
+      "oracle_source": "AUTHENTICATION.md"
+    },
+    {
+      "id": "eval-license-upgrade-route",
+      "kind": "adjacent",
+      "status": "executed-pass",
+      "prompt": "隔离网 Docker 部署需要从 0.2 升级到指定 0.3.1。客户有旧离线授权文件，同时希望升级后马上运行任务。请选择 skill 并概述边界。",
+      "expected_route": ["jarvis-box"],
+      "forbidden_routes": ["jarvis-box-init", "jarvis-box-monitor", "jarvis-box-release-maintainer"],
+      "invariants": ["explicit target release", "prepare newly issued offline license", "old offline file cannot restore deactivation", "active-task preflight", "same deployment mode", "full deployment-home backup"],
+      "proof": ["upgrade and license are separate but both preflighted", "post-upgrade license and real-loop evidence"],
+      "oracle_source": "CUSTOMER-OPERATIONS.md"
+    },
+    {
+      "id": "eval-build-route",
+      "kind": "route",
+      "status": "executed-pass",
+      "prompt": "客户代码仓库需要安装 cmake 和系统头文件，这些不在 Jarvis Box 基础镜像里。请选择 skill 并给出最小安全交付路径。",
+      "expected_route": ["jarvis-box"],
+      "forbidden_routes": ["jarvis-box-release-maintainer", "jarvis-box-monitor"],
+      "invariants": ["derive from pinned official image", "no apt in running container", "push private customer registry", "pin result by digest", "verify executable in actual runtime"],
+      "proof": ["deployment contract", "executed command probe", "rollback pairing"],
+      "oracle_source": "docs/custom-docker-image.md"
+    },
+    {
+      "id": "eval-skill-install-route",
+      "kind": "route",
+      "status": "executed-pass",
+      "prompt": "我要把 Jarvis Box 帮助能力安装到已有 Codex skills 目录，不想安装连接器或升级二进制。请选择 skill 并给出安装与验证方式。",
+      "expected_route": ["jarvis-box"],
+      "forbidden_routes": ["jarvis-box-release-maintainer"],
+      "invariants": ["explicit existing owned Agent root", "four product packages", "run install then --check", "preserve Company and other skills", "fresh Agent discovery"],
+      "proof": ["install-skills contract", "no service/binary mutation"],
+      "oracle_source": "docs/agent-skills.md"
+    },
+    {
+      "id": "eval-overlay-maintenance-route",
+      "kind": "cross-repo",
+      "status": "executed-pass",
+      "prompt": "我们要为公开 hengshi/jarvis-box 仓库同步新版本发布说明、客户文档和一个产品 skill 文案改动。请选择 skill，列出必须核验和交付的内容。",
+      "expected_route": ["jarvis-box-release-maintainer"],
+      "forbidden_routes": ["jarvis-box", "jarvis-box-init", "jarvis-box-doctor", "jarvis-box-monitor"],
+      "invariants": ["public overlay only", "update .jarvis-box-managed-files", "four-package installer remains stable", "run depth audit", "branch and PR", "do not publish Release"],
+      "proof": ["bounded diff", "installer package check", "audit", "PR with version and unverified facts"],
+      "oracle_source": "skills/jarvis-box-release-maintainer/SKILL.md"
+    },
+    {
+      "id": "eval-overlay-negative-route",
+      "kind": "negative",
+      "status": "executed-pass",
+      "prompt": "有人要求在公开 hengshi/jarvis-box 仓库直接修复 webhook 并发 bug 和增加测试，然后发布新二进制。请判断路由和停止边界。",
+      "expected_route": ["jarvis-box-release-maintainer"],
+      "forbidden_routes": ["jarvis-box", "jarvis-box-init", "jarvis-box-doctor", "jarvis-box-monitor"],
+      "invariants": ["public repo is not private source", "do not add implementation or tests here", "preserve request for canonical private source workflow", "do not claim public docs change fixes runtime", "no Release publish"],
+      "proof": ["mutation stopped at public/private boundary", "upstream handoff requirement"],
+      "oracle_source": "REPOSITORY-MODEL.md"
+    }
+  ]
+}

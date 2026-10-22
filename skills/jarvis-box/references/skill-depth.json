@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "repository": "hengshi/jarvis-box public release overlay",
+  "fixed_revision": "dc8010fe2b44566ea7a5c3592c57e624fef51a59",
+  "router": "jarvis-box",
+  "coverage_file": "references/capability-coverage.json",
+  "evals_file": "evals/evals.json",
+  "dimensions": {
+    "implementation_anchors": "references/skill-depth.md",
+    "mechanical_controls": "scripts/audit_skill_depth.py",
+    "risk_promotion": "per skill record",
+    "runtime_hidden_forward_eval": "evals/evals.json",
+    "cross_repository_closure": "per skill record",
+    "drift_self_improve": "per skill record"
+  },
+  "skills": [
+    {
+      "name": "jarvis-box",
+      "risk": "critical: configuration, recovery, identity, license, and service lifecycle mutations",
+      "level": "L3",
+      "authority": ["skills/jarvis-box/SKILL.md", "skills/jarvis-box/references/configuration.md", "skills/jarvis-box/references/release-contract.md"],
+      "entrypoints": ["jarvis-box status --smart", "jarvis-box agent", "jarvis-box tasks", "install-skills.py"],
+      "transitions": ["resolve release -> identify owner -> save -> activate -> effective-state and behavior proof"],
+      "mechanical_controls": ["executed-pass: audit_skill_depth.py", "executed-pass: install-skills.py temporary install and --check"],
+      "forward_eval_ids": ["eval-config-route", "eval-lifecycle-route", "eval-uncertain-delivery-route", "eval-release-version-route"],
+      "cross_repo": ["Private source owns runtime implementation and release; public skill owns customer operation and must not claim source changes."],
+      "drift_watch": ["docs/configuration.md", "docs/execution-model.md", "docs/storage-model.md", "install-skills.py", "release contract and CLI help"]
+    },
+    {
+      "name": "jarvis-box-init",
+      "risk": "high: can falsely promote an unverified deployment to ready",
+      "level": "L3",
+      "authority": ["skills/jarvis-box-init/SKILL.md", "docs/guide/getting-started.md", "AUTHENTICATION.md"],
+      "entrypoints": ["jarvis-box init", "jarvis-box status --smart", "deploy-production.sh <home> verify"],
+      "transitions": ["identity and version preflight -> read-only deployment -> discovery -> authorized ingress -> Task/Run -> writeback -> terminal/cleanup"],
+      "mechanical_controls": ["executed-pass: depth audit routes init to onboarding", "observed-not-executed: real customer ingress requires an authorized target"],
+      "forward_eval_ids": ["eval-init-route", "eval-identity-route"],
+      "cross_repo": ["Company Runtime Foundation owns Company discovery and jobs; this skill consumes its doctor and preserves the boundary."],
+      "drift_watch": ["docs/deployment.md", "AUTHENTICATION.md", "docs/guide/getting-started.md"]
+    },
+    {
+      "name": "jarvis-box-doctor",
+      "risk": "normal: read-only diagnosis; risk is misleading stage attribution",
+      "level": "L1",
+      "authority": ["skills/jarvis-box-doctor/SKILL.md", "docs/operations.md", "docs/status-api.md"],
+      "entrypoints": ["jarvis-box status --smart", "jarvis-box doctor", "jarvis-box tasks show/verify/diagnose"],
+      "transitions": ["resolve target -> collect typed evidence -> separate stages -> report PASS/FAIL/WARN/PENDING -> no mutation"],
+      "mechanical_controls": ["executed-pass: audit_skill_depth.py", "observed-not-executed: deployment-specific doctor requires a real target"],
+      "forward_eval_ids": ["eval-doctor-route"],
+      "cross_repo": ["Runtime Foundation health is checked only through the customer-owned command; no Company repo inspection or mutation."],
+      "drift_watch": ["skills/jarvis-box-doctor/SKILL.md", "docs/operations.md", "docs/status-api.md"]
+    },
+    {
+      "name": "jarvis-box-monitor",
+      "risk": "normal: read-only reporting; risk is sampling or analysis initiation misrepresented as observation",
+      "level": "L1",
+      "authority": ["skills/jarvis-box-monitor/SKILL.md", "skills/jarvis-box/references/tasks.md", "docs/delivery-metrics.md"],
+      "entrypoints": ["jarvis-box tasks list", "jarvis-box tasks json --all", "Task detail artifacts"],
+      "transitions": ["declare window/population -> inspect typed states -> separate execution/delivery/cleanup -> report next actions without mutation"],
+      "mechanical_controls": ["executed-pass: audit_skill_depth.py", "observed-not-executed: live task population requires a deployment"],
+      "forward_eval_ids": ["eval-monitor-route"],
+      "cross_repo": ["Provider delivery metrics are read through Jarvis Box; provider truth and downstream delivery remain external observations."],
+      "drift_watch": ["skills/jarvis-box-monitor/SKILL.md", "skills/jarvis-box/references/tasks.md", "docs/delivery-metrics.md"]
+    },
+    {
+      "name": "jarvis-box-release-maintainer",
+      "risk": "high: can violate the public/private source boundary or publish stale customer contracts",
+      "level": "L3",
+      "authority": ["skills/jarvis-box-release-maintainer/SKILL.md", "CONTRIBUTING.md", "REPOSITORY-MODEL.md", ".jarvis-box-managed-files"],
+      "entrypoints": ["git diff", "install-skills.py", "skills/jarvis-box/scripts/audit_skill_depth.py"],
+      "transitions": ["classify docs/skills/source -> edit public owner -> update manifest/package -> audit -> branch/PR"],
+      "mechanical_controls": ["executed-pass: audit_skill_depth.py", "executed-pass: install-skills.py temporary install and --check", "executed-pass: git diff --check"],
+      "forward_eval_ids": ["eval-overlay-maintenance-route", "eval-overlay-negative-route"],
+      "cross_repo": ["Implementation handoff goes to canonical private source; public proof ends at reviewed docs/skill PR and release-qualified artifacts."],
+      "drift_watch": ["CONTRIBUTING.md", "REPOSITORY-MODEL.md", ".jarvis-box-managed-files", "install-skills.py", "skills/"]
+    }
+  ]
+}

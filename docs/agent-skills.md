@@ -37,6 +37,8 @@ Docker 运行时的 Agent skills 位于该 deployment 的持久 Agent HOME。把
 
 Jarvis Box 仓库拥有产品 skills，客户 Company Jarvis 拥有知识与 workflow。Company sync/prepare 应保留四个产品 skill 目录，不复制一份产品配置手册，也不替换产品 skills。仓库开发用的 `code-review`、`runtime-testing` 等 repo-local skills 不属于客户产品包。
 
+本仓库另有一个不随产品包安装的 `jarvis-box-release-maintainer` skill，用于维护公开 release overlay；`install-skills.py` 仍固定只发布四个客户入口。四个产品 skills 的版本兼容、能力覆盖和隔离评测资产随产品目录一起发布，正常使用时只需按 `SKILL.md` 的按需链接读取。
+
 启用 `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND` 时，Jarvis Box 在新 Task 的 workspace/provider 和依赖准备完成后、首次启动 Agent 前调用 Company 的 preparer。Company 自己决定仓库版本与 skill 更新；普通 Continue 和同一 Run 的 Agent failover 不重复调用已有成功 prepare，缺少成功 receipt 时才重试。此 hook 不更新本产品 skill 包或 Jarvis Box 二进制。
 
 已有 Company installer 曾管理 `jarvis-box-init/doctor/monitor` 时，需要先通过该 Company's 正式升级流程移交 ownership，再独立安装产品包；否则旧 Company prepare 仍可能覆盖同名目录。不要通过删除生产 discovery 目录来迁移。
