@@ -12,3 +12,7 @@ Resolve version, target deployment, actual service user/HOME, effective runtime/
 Check only configured Agents/providers and the Company's actual discovery roots. Do not require Claude credentials, GitHub/private source access or unrelated skills on all installations. Distinguish missing identity/configuration from a failed configured capability. Use the customer's authorized scope to fix routine reversible setup problems; service replacement, destructive actions and external test sends retain their own authorization boundaries.
 
 Finish with an authorized real ingress → Task/Run → optional registered workspace → Agent → original-target delivery → terminal/cleanup observation. Agent smoke and filesystem presence prove only their own stages. Report READY only with the evidence required for the customer's deployment; name pending stages and the exact next action otherwise. Never send test messages or start production work just to fill a readiness checklist.
+
+Accept `202` from a webhook only as durable intake evidence. Read the receipt and follow the normalized Task/Run before claiming execution or delivery. Use [release compatibility](../jarvis-box/references/release-contract.md) when the installed release and the public documentation revision differ.
+
+Depth and verification pointers: [skill-depth](../jarvis-box/references/skill-depth.md), [evals](../jarvis-box/evals/evals.json), and `scripts/audit_skill_depth.py` from the repository root.

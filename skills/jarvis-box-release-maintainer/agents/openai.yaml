@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jarvis Box Release Maintainer"
+  short_description: "Maintain the verified public release overlay"
+  default_prompt: "Use $jarvis-box-release-maintainer to prepare and verify this public Jarvis Box overlay change."

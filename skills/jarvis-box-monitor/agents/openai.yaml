@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jarvis Box Monitor"
+  short_description: "Summarize Jarvis Box activity and blockers"
+  default_prompt: "Use $jarvis-box-monitor to summarize recent Jarvis Box activity and actionable blockers."

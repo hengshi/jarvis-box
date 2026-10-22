@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jarvis Box"
+  short_description: "Configure and operate Jarvis Box"
+  default_prompt: "Use $jarvis-box to configure this Jarvis Box deployment and verify the requested result."

@@ -12,3 +12,7 @@ Start with `status --smart`, `tasks list` for blockers, and `tasks json --all` w
 Summarize recent sources and lanes, active/waiting/finalizing/recovery-required Tasks, execution failures, completed-but-undelivered results, deferred cleanup, license admission, storage and ChatBridge degraded/connected reasons. Keep historical machine Run trends distinct from retained Task counts and provider quality. Read service/connector logs from the selected deployment only when structured evidence is insufficient.
 
 Do not Start/Continue/Cancel/reap/clean, reconnect, smoke-call an Agent, or open an API that initiates analysis. Cleanup can be previewed with `--dry-run` when requested. State the next action without executing it; include whether delivery would be retried or the Agent rerun. Report sampled/limited counts honestly and redact credentials, private resume handles and raw message payloads.
+
+Webhook intake and writeback are separate stages. Use [release compatibility and delivery boundaries](../jarvis-box/references/release-contract.md) before interpreting `202`, a completed Task with `writeback-failed`, or an `outcome_unknown` receipt.
+
+Depth and verification pointers: [skill-depth](../jarvis-box/references/skill-depth.md), [evals](../jarvis-box/evals/evals.json), and `scripts/audit_skill_depth.py` from the repository root.
