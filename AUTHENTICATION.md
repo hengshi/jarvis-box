@@ -25,7 +25,7 @@ deployment_home=/srv/jarvis-box
 
 `auth-import` 仅将受支持的可移植身份复制到私有部署 auth bundle。它不复制或挂载 Host HOME。无交互部署应通过当前 release 中的 `scripts/import-host-auth.sh --help` 查看受支持的输入，并且只向本次导入进程提供 secret，不写入任何部署 env 文件。
 
-auth bundle 与 Agent HOME 是两个独立持久层。容器每次启动都会从 auth bundle 向 Agent HOME 写入受支持的 Agent 身份，并向 runtime process 提供 provider token。轮换 Host 导入身份时重新运行 `auth-import`；撤销时同时删除或替换 auth bundle 中的对应文件和 Agent HOME 中已导入的副本，然后重建容器。只删除 Agent HOME volume 不会撤销仍可由 auth bundle 恢复的身份。
+auth bundle 与 Agent HOME 是两个独立持久层。容器每次启动都会从 auth bundle 向 Agent HOME 写入受支持的 Agent 身份，并向 runtime process 提供 provider token。轮换 Host 导入身份时重新运行 `auth-import`；撤销时同时删除或替换 auth bundle 中的对应文件和 Agent HOME 中已导入的副本，然后重建容器。只删除 Agent HOME 持久目录不会撤销仍可由 auth bundle 恢复的身份。
 
 ### 路径 B：直接在 Docker 内认证
 
@@ -62,7 +62,7 @@ claude auth login
 "$release_dir/scripts/deploy-production.sh" "$deployment_home" verify
 ```
 
-登录状态只存储在持久 Agent HOME volume 中，容器替换后仍然存在。`JARVIS_AUTH_IMPORT=skip` 会使 runtime 忽略已有 auth bundle；删除容器不等于删除运行时身份，删除 Agent HOME volume 才会删除这条路径创建的身份。若部署曾使用路径 A，仍应清理私有 auth bundle，避免以后重新启用路径 A 时恢复旧身份。
+登录状态只存储在持久 Agent HOME 目录中，容器替换后仍然存在。`JARVIS_AUTH_IMPORT=skip` 会使 runtime 忽略已有 auth bundle；删除容器不等于删除运行时身份，删除 Agent HOME 持久目录才会删除这条路径创建的身份。若部署曾使用路径 A，仍应清理私有 auth bundle，避免以后重新启用路径 A 时恢复旧身份。
 
 ## 各文件职责
 

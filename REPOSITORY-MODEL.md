@@ -29,6 +29,8 @@ Jarvis 使用多个独立仓库，因为构建方法、运行时实现和客户�
 
 ## 版本规则
 
+公开下载入口 `index.html` 通过 `latest.json.download_guide.url` 打开对应版本的说明页；`download_guide.sha256` 记录页面摘要。该字段对尚未提供网页说明的历史版本是可选的。版本说明页与固定入口先就绪，latest 才推进；说明页按版本保持不可变，安装包与原有 `SHA256SUMS` 的规范来源不变。
+
 - Jarvis Box 版本号如 `v0.2.16` 在私有 GitHub Release、release bundle、`production-image.json` 和私有 GHCR image tag 上标识同一个运行时 release。
 - 私有源码 tag 指向规范源码 commit。公开仓库 overlay commit 只代表文档同步点，不是可安装制品来源。
 - Release artifact 文件名与 SHA-256 digest 以私有 GitHub Release 为规范来源，公开 S3 mirror 保持同名文件和同一份 `SHA256SUMS`。

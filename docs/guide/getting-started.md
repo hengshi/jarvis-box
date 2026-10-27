@@ -2,9 +2,11 @@
 
 使用者只需要回答两个问题：是否已经有自己的 Jarvis，以及选择 Native 还是 Docker。
 
+先打开[下载与安装指引](https://download.hengshi.com/jarvis-box/index.html)：发布包、校验文件和 Docker 镜像包均可从衡石下载站获取，无需访问 GitHub。`install.sh` 和完整使用文档在发布包内。Native 无 GitHub 安装须显式传入已下载的本地文件，命令见[Native 安装步骤](https://download.hengshi.com/jarvis-box/index.html#native)。
+
 ## 1. 还没有 Jarvis
 
-不要先配置 webhook、env 文件或容器。让已经登录并获得授权的 Host Agent 执行：
+Company Jarvis 建设与运行时安装分别进行。可访问 GitHub 时，让已经登录并获得授权的 Host Agent 执行：
 
 ```text
 请运行 git clone https://github.com/hengshi-jarvis/create-jarvis create-jarvis，读取本地 create-jarvis/SKILL.md，然后帮我构建并部署一套 Jarvis。
@@ -26,11 +28,14 @@ Host Agent 会盘点授权的数据源和代码仓库，建设客户拥有的 Ja
 在已校验的 release bundle 中执行：
 
 ```bash
-sudo bash install.sh
+sudo bash install.sh   # Linux
+bash install.sh        # macOS：不要加 sudo
 jarvis-box doctor
 jarvis-box agent smoke
 jarvis-box status
 ```
+
+安装器使用发起安装的现有 OS 用户。macOS 上 `sudo bash install.sh` 会把 launchd 域与运行时目录落到 root 名下，服务起不来。
 
 如果是升级，必须先执行：
 
@@ -42,10 +47,10 @@ jarvis-box stop
 
 ## 4. Docker 上线
 
-准备 deployment home，填写 release bundle 提供的 `deployment.env`、`runtime.env` 和可选 `connector.env`。首次使用只读模式：
+准备 deployment home，填写 release bundle 提供的 `deployment.env`、`runtime.env` 和可选 `connector.env`。首次在 `runtime.env` 保持回写关闭：
 
 ```dotenv
-JARVIS_SERVE_MODE=read-only
+JARVIS_PROVIDER_WRITEBACK_ENABLED=false
 ```
 
 执行：
@@ -60,10 +65,10 @@ home=/absolute/deployment-home
 
 `start` 自动导入当前 Host 用户的必要认证。多 GitHub 账号时在 `deployment.env` 选择明确的 machine user；不要进入容器复制 Host credential store。
 
-随后由客户 Jarvis 的 Runtime Foundation 在正式环境中完成 bootstrap、sync、doctor 和真实 Agent discovery。全部通过并得到客户批准后，再切换：
+随后由客户 Jarvis 的 Runtime Foundation 在正式环境中完成 bootstrap、sync、doctor 和真实 Agent discovery。全部通过并得到客户批准后，再把 `runtime.env` 的 `JARVIS_PROVIDER_WRITEBACK_ENABLED` 切为 `true`：
 
 ```dotenv
-JARVIS_SERVE_MODE=worker
+JARVIS_PROVIDER_WRITEBACK_ENABLED=true
 ```
 
 只启用已经具备适用 workflow 的 provider lane。

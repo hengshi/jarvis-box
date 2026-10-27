@@ -1,6 +1,6 @@
 # 飞书项目接入
 
-Webhook 通过鉴权、请求校验和可靠落盘后立即返回 `202 Accepted`，业务处理在后台执行；最终结果通过 Status、work ledger 和投递回执观察。重复投递和重启行为见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+鉴权及 JSON 校验成功、投递可靠落盘后，Webhook 立即返回 `202 Accepted`，不等待业务读取、Git 操作或 Agent 启动。响应中的 `receipt_id` 只标识投递受理，不表示 Task 已创建；后台处理和重投规则见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
 
 Jarvis Box 接收飞书项目 webhook，执行 post-check 或显式 mention command，再把最终 `comment.md` 发布到对应工作项。command mention 由 `JARVIS_MENTION_NAMES` 配置。后端可以是飞书项目 plugin OpenAPI，也可以是官方 Meegle CLI。默认 Meegle backend 的 post-check 与 command lane 都由 runtime agent 使用已认证 CLI 读取实时正文、完整评论历史、附件和关联工作项；plugin 是特殊路径，由 Jarvis Box 预取实时输入且不向 agent 暴露 plugin credential。
 
@@ -85,7 +85,7 @@ Meegle CLI 不负责监听事件。事件入口使用飞书项目自带的自动
 
 需要处理多种事件时，应在飞书项目自动化中为相应触发器配置 Webhook。plugin 只用于 `FEISHU_PROJECT_BACKEND=plugin` 的 OpenAPI 读写后端，或客户自行开发自定义自动化操作；使用默认 Meegle CLI 后端时不需要 plugin ID、plugin secret 或 user key。
 
-create/post-check 的 Meegle CLI 初始工作项与评论预取在后台执行；Jarvis Box 完成鉴权、body 校验和接收状态落账后立即返回 `202 Accepted`，避免飞书项目自动化等待 CLI 时触发 6 秒超时。预取生成的 `issue.json`、`notes.json` 只是触发时快照；post-check agent 启动后还必须通过 Meegle CLI 刷新完整实时输入。command lane 同样异步启动并由 command agent 实时读取。后台处理使用服务拥有的 context，不会因 webhook 客户端断开而取消，最终结果或失败会继续写入事件流、work ledger 和 Run Artifact。
+create/post-check 的 Meegle CLI 初始工作项与评论预取在后台执行；Jarvis Box 完成鉴权、body 校验和接收状态落账后立即返回 `202 Accepted`，避免飞书项目自动化等待 CLI 时触发 6 秒超时。预取生成的 `issue.json`、`notes.json` 只是触发时快照；post-check agent 启动后还必须通过 Meegle CLI 刷新完整实时输入。command lane 同样异步启动并由 command agent 实时读取。所有事件（包括终止和清理事件）的后台处理使用服务拥有的独立 context，不会因 webhook 客户端断开而取消，最终结果或失败会继续写入事件流、work ledger 和 Run Artifact。
 
 以下两个 endpoint 等价：
 

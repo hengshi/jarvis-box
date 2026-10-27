@@ -13,7 +13,7 @@ Use the supplied host/deployment context. If multiple instances are plausible, a
 
 Docker operations belong to one explicit deployment home and its release's `scripts/deploy-production.sh`. Execute Agent/provider checks in that deployment's persistent Agent HOME, not the Host's identity. Host Agent discovery roots and container discovery roots are independent installation targets.
 
-This pack describes the 0.2.38 contract. Verify commands and variables against the installed release's help and documentation when its version differs. Prefer that release's local bundle docs, then version-matched official customer docs. Do not apply a newer branch's variables to an older binary. The public documentation repository is [hengshi/jarvis-box](https://github.com/hengshi/jarvis-box); release access and licensing are separate.
+This pack follows the product contract in its release bundle. Verify commands and variables against the installed release's help and documentation before choosing a setting or operation. Prefer that release's local bundle docs, then version-matched official customer docs. Do not apply a newer branch's variables to an older binary. The public documentation repository is [hengshi/jarvis-box](https://github.com/hengshi/jarvis-box); release access and licensing are separate.
 
 ## Find the customer's intent
 
@@ -21,7 +21,7 @@ Read only the relevant reference:
 
 | Customer request | Reference |
 | --- | --- |
-| Change IM acceptance/progress/help text, completion title, assistant name or trigger words | [Configuration by intent](references/configuration.md), especially IM messages |
+| Change IM acceptance/help text, completion title, assistant name or trigger words; inspect progress | [Configuration by intent](references/configuration.md), especially IM messages |
 | Choose an Agent/model, connect a provider, adjust allowlists, notifications, storage or preparation | [Configuration by intent](references/configuration.md) |
 | Install, upgrade, activate, back up, roll back, or change runtime tools | [Operations](references/operations.md) |
 | Inspect tasks, retry delivery, recover a lost Run, clean history, understand metrics | [Tasks and monitoring](references/tasks.md) |

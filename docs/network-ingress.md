@@ -10,12 +10,18 @@
 
 每个 provider 必须配置：
 
-1. signature/webhook secret；
-2. project/repository allowlist；
-3. command author allowlist（公开仓库尤其需要）；
-4. 正式 Agent identity 的 provider-native auth；
-5. callback public URL；
-6. 一条真实 signed webhook 与 writeback probe。
+1. project/repository allowlist；
+2. command author allowlist（公开仓库尤其需要）；
+3. 正式 Agent identity 的 provider-native auth；
+4. callback public URL；
+5. 一条真实 webhook 与 writeback probe。
+
+**Webhook secret 分两类，两类对「未配置」的反应不同，这是有意为之：**
+
+- **明文 token 入口**：GitLab 的 `X-Gitlab-Token`，以及不带 `X-Hub-Signature` 的 Jira `X-Jira-Token`。secret 为空时不校验，请求直接放行。GitLab、Jira 通常部署在内网，留空是允许的部署选择；确实需要校验来源时再配 `GITLAB_WEBHOOK_SECRET`。
+- **签名入口**：GitHub 的 HMAC，以及飞书项目。secret 未配置时一律拒绝（飞书项目端点直接返回 503 `feishu_project_not_configured`）。这一类入口面向 SaaS，不允许裸奔。
+
+带 `X-Hub-Signature` 的 Jira 请求走签名校验，此时明文 token 不再参与判定。
 
 GitHub/GitLab allowlist 由 operator 在 `runtime.env` 中明确配置。jarvis-box 不从 Jarvis repo 推导或校验 fleet。
 
@@ -23,11 +29,11 @@ GitHub/GitLab allowlist 由 operator 在 `runtime.env` 中明确配置。jarvis-
 GITLAB_HOST=gitlab.example.com
 GITLAB_PROJECTS=group/project
 REVIEW_GITLAB_PROJECTS=group/project
-GITLAB_WEBHOOK_SECRET=
+GITLAB_WEBHOOK_SECRET=   # 留空 = 不校验来源，内网部署可接受
 
 GITHUB_REPOSITORIES=owner/repository
 REVIEW_GITHUB_REPOSITORIES=owner/repository
-GITHUB_WEBHOOK_SECRET=
+GITHUB_WEBHOOK_SECRET=   # 留空 = 拒绝所有入站事件，启用端点前必须填
 ```
 
 ## uv-im-connector
@@ -69,4 +75,4 @@ JARVIS_CHAT_REQUIRE_MENTION=true
 
 ## 验收
 
-网络可达不等于闭环完成。至少验证：无 signature 拒绝、越界 repo/user/conversation 拒绝、合法事件只建一个 Task、Runtime Agent 能原生发现所需 Jarvis skill、结果写回原始 thread/issue、secret 不出现在日志与 artifacts。
+网络可达不等于闭环完成。至少验证：签名入口在 secret 缺失或签名无效时拒绝、明文 token 入口在配了 secret 时错误 token 拒绝、越界 repo/user/conversation 拒绝、合法事件只建一个 Task、Runtime Agent 能原生发现所需 Jarvis skill、结果写回原始 thread/issue、secret 不出现在日志与 artifacts。

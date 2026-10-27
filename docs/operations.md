@@ -31,6 +31,8 @@ jarvis-box doctor
 jarvis-box agent smoke
 ```
 
+跨兼容线手工升级必须同时固定目标版本、已校验 archive 和 `SHA256SUMS`，并从目标 bundle 执行安装器；完整命令见下文 Native 升级步骤。不要从旧 runtime 的 `state/app` 目录运行安装器。
+
 ### Docker
 
 ```bash
@@ -40,29 +42,28 @@ jarvis-box agent smoke
 
 Native 在本机访问 `http://127.0.0.1:8787/status`。Docker 默认发布到宿主机所有接口，可从受信任网络访问 `http://<docker-host>:8787/status`；若显式设置 `JARVIS_BIND_ADDRESS=127.0.0.1`，则只允许宿主机访问。`/status` 是诊断视图，不是客户 Jarvis 的知识源。
 
-### 使用 Status 系统操作
+### 使用 Status 系统设置
 
-从 `/status` 顶部打开“系统操作”，按目标选择：
+从 `/status` 顶部打开“系统设置”，按目标选择：
 
-- **系统概览**：先看“系统当前可用”或“发现 N 项需要处理”，再进入对应分区；版本、路径、进程/容器资源、脱敏配置和内部轮询位于“技术详情”。
-- **处理问题**：查看 doctor 失败项；ChatBridge 自动重试未恢复时可重新连接即时消息；需要多步检查或处理时可交给 Jarvis，操作会创建可跟踪的 Task/Run。
+- **系统概览**：先看“系统当前可用”或“发现 N 项需要处理”，再进入对应分区；版本、路径、进程/容器资源、脱敏配置和内部轮询位于“技术细节”。
+- **处理问题**：查看 doctor 失败项；ChatBridge 连接异常时可重新连接消息连接；需要多步检查或处理时可交给 Jarvis，操作会创建可跟踪的 Task/Run。
 - **工作方式**：修改默认 Agent 或某类工作的 Agent 覆盖。保存只影响以后新启动的 Run，不切换正在运行的 Agent；重新选回原 Agent 或“使用默认”即可恢复配置。
+- **接入配置**：按来源查看和修改事件接入、身份与允许范围。保存配置与服务重启生效分别显示；修正一个来源不关闭其他来源，不能把保存成功当作真实事件已完成交付。
 - **数据维护**：先执行“预检可清理项”。预检不删除数据；“确认清理”不可恢复，只删除超过保留期、已经终态并完成 workspace disposal 的 Task Artifact，不影响 active Task、正在运行的 Agent、service log 或依赖缓存。
 
-`read-only` 是部署运行模式，不是用户角色。所有人看到同一页面；该模式允许查看、诊断和清理预检，但禁止创建 operator Task、修改 Agent 配置、重连 ChatBridge 和实际删除。按钮不可用时页面会说明原因，不要通过切换网络来源绕过运行模式。
+系统设置完成后以页面重新读取的状态为准：Agent 配置看当前默认值/工作类型，消息重连看 running 与 provider connected，operator prompt 记录 Task ID/Run ID，清理查看逐项 `dry-run`、`cleaned`、`deferred` 或 `error`。失败时保留页面错误和对应服务日志，再按本页“出问题时按这个顺序”继续。
 
-系统操作完成后以页面重新读取的状态为准：Agent 配置看当前默认值/工作类型，消息重连看 running 与 provider connected，operator prompt 记录 Task ID/Run ID，清理查看逐项 `dry-run`、`cleaned`、`deferred` 或 `error`。失败时保留页面错误和对应服务日志，再按本页“出问题时按这个顺序”继续。
+### 查看或恢复 Delivery Metrics 历史起点
 
-### 查看或恢复 Delivery Metrics 历史基线
-
-Delivery Metrics 由 Status 服务管理枚举和启动节奏，实际分析是普通 `delivery-metrics` lane Task。打开 `/status` 或读取一次 value API，就会同步 Provider 历史并按节奏启动 pending Task：
+Delivery Metrics 在服务启动、MR/PR 关闭或合并后自动同步，并定时补查；实际分析是普通 `delivery-metrics` lane Task。无需打开或刷新页面。下面的 API 只读取当前统计和进度：
 
 ```bash
 curl -fsS 'http://127.0.0.1:8787/status/api/value?provider=gitlab' |
   jq '{warnings, analysis_progress, totals: (.snapshot.totals // null)}'
 ```
 
-GitHub 使用 `provider=github`。阶段、Task Continue/Cancel、Agent scope 和完整恢复步骤见 [Delivery Metrics 历史基线操作手册](delivery-metrics.md)。
+GitHub 使用 `provider=github`。阶段、Task Continue/Cancel、Agent scope 和完整恢复步骤见 [Delivery Metrics 历史起点操作手册](delivery-metrics.md)。
 
 ## 看日志
 
@@ -97,6 +98,8 @@ Native 直接使用安装者当前用户的 shell。Docker 使用：
 
 ## 停止或重启 Native 服务
 
+正常 `stop` 后可用 `jarvis-box start` 再次启动；`restart`、主机重启和故障重启不要求重新安装。同一制品每次启动仍校验已完成的迁移记录并取得单实例锁。安装后的首次启动授权只能在有效期内消费一次，该期限不是服务运行期限；迁移或制品校验失败时会拒绝启动，不会自动执行升级。
+
 ```bash
 jarvis-box stop
 jarvis-box restart
@@ -110,17 +113,31 @@ jarvis-box restart
 
 ## 升级
 
-`jarvis-box update --check` 会显示当前版本、目标版本、元数据来源和可用下载源。`jarvis-box update` 通过已安装 release bundle 中的 `install.sh` 自动下载目标版本：优先使用私有 `hengshi-jarvis/jarvis-box` GitHub Release，无法访问或下载失败时改用 `https://download.hengshi.com/jarvis-box` 的公开 S3 mirror；最后仍以 `SHA256SUMS` 校验为准。安装器发现已有服务仍在运行时会在替换 artifact 前停止并提示先规范停服。它不会自动取消 Task。
+`jarvis-box update --check` 会显示当前版本、目标版本、元数据来源和可用下载源。`jarvis-box update` 会在停服前通过当前安装器的只读 preparation 模式下载并校验目标 release，从受校验 archive 提取目标版本的 `install.sh`；停服后只执行这个目标安装器，不允许旧脚本替换新二进制后继续控制 migration/start。下载优先使用私有 `hengshi-jarvis/jarvis-box` GitHub Release，失败时改用 `https://download.hengshi.com/jarvis-box` 的公开 S3 mirror，最终以 `SHA256SUMS` 为准。默认路径不取消 Task，活动工作会阻断升级；显式 Native `update --force` 先持久记录其实际中断清单，升级或安装失败后按收据恢复这些工作，不重跑原本已经失败或取消的任务。
+
+新部署默认使用 1.0 稳定版，0.2.x、0.3.x 仅接收 bug 与安全修复。维护线升级必须显式选择已发布版本，不通过无参更新追随新部署的默认版本。
+
+从 0.x 升级到 1.0 必须显式设置 `JARVIS_ALLOW_MAJOR_UPGRADE=1`。0.3.x 支持目标安装器交接，在没有活动任务时可运行 `JARVIS_ALLOW_MAJOR_UPGRADE=1 jarvis-box update --version 1.0.0`。0.2.x 不支持此跨线 CLI 路径：旧 `update` 会先停服务再执行旧安装器，因此不能运行其无参或跨线更新；应校验目标 1.0 bundle 后按下方手工流程执行目标 `install.sh`。跨 0.x minor 版本线也需要显式授权和目标安装器，不从旧 runtime 的 `state/app` 目录运行旧脚本。
 
 ### Native
 
 ```bash
 jarvis-box tasks list
 jarvis-box stop
-sudo bash install.sh
+version=1.0.0
+artifact=/absolute/path/to/downloaded-target-archive.tar.gz
+checksums=/absolute/path/to/SHA256SUMS
+target_installer=/absolute/path/to/extracted-target-bundle/install.sh
+sudo env JARVIS_ALLOW_MAJOR_UPGRADE=1 \
+  JARVIS_VERSION="$version" \
+  JARVIS_ARTIFACT_FILE="$artifact" \
+  JARVIS_SHA256SUMS_FILE="$checksums" \
+  bash "$target_installer"
 jarvis-box doctor
 jarvis-box agent smoke
 ```
+
+macOS 上去掉 `sudo`，由现有安装用户执行；Linux 使用 `sudo`。
 
 默认 `tasks list` 应为空；若列出 Task，先等待、Continue 或 Cancel。历史排查使用 `jarvis-box tasks list --all`。安装器发现已有服务仍在运行时会在替换 artifact 前停止并提示先规范停服。它不会自动取消 Task。
 
@@ -129,8 +146,6 @@ jarvis-box agent smoke
 #### 使用宿主机自助升级入口
 
 Docker 部署不要求宿主机安装 `jarvis-box` 二进制。包含此能力的 release 会在 deployment home 写入由该实例拥有的 `update.sh`，以后直接运行 `bash /absolute/deployment-home/update.sh`，或用 `--version X.Y.Z` 锁定目标版本。完整的首次 bootstrap、`latest.json`/`SHA256SUMS` 校验、失败边界和 prerequisites 见同一 release bundle 根目录的 `CUSTOMER-OPERATIONS.md` 的“宿主机自助升级”章节。
-
-升级过程会标明下载、镜像加载、备份、部署和容器内运行时工具更新阶段。耗时操作超过 1 秒后会打印已耗时，之后每 10 秒刷新并在完成时报告总耗时。按 `Ctrl+C` 会把中断转发给当前阶段，随后由 updater 在信号处理器外回收子进程，并按目标部署是否已开始进入既有恢复或人工诊断边界。
 
 只有 `latest.json` 明确提供 `docker_update` 时才表示当前 latest 已发布该入口；没有该字段时继续使用下方手工流程，不要猜测下载 URL。
 
@@ -165,7 +180,7 @@ Docker 部署脚本把容器的持久机器身份记录在 `<deployment-home>/da
 
 ## 备份
 
-Native 备份实际 runtime root 中的 state、workspace、logs、Agent identity/config。路径以安装器输出和运行配置为准，不假设固定历史目录。
+Native 按实际生效配置备份所需 state、workspace、logs，以及单独明确授权的 Agent identity/config。路径以安装器输出和运行配置为准，不假设固定历史目录；外置 Agent 配置只选择所需文件，不复制整个 Host HOME 或无关凭据。文件清单避免把同一父子数据树重复归档；恢复使用对应用户的专用目标，不覆盖其他实例。
 
 Docker 备份完整 deployment home；持久数据都位于其中的 bind directories：
 
@@ -184,5 +199,5 @@ Docker 备份完整 deployment home；持久数据都位于其中的 bind direct
 1. 看 `status`，确认失败属于 Delivery Metrics、provider、Task/Run、Agent 还是 connector；
 2. 运行 `jarvis-box doctor` 和 `jarvis-box agent smoke`，Docker 使用 `verify`；
 3. 看对应服务日志，不先改 state 文件；
-4. 检查 provider allowlist、认证 capability 和真实 writeback；
+4. 检查 provider allowlist、认证 capability 和 exact Run delivery effect receipt；
 5. 仍无法恢复时，保留 Task state、event 和日志证据再处理。

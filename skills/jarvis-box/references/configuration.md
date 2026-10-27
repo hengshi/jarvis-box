@@ -12,7 +12,6 @@ These fields belong to Jarvis Box's effective runtime env, not connector provide
 | Change how users address the assistant | `JARVIS_MENTION_NAMES` | Comma-separated triggers; first entry is used by the default help text. Coordinate with the actual bot mention identity; changing display name alone does not rename a provider bot |
 | Change “task accepted / started” reply | `JARVIS_CHAT_LAUNCH_REPLY_TEMPLATE` | Exactly one `%s`: Run id |
 | Change “received but waiting” reply | `JARVIS_CHAT_QUEUED_REPLY_TEMPLATE` | Exactly two `%s`: wait reason, Task id |
-| Change progress reply | `JARVIS_CHAT_PROGRESS_REPLY_TEMPLATE` | Exactly two `%s`: phase, Run id |
 | Change the “not addressed / how to invoke” hint | `JARVIS_CHAT_HELP_REPLY_TEMPLATE` | Exactly two `%s`: assistant display name, first trigger word |
 | Change the completion notification's first line | `JARVIS_COMMAND_NOTIFY_COMPLETED_TEMPLATE` | Plain text title; no format substitution. Does not replace the Agent's answer or the whole final message |
 | Enable/disable proactive completion notifications | `JARVIS_COMMAND_NOTIFY_ENABLED` | Boolean; separate from normal ChatBridge replies |
@@ -22,7 +21,9 @@ These fields belong to Jarvis Box's effective runtime env, not connector provide
 | Enable the connector | `JARVIS_CONNECTOR_PROFILE` | Empty or `uvim`; retaining only a URL does not enable it |
 | Connect Jarvis Box to UVIM | `JARVIS_UV_IM_CONNECTOR_URL`, `JARVIS_UV_IM_CONNECTOR_TOKEN`, `JARVIS_UV_IM_CONNECTOR_NAME` | Jarvis-to-connector access. Native provider credentials remain in the connector's env |
 
-Empty template values restore built-in defaults. The four `JARVIS_CHAT_*_REPLY_TEMPLATE` fields use Go formatting: preserve the required `%s` slots in order, and write a literal percent as `%%`. Extra/missing slots, stray `%`, or other format verbs fail startup. The completion title is different: `%s` would remain literal text there.
+Empty template values restore built-in defaults. The three `JARVIS_CHAT_*_REPLY_TEMPLATE` fields use Go formatting: preserve the required `%s` slots in order, and write a literal percent as `%%`. Extra/missing slots, stray `%`, or other format verbs fail startup. The completion title is different: `%s` would remain literal text there.
+
+IM sends an acceptance or waiting receipt, then the final result. Running progress is available on Status; this release does not support an IM progress-reply template.
 
 For “把开始处理的提示改成：收到，我来处理，并保留任务编号”, select the launch reply and show both:
 
@@ -51,6 +52,7 @@ These are env-file values, not instructions to export shell variables as the dur
 | Add GitLab repositories/review scope | `GITLAB_HOST`, `GITLAB_PROJECTS`, `REVIEW_GITLAB_PROJECTS` | `docs/integrations/gitlab.md`; provider identity remains the runtime user's CLI authentication |
 | Add GitHub repositories/review scope | `GITHUB_REPOSITORIES`, `REVIEW_GITHUB_REPOSITORIES`, `JARVIS_GITHUB_WEBHOOK_ENABLED` | `docs/integrations/github.md`; workspace-only access need not enable webhook intake |
 | Connect Jira or Feishu Project | `JIRA_*`, `FEISHU_PROJECT_*`, `MEEGLE_*` candidates from the release sample | Corresponding integration guide; distinguish CLI identity, webhook authentication and plugin backend |
+| Connect ZenTao 21 work items | `ZENTAO_BASE_URL`, `ZENTAO_ACCOUNT`, `ZENTAO_API_TOKEN`, `JARVIS_ZENTAO_WEBHOOK_SECRET`, `ZENTAO_ALLOWED_SCOPES`, `ZENTAO_ALLOWED_USERS` | `docs/integrations/zentao.md`; scopes are `product:<id>` for bugs/stories/cases and `execution:<id>` for tasks |
 | Associate a work item with repositories | `JARVIS_WORK_ITEM_REPOSITORIES` | `docs/configuration.md`; retain provider scope and allowlists |
 | Disable runtime-owned provider writeback | `JARVIS_PROVIDER_WRITEBACK_ENABLED` | `docs/configuration.md`; does not sandbox an Agent's own CLI credentials |
 | Enable issue post-check / merged-change self-improvement | `JARVIS_ISSUE_POST_CHECK_ENABLED`, `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` and documented scope subsets | Install the Company/repo workflow first; a switch does not provide a workflow |
@@ -64,3 +66,11 @@ These are env-file values, not instructions to export shell variables as the dur
 | Activate or renew a license | `jarvis-box license status/activate/request/import` | `docs/cli.md`, `CUSTOMER-OPERATIONS.md`; release license server is compiled in, not a customer URL setting |
 
 The index is a route, not a complete variable registry. Verify candidate fields in the installed version before writing. Runtime env is canonical through `JARVIS_ENV_FILE`; Docker Compose additionally owns its injected runtime paths. Do not redefine Compose-owned paths in `runtime.env`. Native service env and an interactive shell can differ; shell `printenv` alone is not proof of the service's effective configuration.
+
+## ZenTao onboarding and event diagnosis
+
+Use the matching release's `docs/integrations/zentao.md` for the native webhook and CLI setup. ZenTao OSS 21 uses official `zentao-cli` 0.2.0 with SDK 0.4.1; do not upgrade it to a CLI requiring another server version. Use the Token-owning service account, never store its password in runtime configuration, and keep webhook credentials out of Agent context.
+
+The native webhook must include the stable action `id`, use the configured HTTP Basic identity, and enable the relevant creation/comment notifications. ZenTao's product/execution sender filters and Jarvis Box's explicit allowed scopes both apply. New bugs, stories, tasks and test cases enter automatic post-check when enabled; visible `@jarvis` comments enter the command lane. Confirm full history/attachments with the documented native API because CLI detail output may omit history. Server-owned result publication preserves work-item status and keeps retry metadata hidden in the note.
+
+In System Settings > Integrations, use the source directory to see the supported-source total and effective states, then select ZenTao or Common Settings. Switching sources preserves unsaved inputs; saving writes configuration, and activation requires the selected deployment's normal restart procedure. A configured source, a received webhook, a started Agent and a successfully posted result are separate checks. Use an explicitly authorized target for a real creation/comment probe.
