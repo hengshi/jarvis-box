@@ -9,7 +9,7 @@
 3. 下载同一版本的 release bundle、`SHA256SUMS` 和 `production-image.json` 并完成校验。
 4. 按所选模式完成 Agent 与 GitHub/GitLab 等 provider 的原生认证。
 5. 安装 Jarvis Box 和 Company Jarvis Runtime Foundation。
-6. 先以 read-only 或受监督方式运行一条完整真实链路。
+6. 先用受监督方式运行一条完整真实链路。
 7. 记录版本、部署模式、实际 runtime root、Runtime Foundation root、状态命令和 Docker image digest（如适用）。
 
 没有 Company Jarvis 时，从 create-jarvis 最新代码开始：
@@ -36,19 +36,71 @@ https://github.com/hengshi-jarvis/create-jarvis
 
 ## 3. 下载并校验 release
 
-向 HENGSHI 申请 `hengshi-jarvis/jarvis-box` 私有 GitHub repository access 后，从该私有仓库的目标 GitHub Release 下载同一版本的：
+新部署默认选择 1.0 稳定版，不包含 alpha、beta 或 rc 预发布。0.2.x 与 0.3.x
+只发布显式选择的 bug 和安全修复版本，不再增加新功能，也不替换默认稳定版入口。
+试用预发布时，下载同一版本的制品；Native 安装须显式指定版本，例如 Linux 上
+`sudo env JARVIS_VERSION=1.1.0-alpha.1 bash install.sh`，macOS 上去掉 `sudo`；只有已经发布的预发布版本才可安装。
+Docker 使用该预发布制品的 `production-image.json` 中的 digest-pinned `image_ref`。
+下载预发布不会自动升级现有实例；执行升级前仍须遵守停服、数据迁移和回退要求。
+不要假设预发布写入的数据可以通过仅替换旧版二进制直接降级。
+
+无需访问 GitHub，直接打开[下载与安装指引](https://download.hengshi.com/jarvis-box/index.html)，从衡石下载站获取同一版本的：
 
 - 当前平台 release bundle；
 - `SHA256SUMS`；
 - `production-image.json`。
 
-如果 GitHub Release 下载不可用，可从公开 S3 fallback mirror 下载同名文件：
+下载页提供四个平台的具体链接和完整命令。也可读取 [稳定版元数据](https://download.hengshi.com/jarvis-box/channels/v1/latest.json) 获取最新稳定版与文件地址；版本目录本身不提供文件列表：
 
 ```text
 https://download.hengshi.com/jarvis-box/releases/v<version>/
 ```
 
-两条路径都以 `SHA256SUMS` 校验为准；mirror 可读性不替代运行时 license enforcement。
+`install.sh`、部署脚本与完整文档包含在 release bundle 内，校验并解压后即可取得。拥有 `hengshi-jarvis/jarvis-box` 私有 GitHub repository access 的客户也可从规范 GitHub Release 获取相同文件。两条路径都以 `SHA256SUMS` 校验为准；公开下载可读性不替代运行时 license enforcement。
+
+### 无 GitHub 下载与 Native 安装
+
+在当前用户控制的目录中，使用同一个 Bash 终端执行。需要 curl、Python 3、tar 和 SHA-256 校验工具；Agent、模型服务、系统软件源及实际接入的 Provider 仍需分别可用：
+
+```bash
+set -e
+base=https://download.hengshi.com/jarvis-box
+version="$(curl -fLsS "$base/channels/v1/latest.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) exit 1 ;; esac
+case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; arm64|aarch64) arch=arm64 ;; *) exit 1 ;; esac
+artifact="jarvis-box_${version}_${os}_${arch}.tar.gz"
+url="$base/releases/v$version"
+curl -fLO "$url/$artifact"
+curl -fLO "$url/SHA256SUMS"
+curl -fLO "$url/production-image.json"
+if command -v sha256sum >/dev/null; then
+  grep -F -e "  $artifact" -e '  production-image.json' SHA256SUMS | sha256sum -c -
+else
+  grep -F -e "  $artifact" -e '  production-image.json' SHA256SUMS | shasum -a 256 -c -
+fi
+tar -xzf "$artifact"
+release_dir="$PWD/${artifact%.tar.gz}"
+```
+
+选择对应系统的一条安装命令，使用已下载的本地文件，不再向 GitHub 请求发布包：
+
+```bash
+# Ubuntu 22.04 / 24.04
+sudo env JARVIS_VERSION="$version" \
+  JARVIS_ARTIFACT_FILE="$PWD/$artifact" \
+  JARVIS_SHA256SUMS_FILE="$PWD/SHA256SUMS" \
+  bash "$release_dir/install.sh"
+```
+
+```bash
+# macOS：不要加 sudo
+env JARVIS_VERSION="$version" \
+  JARVIS_ARTIFACT_FILE="$PWD/$artifact" \
+  JARVIS_SHA256SUMS_FILE="$PWD/SHA256SUMS" \
+  bash "$release_dir/install.sh"
+```
+
+安装后按第 4 节验证；已有 Native 服务升级前先规范停服。Docker 用户完成下载与校验后，按下方镜像包步骤及第 5 节部署。
 
 Linux：
 
@@ -71,7 +123,7 @@ tar -xzf "$artifact"
 从 v0.2.30 起，Docker 镜像包可从同一个下载站直接获取，无需 GitHub 账号或 GHCR 登录。先下载与安装包相同版本、匹配 Docker 主机架构的镜像包：
 
 ```bash
-version=0.2.31
+version=1.0.0
 arch=amd64
 # Linux ARM64 或 Apple 芯片 Mac 使用 arch=arm64
 base="https://download.hengshi.com/jarvis-box/releases/v$version"
@@ -87,12 +139,12 @@ macOS 将校验命令替换为 `shasum -a 256 -c "$image_archive.sha256"`。校�
 在 `deployment.env` 中填写导入后的镜像标签：
 
 ```dotenv
-JARVIS_IMAGE=hengshi/jarvis-box:v0.2.31
+JARVIS_IMAGE=hengshi/jarvis-box:v1.0.0
 ```
 
 然后按第 5 节使用同版本安装包内的部署脚本。镜像包不能代替安装包；`docker load` 只导入镜像，不创建运行中的服务。
 
-版本目录中的 `docker-images.json` 列出镜像包 URL、SHA-256、大小、导入后的标签以及对应 GHCR source digest；`latest.json` 的 `docker_images.url` 指向最新镜像包清单。镜像包有各自的 `.sha256` 文件，安装包仍使用原来的 `SHA256SUMS`。
+版本目录中的 `docker-images.json` 列出镜像包 URL、SHA-256、大小、导入后的标签以及对应 GHCR source digest；`channels/v1/latest.json` 的 `docker_images.url` 指向最新镜像包清单。镜像包有各自的 `.sha256` 文件，安装包仍使用原来的 `SHA256SUMS`。
 
 ### GHCR 直接拉取
 
@@ -116,7 +168,8 @@ Codex、Claude、Gemini 等 Agent 只需认证实际选用的项。认证必须�
 在解压后的 release bundle 中执行：
 
 ```bash
-sudo bash install.sh
+sudo bash install.sh   # Linux
+bash install.sh        # macOS：不要加 sudo
 jarvis-box doctor
 jarvis-box agent smoke
 jarvis-box status
@@ -126,11 +179,13 @@ jarvis-box status
 
 记录安装器报告的实际 binary、runtime root、state 路径和服务定义。不要根据 `which` 的历史路径猜测哪套 state 正在使用，以 `doctor` 和服务定义报告为准。
 
+Native 工具由当前用户的原安装器或包管理器维护。使用 `jarvis-box tools status --json` 查看本机工具的路径、可用性和版本；缺少可选工具只记为不可用，已安装工具的版本探测失败则返回非零退出码。`jarvis-box tools path` 返回客户工具目录，默认 `$HOME/.local/bin`。Native 的 `tools update` 和 `tools reset` 会返回非零退出码并提示使用原安装器或包管理器；这两个更新操作只适用于 Docker 的受管工具 overlay。详见 [Runtime tools](docs/cli.md#runtime-tools)。
+
 ## 5. Docker 上线
 
 ### 5.1 安装或升级
 
-从私有 GitHub Release 下载并校验 release bundle、`SHA256SUMS` 和 `production-image.json`。首次部署先创建当前用户拥有的私有 deployment home，再从 bundle 复制配置样例：
+按第 3 节从衡石下载站或私有 GitHub Release 获取并校验 release bundle、`SHA256SUMS` 和 `production-image.json`。首次部署先创建当前用户拥有的私有 deployment home，再从 bundle 复制配置样例：
 
 ```bash
 release_dir=/absolute/path/to/extracted-release
@@ -144,7 +199,7 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 # install -m 0600 "$release_dir/deploy/production/connector.env.example" "$deployment_home/connector.env"
 ```
 
-在 `deployment.env` 中把 `JARVIS_DEPLOYMENT_HOME` 改为上面的绝对路径，把 `JARVIS_IMAGE` 改为已校验并加载的 `hengshi/jarvis-box:v<version>`，或 GHCR 路径的 `production-image.json` 中的 `image_ref`，并设置当前实例唯一的 `JARVIS_DEPLOYMENT_NAME`、端口和认证选择。在 `runtime.env` 中填写所需 Agent、provider、allowlist 和 verification secret；首次保持 read-only。配置完成后执行：
+在 `deployment.env` 中把 `JARVIS_DEPLOYMENT_HOME` 改为上面的绝对路径，把 `JARVIS_IMAGE` 改为已校验并加载的 `hengshi/jarvis-box:v<version>`，或 GHCR 路径的 `production-image.json` 中的 `image_ref`，并设置当前实例唯一的 `JARVIS_DEPLOYMENT_NAME`、端口和认证选择。在 `runtime.env` 中填写所需 Agent、provider、allowlist 和 verification secret；首次保持 `JARVIS_PROVIDER_WRITEBACK_ENABLED=false`。配置完成后执行：
 
 ```bash
 "$ops" "$deployment_home" deploy
@@ -172,20 +227,19 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 首次 onboarding 在 `runtime.env` 保持：
 
 ```dotenv
-JARVIS_SERVE_MODE=read-only
 JARVIS_PROVIDER_WRITEBACK_ENABLED=false
 ```
 
-切换到 worker 做安装验收时也可继续保持回写关闭：Agent 和 post-check 仍运行，本地结果与审计仍保留，但不会向 GitLab、GitHub、Jira 或飞书项目原 subject 写评论、标签、状态或 review/follow-up 更新。完成隔离测试并确认 provider identity 后再显式设为 `true`。
+安装验收期间也可继续保持回写关闭：Agent 和 post-check 仍运行，本地结果与审计仍保留，但不会向 GitLab、GitHub、Jira 或飞书项目原 subject 写评论、标签、状态或 review/follow-up 更新。完成隔离测试并确认 provider identity 后再显式设为 `true`。
 
-如果客户 Runtime Foundation 提供 task-start preparer，在切换为 worker 前把容器内绝对路径写入 `runtime.env`：
+需要在 Agent 启动前准备 Company skills 时，可配置客户 Runtime Foundation 提供的程序：
 
 ```dotenv
 JARVIS_AGENT_RUNTIME_PREPARE_COMMAND=/home/jarvis/.company-jarvis/bin/company-jarvis-prepare
 JARVIS_AGENT_RUNTIME_PREPARE_TIMEOUT_SECONDS=120
 ```
 
-该 hook 在每个新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前运行；成功后普通 `Continue` 不重复运行，首次失败或旧 Task 尚无成功 receipt 时会在 Workspace/provider 准备完成后重试。它负责检查 Company repo 默认分支 revision，并按客户自己的 ownership 规则更新 Agent discovery roots。Jarvis Box 不读取 Company repo；hook 超时、失败或响应非法时 Task 保留已准备的 Workspace，但不会启动 Agent。Native 使用服务用户可执行的 Host 绝对路径，Docker 使用持久 Agent HOME 内的容器路径。
+Jarvis Box 在新 Task 的 Workspace/provider 和依赖准备完成后、首次 Agent 启动前调用该程序，并保存 Task-owned 成功 receipt。普通 `Continue` 复用成功 receipt；首次失败或旧 Task 尚无成功 receipt 时，在 Workspace/provider 准备完成后重试。客户 Runtime Foundation 负责 Company repo revision 检查及 Agent discovery-root 同步，Jarvis Box 不读取 Company repo。程序超时、失败或响应非法时，Task 保留已准备的 Workspace，但不启动 Agent。Native 使用服务用户可执行的 Host 绝对路径，Docker 使用持久 Agent HOME 内的容器路径。无参数调用和 JSON 响应格式见 [Agent runtime preparer 配置合同](docs/configuration.md#runtimeenv)。
 
 ### 5.2 选择一种 Docker 认证路径
 
@@ -253,7 +307,7 @@ claude auth login
 3. 真实 Agent discovery；
 4. 一条受监督的 provider ingress → Task/Run → workspace → Agent → writeback → cleanup 链路。
 
-得到客户批准后，将 `JARVIS_SERVE_MODE` 改为 `worker`，只启用已经存在适用 workflow 的业务 lane，再执行：
+得到客户批准后，将 `runtime.env` 的 `JARVIS_PROVIDER_WRITEBACK_ENABLED` 改为 `true`，只启用已经存在适用 workflow 的业务 lane，再执行：
 
 ```bash
 "$ops" "$home" start
@@ -261,7 +315,7 @@ claude auth login
 
 ## 6. Runtime Foundation 与定时任务
 
-create-jarvis 生成的 Company Jarvis 已包含版本化的 JARVIS 记忆固化、日省和心智进化 jobs、prompts 与 scheduler manager。Runtime Agent 按模板安装，客户不需要自己编写脚本或 cron。
+create-jarvis 生成的 Company Jarvis 已包含版本化的 JARVIS 记忆整理、每日复盘和经验积累 jobs、prompts 与 scheduler manager。Runtime Agent 按模板安装，客户不需要自己编写脚本或 cron。
 
 | 部署模式 | 唯一 scheduler owner | 调用方式 |
 | --- | --- | --- |
@@ -287,6 +341,9 @@ Native 安装包已内置并由 installer 管理 `uv-im-connector` companion ser
 - 上线验收必须从真实 IM 平台发送消息并确认收到真实回复；本地模拟请求不能代替 provider 认证。
 
 ## 8. 日常操作
+
+首次启动后需要授权才能创建新的任务运行。在线机器执行 `jarvis-box license activate`，在提示处输入激活码并按回车；输入不回显。Docker 使用 `docker exec -it CONTAINER jarvis-box license activate`。离线机器按第 9 节生成请求、导入服务商签回的授权文件。查看状态使用 `jarvis-box license status`，升级、取消任务、诊断和清理不要求有效授权。
+
 
 ### Native
 
@@ -373,6 +430,8 @@ Docker 形态在容器里执行，`docker exec` 必须带 `-i`（`docker compose
 `${JARVIS_STATE_DIR}/license`），同样不要手工编辑或从别的机器拷过来——机器标识对不上
 时盒子不会开工。
 
+本机停用后，已保存的旧文件不能恢复授权。需重新兑换激活码，或联系服务商重新签发文件后导入；新文件的签发时间必须晚于本机已经接受过的所有决定。
+
 ### 9.2 到期与续期
 
 离线授权**不会自己续期**，到期时间是签发时写死的。到期后本机不再开新 Run，`license
@@ -428,26 +487,40 @@ jarvis-box license request --out request.json   # 在新机器上出请求文件
 
 ## 10. 升级与回滚
 
-**升级前先把授权准备好。** 从带授权功能的版本起，每台盒子都必须有授权才能开新 Run：
-在线授权的机器备好激活码（升级后 `jarvis-box license activate`），离线授权的机器备好
-服务商签发的授权文件（升级后 `jarvis-box license import`，见第 9 节）。升级本身不受
-影响——服务照常起、状态页照常开——但**未激活的机器会拒绝所有新 Run**。已经激活过的
-机器不受影响：授权状态在 `JARVIS_LICENSE_STATE_DIR` 里，随 runtime state 一起保留，
-正常升级不需要重新激活。
-
 ### Native
 
 升级：
 
+同版本线可用 `jarvis-box update --version X.Y.Z`；明确选择开发版时也可指定完整预发布版本，默认更新仍只选稳定版。存在运行任务时先等待完成，或使用 `--force` 暂停并在升级后继续处理。目标制品下载与校验在暂停前完成；安装失败也处理本轮中断任务。维护期间收到的 IM 与 webhook 会保留到恢复后处理。以下为手工安装目标 bundle 的方式：
+
 ```bash
 jarvis-box stop
-sudo bash install.sh
+sudo bash install.sh   # Linux
+bash install.sh        # macOS
 jarvis-box doctor
 jarvis-box agent smoke
 jarvis-box status
 ```
 
 有 active Task 时，`jarvis-box stop` 会阻断。等待任务完成，或先明确取消任务；安装器没有 `--force` 升级模式。已有服务仍在运行时，安装器会在替换 artifact 前退出。升级会复用安装器发现的现有 runtime root 和 state，不应另建一套空 state。
+
+从 0.x 升级到 1.0 需要显式设置 `JARVIS_ALLOW_MAJOR_UPGRADE=1`。0.3.x 已支持目标安装器交接，可在确认没有活动任务后运行 `JARVIS_ALLOW_MAJOR_UPGRADE=1 jarvis-box update --version 1.0.0`。
+
+0.2.x 只能通过已下载、按 `SHA256SUMS` 校验并解压的目标 1.0 bundle 跨线升级。旧客户端的 GitHub Latest 与根 `latest.json` 保留在旧版本线，不会因发布 1.0 自动跨线；新安装和 1.0 客户端使用独立的 `channels/v1/latest.json`。不要用旧 0.2 CLI 显式跨线 `update`：它会先停服务，再执行旧安装器，不能完成目标安装器交接。使用下列路径，并同时固定目标版本、原 archive 和 checksum 文件：
+
+```bash
+version=1.0.0
+artifact=/absolute/path/to/downloaded-target-archive.tar.gz
+checksums=/absolute/path/to/SHA256SUMS
+target_installer=/absolute/path/to/extracted-target-bundle/install.sh
+sudo env JARVIS_ALLOW_MAJOR_UPGRADE=1 \
+  JARVIS_VERSION="$version" \
+  JARVIS_ARTIFACT_FILE="$artifact" \
+  JARVIS_SHA256SUMS_FILE="$checksums" \
+  bash "$target_installer"
+```
+
+macOS 上去掉 `sudo`，由现有安装用户执行；Linux 使用 `sudo`。不要从旧 runtime 的 `state/app` 目录运行旧安装器。留在 0.2 或 0.3 维护线时，须显式选择该线已经发布的版本，例如 `jarvis-box update --version X.Y.Z`。上述手工目标 bundle 路径仍适用于需要跨 0.x minor 版本线的升级。
 
 回滚时下载并校验目标旧 release，停止服务后从该 release bundle 执行同一个 `install.sh`，再运行 `doctor`、Agent smoke、`status` 和一条真实业务链路。回滚前备份实际 runtime root；不要通过替换 state 目录制造一个空运行时。
 
@@ -462,14 +535,14 @@ bash /absolute/deployment-home/update.sh
 bash /absolute/deployment-home/update.sh --version X.Y.Z
 ```
 
-首次使用的旧 Docker 部署可从公开 mirror 的 `latest.json` 读取 `docker_update`，下载其中的 `url`，并用同一版本 `sha256sums_url` 指向的 `SHA256SUMS` 校验 `update.sh`。只有 `latest.json` 明确包含 `docker_update` 时才表示自助入口已经随 release 发布；没有该字段时，继续使用本节下方的手工 bundle/镜像包升级流程，不要拼接或猜测下载 URL。bootstrap 需要当前部署用户可执行的 Bash、Python 3、`curl`、`tar` 和本机 Docker Compose；它不要求宿主机有 `jarvis-box`，也不支持远程 Docker daemon。
+首次使用的旧 Docker 部署可从公开 mirror 的 `channels/v1/latest.json` 读取 `docker_update`，下载其中的 `url`，并用同一版本 `sha256sums_url` 指向的 `SHA256SUMS` 校验 `update.sh`。只有 `channels/v1/latest.json` 明确包含 `docker_update` 时才表示自助入口已经随 release 发布；没有该字段时，继续使用本节下方的手工 bundle/镜像包升级流程，不要拼接或猜测下载 URL。bootstrap 需要当前部署用户可执行的 Bash、Python 3、`curl`、`tar` 和本机 Docker Compose；它不要求宿主机有 `jarvis-box`，也不支持远程 Docker daemon。
 
 ```bash
 (
 set -euo pipefail
 work="$(mktemp -d "${TMPDIR:-/tmp}/jarvis-box-docker-update.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-curl -fL https://download.hengshi.com/jarvis-box/latest.json -o "$work/latest.json"
+curl -fL https://download.hengshi.com/jarvis-box/channels/v1/latest.json -o "$work/latest.json"
 python3 - "$work/latest.json" "$work" <<'PY'
 import hashlib
 import json
@@ -505,8 +578,6 @@ PY
 ```
 
 脚本只支持官方标准 Compose 和官方 Jarvis Box image；客户派生 image、自定义 Compose 或其他布局继续走下方手工流程。原有 Compose 文件和 profile 选择必须保留并能通过目标 release 的合同校验，脚本拒绝 downgrade，并解析当前实例和目标版本，在停服前下载、校验并加载所有需要的 release 与 Docker 制品；active、waiting、finalizing、CI-wait 或 recovery-required Task 会阻止停服。它只接管指定的已有标准 deployment home，不会调用 Native 安装器或创建新实例。升级成功后继续使用 `<deployment-home>/update.sh`；旧镜像、bundle 和完整备份会保留。目标部署已经开始后若失败，不会只替换镜像进行自动回滚，应按输出的备份和人工恢复指引处理。
-
-升级期间会显示下载、镜像加载、备份、部署和容器内运行时工具更新阶段。耗时操作超过 1 秒后会打印已耗时，之后每 10 秒刷新并在完成时报告总耗时，避免把仍在执行误判为无响应。按 `Ctrl+C` 会中断当前阶段，updater 在信号处理器外回收子进程后明确报告中断，并继续遵循上一段的恢复或人工诊断边界。
 
 执行同一个安装命令；不要直接运行 `docker compose down`、`stop` 或 `up --force-recreate`：
 
@@ -549,7 +620,7 @@ Docker 备份完整 deployment home；其中的持久数据目录包括：
 
 ## 12. 故障诊断
 
-Delivery Metrics 历史基线分析使用普通 `delivery-metrics` lane Task。正在执行或等待恢复时会出现在默认 `jarvis-box tasks list`；历史排查使用 `jarvis-box tasks list --all --lane delivery-metrics`。进度、恢复入口和重试错误码见 [Delivery Metrics 历史基线操作手册](docs/delivery-metrics.md)。
+Delivery Metrics 历史起点分析使用普通 `delivery-metrics` lane Task。正在执行或等待恢复时会出现在默认 `jarvis-box tasks list`；历史排查使用 `jarvis-box tasks list --all --lane delivery-metrics`。进度、恢复入口和重试错误码见 [Delivery Metrics 历史起点操作手册](docs/delivery-metrics.md)。
 
 | 现象 | 先看哪里 |
 | --- | --- |
@@ -558,39 +629,11 @@ Delivery Metrics 历史基线分析使用普通 `delivery-metrics` lane Task。�
 | Task/Run 失败 | `/status`、Task state/event、Jarvis Box logs |
 | GitHub/GitLab 无写回 | `JARVIS_PROVIDER_WRITEBACK_ENABLED`、provider allowlist、导入身份、真实 CLI capability |
 | IM 无消息或写回 | connector health、connector logs、provider credential |
-| 记忆固化/日省/心智进化不运行 | 部署模式、Host scheduler owner、Runtime Foundation status、Docker transport reachability |
-| 新 Task 停在 Agent runtime prepare | Runtime Foundation prepare 命令、Company repo 网络/认证、discovery root 健康和 Task preparation event |
+| 记忆整理/每日复盘/经验积累不运行 | 部署模式、Host scheduler owner、Runtime Foundation status、Docker transport reachability |
+| Agent runtime preparer 失败 | 命令返回、Company repo 网络/认证、discovery root，以及对应任务的准备进度和事件 |
 | Docker helper 无法进入环境 | Host operator/scheduler logs、容器状态和 inner job 是否安装 |
-| 授权被拒：这台机器不是被授权的那台 | 盒子换了机器（或整盘克隆了一台）。在线授权走下面「换机器与灾备切换」；离线授权走第 9.4 节（离线那台机器永不签到，换机由服务商重签一份） |
-| 授权被拒：本机读不到机器标识 | 部署不完整——容器不是 `scripts/deploy-production.sh` 起的，或 native 装的时候跳过了 systemd 单元。重装 / 重建容器即可，不要手工补文件 |
-| 离线授权到期了（`租约截止` 已过） | 正常到期，不是故障。走 9.2 续期：本机出请求文件 → 服务商重签 → `import` |
-| 明明有授权，Run 却不开工 | `jarvis-box license status` 逐行看：`判定`、`机器绑定`、`时钟`、`租约截止` 各是一条独立的拒绝理由 |
 
 不要先手工修改 state 文件，不要用挂载 Host HOME 的方式修复认证。先保留 Task state、event、日志、版本、部署模式和路径证据，再处理恢复。
-
-### 换机器与灾备切换（一个授权码只授权一台机器）
-
-一个授权码在同一时刻只服务**一台**机器：盒子报上来的机器标识和上一次被承认的那台不符，
-就不再开工，`jarvis-box license status` 会说「这台机器不是被授权的那台，请联系服务商确认是否
-迁移」。这是**正常运维会碰到**的一次误伤（换主板、整机替换、机房迁移、灾备切回本机），处理
-成本是一次放行，不是永久关在门外。
-
-- **正规路径**：先在原机 `jarvis-box license deactivate`，再在新机上用同一个激活码
-  `jarvis-box license activate`。换机是「一台下线、另一台上线」，不是「两台同时用」。
-- **原机已经拿不到了**（硬件坏了、机器没了）：联系服务商在后台放行。放行之后**下一次签到
-  的那台机器**被认下，原机反过来就进不来了。
-- **机器标识从哪来**：`jarvis-box license status` 会显示读到的那一串和它的来源（文件 /
-  固件）。它由部署面从机器上读出来——native 是 systemd 单元里那一步（以 root 读固件 UUID，
-  读不到退 `/etc/machine-id`），Docker 是 `scripts/deploy-production.sh` 起容器前读一次、
-  写在部署目录**之外**再只读挂进去。**没有任何环境变量、配置项或命令行参数可以设置它**，
-  这是有意的：能设就等于能被拷贝的部署一起带走。
-- **不要把部署目录拷到另一台机器上顶替**：整个部署目录 `cp -a` 过去，机器标识**不会**跟着
-  走（它在部署目录之外），那台机器签到会被拒。这是这个机制的主要用途。
-- **别绕过 `scripts/deploy-production.sh` 手写 compose 起容器**：那样容器读不到机器标识，
-  它会照常跑起来、但一个 Run 都不开（拒绝的理由会写在 `jarvis-box license status` 里）。
-- **离线授权不是这条路**：那台机器永不签到，`deactivate` 也通知不到服务端，换机只能在
-  新机器上出请求文件、由服务商重签一份（第 9.4 节）。上面「后台放行」那一步对离线机器
-  没有用——服务端根本收不到它的签到。
 
 ## 13. 安全边界
 
@@ -600,15 +643,6 @@ Delivery Metrics 历史基线分析使用普通 `delivery-metrics` lane Task。�
 - IM provider secret 只属于 connector，不传给 Agent child process。
 - Jarvis Box 不拥有客户知识和 workflow，不读取 Company Jarvis repo。
 - `/status` 是运行诊断面，不是客户业务知识源。
-- 「一个授权码只授权一台机器」里的那串机器标识由盒子自己从机器上读、自报给服务端。它挡的是
-  「把部署拷到另一台机器上跑起来」这一类复制；机器上有 root 的人**刻意**去改它（改
-  `/etc/machine-id`、给容器挂一份假文件、换掉二进制）不在这一层的承诺范围内，和本文件其它
-  几条一样，这里不承诺强 DRM。真被这么做了，服务端的异常检测里看得见（来源 IP 变化、并存
-  时段相交），需要有人去看告警。
-- **离线授权签出去就收不回**：那台机器不联网，撤销、停用、租约上界都到不了它身上——它对
-  服务端是「什么都不发」。所以离线这条路上，授权的终点是**到期日**，控制点只有签发那一次
-  （谁签、签给哪台机器、签多久，都在授权文件里写死）。这是有意的商业安排，不是漏洞；
-  需要能撤销时就不要选离线授权。
 
 ## Docker 权限与备份原则
 

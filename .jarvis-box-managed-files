@@ -25,6 +25,9 @@ docs/integrations/github.md
 docs/integrations/gitlab.md
 docs/integrations/im.md
 docs/integrations/jira.md
+docs/integrations/tapd.md
+docs/integrations/yunxiao.md
+docs/integrations/zentao.md
 docs/multi-instance.md
 docs/network-ingress.md
 docs/operations.md

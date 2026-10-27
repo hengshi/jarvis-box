@@ -26,7 +26,7 @@ Task 可以创建超出其 agent 进程寿命的资源。jarvis-box 必须处置
 }
 ```
 
-`external_resource_registry_version = 1` 标识 schema。Task 初始时 registry 有意为空。
+Task 初始时 registry 有意为空。当前 schema 不带版本标记：0.2 的 `external_resource_registry_version = 1` 在 0.3 重写时没有跟着落下来，读侧也就没有「版本不认识就拒绝」这个分支——今天的拒绝认内容不认版本：kind 不在支持集、`id` 与 kind+project 不相等、project 标识不安全、workspace 未登记、`registered_by_run_id` 不是本 Task 的真实 Run，任何一条都拒。这条版本兼容现在必须保持关闭：registry schema 发生任何不兼容变更之前，写侧的版本标记与读侧的版本拒绝必须同时落地，否则对面写下的条目会被静默误读，而不是被拒绝。
 
 ## 登记边界
 
@@ -44,7 +44,7 @@ jarvis-box workspace resource register \
 - 支持的 resource kind 和安全的 project 标识；
 - 结果 registry 条目的幂等性。
 
-命令只允许当前拥有 Task 的 Run 调用。调用成功表示清理义务已经持久化；外部资源只能在成功返回后创建。Run 已失去 ownership、Task 已终态、Workspace 未登记或 registry schema 不受支持时，命令 fail closed，且不得创建资源。
+命令只允许当前拥有 Task 的 Run 调用。调用成功表示清理义务已经持久化；外部资源只能在成功返回后创建。Run 已失去 ownership、Task 已终态、Workspace 未登记或 registry 条目不受支持时，命令 fail closed，且不得创建资源。
 
 jarvis-box 不从 `.dev-data`、Compose file、仓库名、workspace 名、运行中容器或 Docker working-directory 标签推断登记。客户 Runtime Foundation 任务不读取或写入此 registry。
 

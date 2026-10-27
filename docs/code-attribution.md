@@ -102,7 +102,7 @@ git -C "$workspace" config --local user.email "$owner_email"
 printf 'configured git identity for repo=%s branch=%s\n' "$repo" "${base_branch:-unknown}"
 ```
 
-配置到 `runtime.env`：
+配置到当前实例实际生效的运行时环境文件：由 `JARVIS_ENV_FILE` 指定，未设置时使用 `$JARVIS_RUNTIME_ROOT/envs/.env.jarvis-box`。
 
 ```bash
 JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER=<absolute-path-to-configure-workspace>

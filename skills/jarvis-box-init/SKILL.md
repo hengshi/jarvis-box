@@ -11,4 +11,6 @@ Resolve version, target deployment, actual service user/HOME, effective runtime/
 
 Check only configured Agents/providers and the Company's actual discovery roots. Do not require Claude credentials, GitHub/private source access or unrelated skills on all installations. Distinguish missing identity/configuration from a failed configured capability. Use the customer's authorized scope to fix routine reversible setup problems; service replacement, destructive actions and external test sends retain their own authorization boundaries.
 
+For ZenTao 21 onboarding, follow `docs/integrations/zentao.md` and the `jarvis-box` skill's configuration reference. Verify the native webhook, creation notifications, product/execution scope and pinned CLI separately; a working comment command does not certify automatic creation post-check.
+
 Finish with an authorized real ingress → Task/Run → optional registered workspace → Agent → original-target delivery → terminal/cleanup observation. Agent smoke and filesystem presence prove only their own stages. Report READY only with the evidence required for the customer's deployment; name pending stages and the exact next action otherwise. Never send test messages or start production work just to fill a readiness checklist.

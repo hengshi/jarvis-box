@@ -1,6 +1,6 @@
 # GitHub 接入
 
-Webhook 通过鉴权、请求校验和可靠落盘后立即返回 `202 Accepted`，业务处理在后台执行；最终结果通过 Status、work ledger 和投递回执观察。重复投递和重启行为见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+鉴权及 JSON 校验成功、投递可靠落盘后，Webhook 立即返回 `202 Accepted`，不等待业务读取、Git 操作或 Agent 启动。响应中的 `receipt_id` 只标识投递受理，不表示 Task 已创建；后台处理和重投规则见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
 
 GitHub provider loop 用于把 GitHub issue comment 和 pull request 事件接入 Jarvis Box。
 
@@ -16,7 +16,7 @@ GitHub provider loop 用于把 GitHub issue comment 和 pull request 事件接�
 
 PR draft、未在 allowlist 内的仓库、重复 delivery、Jarvis marker、bot 自己的评论、空 review 和 `approved` review 会被跳过。`issue_comment` 先匹配 command，命中 mention 时不会重复进入 follow-up。
 
-GitHub 与 GitLab 共用 provider-neutral `FollowupDispatcher` 状态机；provider adapter 只负责 webhook 归一化、实时 PR/MR 读取和状态评论写回。状态 identity 包含 provider、repository/project 和 PR/MR number，因此两个代码托管平台不会共用去重状态。GitHub fork PR 仍以 target repository + PR number 作为评论和状态写回目标，同时从 GitHub 实时 PR 数据取得 head repository clone URL 与 source branch，独立 checkout source workspace；运行身份没有 fork source branch 的读取或推送权限时，follow-up 会显式失败，不会静默改写 target repository。
+GitHub 与 GitLab 共用 provider-neutral `FollowupDispatcher` ingress；provider adapter 只负责 webhook 归一化，队列只保存待消费评论和 subject，不保存 Task/Run 生命周期。状态 identity 包含 provider、repository/project 和 PR/MR number，因此两个代码托管平台不会共用去重状态。GitHub fork PR 仍以 target repository + PR number 作为目标，同时从 GitHub webhook 的 PR 数据取得 head repository clone URL 与 source branch，独立 checkout source workspace；运行身份没有 fork source branch 的读取或推送权限时，follow-up 会显式失败，不会静默改写 target repository。
 
 GitHub issue/PR URL 在 Task 创建 claim 中登记为规范化 `task-state.subject`。`issues.closed` 和 `pull_request.closed` 只按该登记精确匹配已有 Task，然后走统一的进程终止和 `workspaces[]` 清理；不从 branch、Artifact 或目录名推断。Terminal delivery 在任何终态副作用前先持久化 Task 登记序号 cutoff 和不可变实例快照，retry 只重放该快照，不会清理 delivery 之后启动的任务或同路径的新 Task 实例。
 
@@ -74,10 +74,6 @@ GH_CMD=gh
 
 兼容路径 `/github-webhook` 也可用，但新部署推荐 `/webhooks/github`。
 
-合法投递通过验签并持久化后立即返回 `202`，响应包含 `ok`、`accepted`、`async` 和 `delivery_id`。该响应表示投递已接收，不表示 Task 已启动或执行成功；GitHub API 查询、仓库准备、Agent 启动和终态处理在后台完成，结果通过状态页的工作动态和 Task 详情查看。调用方不能从确认响应读取 Task/Run ID。
-
-相同 delivery ID 与请求正文的重复投递不会重复执行：处理中返回 `202`，已处理返回 `200`。服务重启会恢复尚未开始处理的投递；处理过程中中断、结果未知或处理失败的投递不自动重放，重复投递返回 `409`，应先检查服务日志和对应 Task，确认已有副作用后再决定后续操作。无法持久化投递时返回 `500`，不会确认接收或启动处理。
-
 有仓库 webhook 管理权限时，可用 `gh api` 创建 webhook：
 
 ```bash
@@ -127,11 +123,11 @@ gh auth status
 
 Docker 部署由 `deploy-production.sh ... start` 自动导入当前宿主机身份；多账号宿主机用 `JARVIS_GITHUB_USER` 选择 machine user。Token 写入私有 `auth/github.token`，不写 `runtime.env`，也不挂载宿主机 HOME/Keychain。
 
-token 至少需要目标仓库的 issue/PR 读取和评论权限；要执行 follow-up 修改，还需要读取并推送 PR head repository 的 source branch（fork PR 即 fork 仓库分支）。GitHub issue `opened` 的 post-check 会用 `gh api` 预取 issue 和分页评论。GitHub command/post-check lane 由 Agent 产出 GitHub-ready Markdown，再由 Jarvis Box 的 `ProviderActionExecutor` 使用 `gh issue comment` 或 `gh pr comment` 写回；Agent 不接收 provider mutation 命令。Task/Run 中的 `comment-post-action.txt` 与 provider 上的真实评论共同构成 writeback evidence。PR review 保留 review delivery owner，并按每次 Run / head diff append-only 新建评论，避免改写旧 review 的 timeline；follow-up 通过 provider-neutral `FollowupProvider` adapter 写状态评论。两者与 command/post-check 共用全局回写开关和服务端 identity。follow-up 状态评论按 marker 查找并 POST/PATCH 同一条评论。
+token 至少需要目标仓库的 issue/PR 读取和评论权限；要执行 follow-up 修改，还需要读取并推送 PR head repository 的 source branch（fork PR 即 fork 仓库分支）。GitHub issue `opened` 的 post-check 会用 `gh api` 预取 issue 和分页评论。GitHub command/post-check lane 由 Agent 产出 GitHub-ready Markdown，再由 Jarvis Box 的 `ProviderActionExecutor` 使用 `gh issue comment` 或 `gh pr comment` 写回；Agent 不接收 provider mutation 命令。Direct command 的 `comment-post-action.txt`、post-check workflow 的 `workflow-actions.json` 和 exact Run typed effect receipt 共同提供相应层级的脱敏证据，不互相复制。PR review 保留 review delivery owner，并按每次 Run / head diff append-only 新建评论，避免改写旧 review 的 timeline；follow-up 状态评论按 marker 查找并 POST/PATCH 同一条评论，但只能由 exact Run typed effect 执行。两者与 command/post-check 共用全局回写开关和服务端 identity。
 
 ### 最终写回时 subject 已不存在
 
-Issue、PR、command 和 review 的最终评论如果返回 HTTP 404，Jarvis Box 会用同一个 `gh` 身份查询目标 repository。仓库仍可访问时，writeback artifact 记录 `subject-not-found / provider-subject-not-found`，TaskService 清理全部登记 Workspace 和 typed external resource 后把 Task 置为 `cancelled`；Agent 已成功完成的 Run 保持 `succeeded`。清理失败或延迟时，Task 保持 `finalizing / retry-finalization`，恢复器完成清理后再提交取消终态。
+Issue、PR、command 和 review 的最终评论如果返回 HTTP 404，Jarvis Box 会用同一个 `gh` 身份查询目标 repository。仓库仍可访问时，writeback artifact 记录 `subject-not-found / provider-subject-not-found`，TaskService 先把 Task 置为 `cancelled`，再清理全部登记 Workspace 和 typed external resource；Agent 已成功完成的 Run 保持 `succeeded`。清理失败或延迟保留取消终态及独立的处置义务，由同一处置流程重试，不重新执行 Agent 或评论写回。
 
 PR review 不按 marker 更新旧 bot comment。新建 review comment 返回 404，且目标仓库检查成功时，Task 才进入 subject-not-found 终态。目标仓库检查失败、鉴权错误和配置错误仍是普通写回失败，Status 会保留 `needs-attention` 供排查。
 
@@ -141,7 +137,7 @@ PR review 不按 marker 更新旧 bot comment。新建 review comment 返回 404
 
 按顺序做四层验证：
 
-1. 本机 HMAC smoke：按 [network-ingress.md](../network-ingress.md) 验证 `POST http://127.0.0.1:8787/webhooks/github`，首次有效投递返回 202，错误签名返回 401。
+1. 本机 HMAC smoke：按 [network-ingress.md](../network-ingress.md) 验证 `POST http://127.0.0.1:8787/webhooks/github`，有效签名返回 200，错误签名返回 401。
 2. 公网入口 smoke：从生产机器外部访问 `https://<jarvis-public-url>/webhooks/github`，确认 HTTPS、反向代理和 jarvis-box 串通，并确认 `/server/api/*` 与公网 `:8787` 不可访问。
 3. GitHub delivery smoke：在 GitHub webhook 页面发送 ping，或用 `gh api "repos/OWNER/REPO/hooks/HOOK_ID/pings" -X POST` 触发 ping，再查看最新 delivery。ping 事件应返回 2xx，jarvis-box body 通常包含 `github_event_not_supported`，且不会启动 agent。
 4. 真实 issue post-check 闭环：创建 allowlist 仓库的测试 issue，确认 `issues/opened` 启动且只启动一个 `post-check` Task，普通 edited/labeled 事件不会重跑，最终评论写回原 issue。
@@ -165,7 +161,7 @@ npm run e2e -- e2e/github-webhook.spec.ts
 
 ## 能力边界
 
-GitHub 同时是 repository host 和 work-item provider。issue 提供 create/command/lifecycle/comment writeback，PR 另外提供 review/follow-up。GitHub issue 当前没有 Jarvis Box 内建的 label/status mutation adapter；workflow 请求 provider 不具备的 action 会在调用 `gh` 前 fail closed。
+GitHub 同时是 repository host 和 work-item provider。issue 提供 create/command/lifecycle/comment writeback，PR 另外提供 review/follow-up。follow-up 状态评论只能由 exact Run typed effect 交付，不能由 ingress dispatcher 或 `followups/*.json` 直接写回。GitHub issue 当前没有 Jarvis Box 内建的 label/status mutation adapter；workflow 请求 provider 不具备的 action 会在调用 `gh` 前 fail closed。
 
 
 

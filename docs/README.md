@@ -4,6 +4,7 @@
 
 ## 从这里开始
 
+- [下载与安装指引](https://download.hengshi.com/jarvis-box/index.html)：无需访问 GitHub，获取发布包、包内安装脚本、校验文件和 Docker 镜像包
 - [开始使用](guide/getting-started.md)：新客户、Native 和 Docker 的最短路径
 - [运维入口](operations.md)：状态、日志、停服、升级、认证和备份
 - [Agent skills](agent-skills.md)：用自然语言配置与使用 Jarvis Box，独立安装产品 skill 包
@@ -20,6 +21,9 @@
 - [GitLab](integrations/gitlab.md)
 - [IM 与 uv-im-connector](integrations/im.md)
 - [Jira](integrations/jira.md)
+- [TAPD](integrations/tapd.md)
+- [禅道 OSS 21](integrations/zentao.md)
+- [云效](integrations/yunxiao.md)
 - [飞书项目](integrations/feishu-project.md)
 - [网络入口](network-ingress.md)
 
@@ -31,7 +35,7 @@
 - [配置参考](configuration.md)
 - [CLI 参考](cli.md)
 - [Runtime Agent](runtime-agents.md)
-- [Delivery Metrics 历史基线](delivery-metrics.md)：查看进度、恢复中断分析和处理重试
+- [Delivery Metrics 历史起点](delivery-metrics.md)：查看进度、恢复中断分析和处理重试
 - [Task/Run 执行模型](execution-model.md)
 - [代码归属与 Git 提交身份](code-attribution.md)：共享 Jarvis 运行时下的代码负责人、commit author 和机器账号边界
 - [持久化与恢复](storage-model.md)

@@ -1,6 +1,6 @@
 # GitLab 接入
 
-Webhook 通过鉴权、请求校验和可靠落盘后立即返回 `202 Accepted`，业务处理在后台执行；最终结果通过 Status、work ledger 和投递回执观察。重复投递和重启行为见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+鉴权及 JSON 校验成功、投递可靠落盘后，Webhook 立即返回 `202 Accepted`，不等待业务读取、Git 操作或 Agent 启动。响应中的 `receipt_id` 只标识投递受理，不表示 Task 已创建；后台处理和重投规则见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
 
 GitLab 是事件、subject 与安全 writeback 的 provider adapter。它不定义客户状态、标签或 workflow 语义。
 
@@ -24,7 +24,7 @@ jarvis-box setup gitlab --non-interactive
 | 事件 | 产品行为 |
 | --- | --- |
 | 允许的 issue/work-item 事件 | 登记精确的 provider subject 并启动配置的入口 workflow |
-| 允许的 MR 事件 | 启用时启动通用 MR review；close/merge 终止绑定到该精确 subject 的 Task |
+| 允许的 MR 事件 | 非草稿 MR 新建、草稿转就绪或源提交变化时启动对应提交的评审；普通标题等元数据更新不启动，重复同一提交不重复评审；close/merge 终止绑定到该精确 subject 的 Task |
 | 允许的 review 项目中的非系统 MR note | 去重后启动通用 MR follow-up |
 | 配置的 command mention | 启动 command lane |
 
@@ -32,7 +32,7 @@ jarvis-box setup gitlab --non-interactive
 
 Native 部署直接复用安装用户的 `glab` 身份。Docker 可以由 `start` 自动导入宿主机当前用户身份，也可以设置 `JARVIS_AUTH_IMPORT=skip` 后在持久 Agent HOME 中执行 `glab auth login --hostname <host>`；Token 不写入 `runtime.env`。
 
-GitLab command 与 post-check lane 由 Agent 产出 `comment.md`，再由 Jarvis Box 的 `ProviderActionExecutor` 使用服务端 `glab` 身份写回。MR review 保留 review delivery owner，并按每次 Run / head diff append-only 新建 note，避免改写旧 review 的 timeline；follow-up 通过 provider-neutral `FollowupProvider` adapter 写状态评论。三条路径都消费同一个全局回写开关和服务端 identity。Agent 不接收 provider 评论 endpoint，也不负责生成成功回执。所有写回都必须由同一个 Task/Run 证据链关联到原始 subject。
+GitLab command 与 post-check lane 由 Agent 产出 `comment.md`，再由 Jarvis Box 的 `ProviderActionExecutor` 使用服务端 `glab` 身份写回。MR review 保留 review delivery owner，并按每次 Run / head diff append-only 新建 note，避免改写旧 review 的 timeline；follow-up 队列只保存待消费评论，状态评论必须作为 exact Run typed effect 交付。三条路径都消费同一个全局回写开关和服务端 identity。Agent 不接收 provider 评论 endpoint，也不负责生成成功回执。所有写回都必须由同一个 Task/Run 证据链关联到原始 subject。
 
 ## 最终写回时 subject 已不存在
 

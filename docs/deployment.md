@@ -3,7 +3,7 @@
 ## 前置条件
 
 - 已从私有 `hengshi-jarvis/jarvis-box` GitHub Release 下载并校验 release bundle；GitHub Release 不可用时可从公开 S3 mirror `https://download.hengshi.com/jarvis-box` 下载同名文件，但仍必须使用同一份 `SHA256SUMS` 校验；
-- `JARVIS_IMAGE` 固定到 OCI digest；
+- `JARVIS_IMAGE` 指向本次 release 的正式制品：registry 可达时用 OCI digest 或 `ghcr.io/hengshi-jarvis/jarvis-box:v<version>`，离线镜像包用 `docker load` 后得到的 `hengshi/jarvis-box:v<version>`；
 - 客户批准正式 Agent/provider 权限和可选 Docker socket；
 - 若需要客户 Jarvis，Jarvis repo 已交付可执行 Runtime Foundation。
 
@@ -26,7 +26,7 @@ Jarvis 构建由 Host Runtime Agent + create-jarvis 完成，不依赖 jarvis-bo
 
 ## Start and identity
 
-首次 onboarding 在 `runtime.env` 设置 `JARVIS_SERVE_MODE=read-only`。Docker 身份只有下面两条受支持路径，二选一即可。
+首次 onboarding 在 `runtime.env` 保持 `JARVIS_PROVIDER_WRITEBACK_ENABLED=false`。Docker 身份只有下面两条受支持路径，二选一即可。
 
 **Path A：自动导入宿主机当前用户身份（推荐）。** `start` 会先以当前宿主机用户执行 `auth-import`，把选定的 `gh/glab` 与可移植 Agent 身份导入私有 `auth/`，再启动容器；不接受业务写入。
 
@@ -70,7 +70,7 @@ Bootstrap 的临时 material 删除后，stable commands、cache、state/log 与
 
 Jarvis-owned host Scheduler Adapter 也调用 `runtime-job`。内部 sync、memory-consolidation、daily-reflection 和 cognitive-evolution command 不调用 Docker。
 
-Runtime Foundation doctor、真实 Agent discovery 与下述 generic verification 通过并得到客户批准后，才把 `runtime.env` 切为 `JARVIS_SERVE_MODE=worker`；只启用已经具备适用 Jarvis workflow 的业务 lane，再执行首个监督任务。
+Runtime Foundation doctor、真实 Agent discovery 与下述 generic verification 通过并得到客户批准后，才把 `runtime.env` 的 `JARVIS_PROVIDER_WRITEBACK_ENABLED` 切为 `true`；只启用已经具备适用 Jarvis workflow 的业务 lane，再执行首个监督任务。
 
 ## Generic verification
 
@@ -81,7 +81,7 @@ scripts/deploy-production.sh /absolute/deployment-home verify
 验证项：
 
 1. running image 与 digest pin 一致；
-2. container-root authority 和 batteries-included toolchain；
+2. 安装用户对应的非 root 执行身份和随镜像提供的工具链；
 3. generic `skill-creator` 可发现，create-jarvis 未进入 runtime；
 4. Agent doctor 和 smoke；
 5. runtime profile 与 connector service 一致；
