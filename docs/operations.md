@@ -115,7 +115,7 @@ jarvis-box restart
 
 `jarvis-box update --check` 会显示当前版本、目标版本、元数据来源和可用下载源。`jarvis-box update` 会在停服前通过当前安装器的只读 preparation 模式下载并校验目标 release，从受校验 archive 提取目标版本的 `install.sh`；停服后只执行这个目标安装器，不允许旧脚本替换新二进制后继续控制 migration/start。下载优先使用私有 `hengshi-jarvis/jarvis-box` GitHub Release，失败时改用 `https://download.hengshi.com/jarvis-box` 的公开 S3 mirror，最终以 `SHA256SUMS` 为准。默认路径不取消 Task，活动工作会阻断升级；显式 Native `update --force` 先持久记录其实际中断清单，升级或安装失败后按收据恢复这些工作，不重跑原本已经失败或取消的任务。
 
-新部署默认使用 1.0 稳定版，0.2.x、0.3.x 仅接收 bug 与安全修复。维护线升级必须显式选择已发布版本，不通过无参更新追随新部署的默认版本。
+新部署默认使用 1.0 稳定版，0.2.x、0.3.x 仅接收 bug 与安全修复。当前安装器与更新入口使用 `channels/v1/latest.json`，或从 GitHub 已发布列表选择最高稳定 1.0+ 版本。已发布 0.2 客户端使用的 GitHub Latest 和根 `latest.json` 保留在旧版本线，不会因发布 1.0 自动跨线；维护线升级须显式选择该线已发布版本。
 
 从 0.x 升级到 1.0 必须显式设置 `JARVIS_ALLOW_MAJOR_UPGRADE=1`。0.3.x 支持目标安装器交接，在没有活动任务时可运行 `JARVIS_ALLOW_MAJOR_UPGRADE=1 jarvis-box update --version 1.0.0`。0.2.x 不支持此跨线 CLI 路径：旧 `update` 会先停服务再执行旧安装器，因此不能运行其无参或跨线更新；应校验目标 1.0 bundle 后按下方手工流程执行目标 `install.sh`。跨 0.x minor 版本线也需要显式授权和目标安装器，不从旧 runtime 的 `state/app` 目录运行旧脚本。
 
@@ -145,9 +145,9 @@ macOS 上去掉 `sudo`，由现有安装用户执行；Linux 使用 `sudo`。
 
 #### 使用宿主机自助升级入口
 
-Docker 部署不要求宿主机安装 `jarvis-box` 二进制。包含此能力的 release 会在 deployment home 写入由该实例拥有的 `update.sh`，以后直接运行 `bash /absolute/deployment-home/update.sh`，或用 `--version X.Y.Z` 锁定目标版本。完整的首次 bootstrap、`latest.json`/`SHA256SUMS` 校验、失败边界和 prerequisites 见同一 release bundle 根目录的 `CUSTOMER-OPERATIONS.md` 的“宿主机自助升级”章节。
+Docker 部署不要求宿主机安装 `jarvis-box` 二进制。包含此能力的 release 会在 deployment home 写入由该实例拥有的 `update.sh`，以后直接运行 `bash /absolute/deployment-home/update.sh`，或用 `--version X.Y.Z` 锁定目标版本。完整的首次 bootstrap、`channels/v1/latest.json`/`SHA256SUMS` 校验、失败边界和 prerequisites 见同一 release bundle 根目录的 `CUSTOMER-OPERATIONS.md` 的“宿主机自助升级”章节。
 
-只有 `latest.json` 明确提供 `docker_update` 时才表示当前 latest 已发布该入口；没有该字段时继续使用下方手工流程，不要猜测下载 URL。
+只有 `channels/v1/latest.json` 明确提供 `docker_update` 时才表示当前 latest 已发布该入口；没有该字段时继续使用下方手工流程，不要猜测下载 URL。
 
 先用默认快速列表确认没有正在执行或等待恢复的 Task，然后从私有 `hengshi-jarvis/jarvis-box` GitHub Release 获取同一版本的 release bundle、`SHA256SUMS` 和 `production-image.json`；GitHub Release 下载不可用时使用 `https://download.hengshi.com/jarvis-box/releases/v<version>/` 下的同名 mirror 文件。GitHub 下载需要 repository access，公开 mirror 无需登录；运行时 license enforcement 是独立边界。校验制品后，将已加载的目标镜像包标签 `hengshi/jarvis-box:v<version>` 或 `production-image.json` 中的 GHCR `image_ref` 写入现有 `$home/deployment.env` 的 `JARVIS_IMAGE`，再使用目标 release bundle 内的 `deploy-production.sh`。不要手工判断部署模式后直接执行 Docker 停服命令。
 

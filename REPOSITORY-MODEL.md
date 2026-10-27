@@ -29,17 +29,19 @@ Jarvis 使用多个独立仓库，因为构建方法、运行时实现和客户�
 
 ## 版本规则
 
-公开下载入口 `index.html` 通过 `latest.json.download_guide.url` 打开对应版本的说明页；`download_guide.sha256` 记录页面摘要。该字段对尚未提供网页说明的历史版本是可选的。版本说明页与固定入口先就绪，latest 才推进；说明页按版本保持不可变，安装包与原有 `SHA256SUMS` 的规范来源不变。
+新部署默认选择 1.0 稳定版，0.2.x、0.3.x 仅接收 bug 与安全修复。当前安装器与更新入口通过 `channels/v1/latest.json` 发现稳定版本；有私有 GitHub 权限时，Native 也可从已发布 release 列表选择最高稳定 1.0+ 版本。旧客户端使用的 GitHub Latest 与根 `latest.json` 保留在旧版本线，新版本发布不修改它们。
+
+公开下载入口 `index.html` 通过 `channels/v1/latest.json.download_guide.url` 打开对应版本的说明页；`download_guide.sha256` 记录页面摘要。该字段对尚未提供网页说明的历史版本是可选的。版本说明页与固定入口先就绪，新通道才推进；说明页按版本保持不可变，安装包与原有 `SHA256SUMS` 的规范来源不变。
 
 - Jarvis Box 版本号如 `v0.2.16` 在私有 GitHub Release、release bundle、`production-image.json` 和私有 GHCR image tag 上标识同一个运行时 release。
 - 私有源码 tag 指向规范源码 commit。公开仓库 overlay commit 只代表文档同步点，不是可安装制品来源。
 - Release artifact 文件名与 SHA-256 digest 以私有 GitHub Release 为规范来源，公开 S3 mirror 保持同名文件和同一份 `SHA256SUMS`。
 - `production-image.json` 将 release 绑定到规范源码 commit、通过门禁的 manifest digest，以及 digest-pinned 私有 GHCR image。
-- 支持 Docker 自助升级的 release 额外发布独立 `update.sh`，其 digest 同时出现在 `SHA256SUMS` 和 `latest.json.docker_update`；Docker 部署完成后会把同一脚本保存到对应 deployment home。历史 release 没有该字段时仍保持原有下载和手工升级合同。
+- 支持 Docker 自助升级的 release 额外发布独立 `update.sh`，其 digest 同时出现在 `SHA256SUMS` 和稳定版元数据的 `docker_update`；Docker 部署完成后会把同一脚本保存到对应 deployment home。历史 release 没有该字段时仍保持原有下载和手工升级合同。
 - `docker-images.json` 记录从该 digest 导出的 amd64 / arm64 镜像包、SHA-256 和导入标签。补发只新增这些文件及独立 `.sha256` 文件，保留已发布的 `production-image.json`、`SHA256SUMS` 和安装包。
 - 公开镜像包下载不要求 GitHub 或 GHCR access，运行时 license enforcement 仍是独立产品边界。
 - `create-jarvis` 以 commit 为核心标识。它记录 onboarding 时选择的精确 Jarvis Box release；不将运行时版本复用为自身标识。
 
 ## 完成不变量
 
-只有私有 GitHub Release 同时包含四平台 release bundle、`SHA256SUMS`、`production-image.json`，公开 S3 mirror 已同步同名文件和 Docker 镜像包，并且 GitHub Actions release gate 已验证 source、image 和部署合同后，正式 release 才算完成。支持 Docker 自助升级的版本还必须同步 `update.sh` 及 `latest.json.docker_update`；历史版本不因缺少该可选 asset 而被重写。公开仓库同步失败会阻断文档/onboarding 面，但不会成为另一个二进制分发面。
+只有私有 GitHub Release 同时包含四平台 release bundle、`SHA256SUMS`、`production-image.json`，公开 S3 mirror 已同步同名文件和 Docker 镜像包，并且 GitHub Actions release gate 已验证 source、image 和部署合同后，正式 release 才算完成。支持 Docker 自助升级的版本还必须同步 `update.sh` 及稳定版元数据的 `docker_update`；历史版本不因缺少该可选 asset 而被重写。公开仓库同步失败会阻断文档/onboarding 面，但不会成为另一个二进制分发面。

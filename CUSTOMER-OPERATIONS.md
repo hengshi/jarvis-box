@@ -50,7 +50,7 @@ Docker 使用该预发布制品的 `production-image.json` 中的 digest-pinned 
 - `SHA256SUMS`；
 - `production-image.json`。
 
-下载页提供四个平台的具体链接和完整命令。也可读取 [latest.json](https://download.hengshi.com/jarvis-box/latest.json) 获取最新稳定版与文件地址；版本目录本身不提供文件列表：
+下载页提供四个平台的具体链接和完整命令。也可读取 [稳定版元数据](https://download.hengshi.com/jarvis-box/channels/v1/latest.json) 获取最新稳定版与文件地址；版本目录本身不提供文件列表：
 
 ```text
 https://download.hengshi.com/jarvis-box/releases/v<version>/
@@ -65,7 +65,7 @@ https://download.hengshi.com/jarvis-box/releases/v<version>/
 ```bash
 set -e
 base=https://download.hengshi.com/jarvis-box
-version="$(curl -fLsS "$base/latest.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+version="$(curl -fLsS "$base/channels/v1/latest.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
 case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) exit 1 ;; esac
 case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; arm64|aarch64) arch=arm64 ;; *) exit 1 ;; esac
 artifact="jarvis-box_${version}_${os}_${arch}.tar.gz"
@@ -144,7 +144,7 @@ JARVIS_IMAGE=hengshi/jarvis-box:v1.0.0
 
 然后按第 5 节使用同版本安装包内的部署脚本。镜像包不能代替安装包；`docker load` 只导入镜像，不创建运行中的服务。
 
-版本目录中的 `docker-images.json` 列出镜像包 URL、SHA-256、大小、导入后的标签以及对应 GHCR source digest；`latest.json` 的 `docker_images.url` 指向最新镜像包清单。镜像包有各自的 `.sha256` 文件，安装包仍使用原来的 `SHA256SUMS`。
+版本目录中的 `docker-images.json` 列出镜像包 URL、SHA-256、大小、导入后的标签以及对应 GHCR source digest；`channels/v1/latest.json` 的 `docker_images.url` 指向最新镜像包清单。镜像包有各自的 `.sha256` 文件，安装包仍使用原来的 `SHA256SUMS`。
 
 ### GHCR 直接拉取
 
@@ -506,7 +506,7 @@ jarvis-box status
 
 从 0.x 升级到 1.0 需要显式设置 `JARVIS_ALLOW_MAJOR_UPGRADE=1`。0.3.x 已支持目标安装器交接，可在确认没有活动任务后运行 `JARVIS_ALLOW_MAJOR_UPGRADE=1 jarvis-box update --version 1.0.0`。
 
-0.2.x 只能通过已下载、按 `SHA256SUMS` 校验并解压的目标 1.0 bundle 跨线升级。不要运行旧 0.2 CLI 的无参或跨线 `update`：它会先停服务，再执行旧安装器，不能完成目标安装器交接。使用下列路径，并同时固定目标版本、原 archive 和 checksum 文件：
+0.2.x 只能通过已下载、按 `SHA256SUMS` 校验并解压的目标 1.0 bundle 跨线升级。旧客户端的 GitHub Latest 与根 `latest.json` 保留在旧版本线，不会因发布 1.0 自动跨线；新安装和 1.0 客户端使用独立的 `channels/v1/latest.json`。不要用旧 0.2 CLI 显式跨线 `update`：它会先停服务，再执行旧安装器，不能完成目标安装器交接。使用下列路径，并同时固定目标版本、原 archive 和 checksum 文件：
 
 ```bash
 version=1.0.0
@@ -535,14 +535,14 @@ bash /absolute/deployment-home/update.sh
 bash /absolute/deployment-home/update.sh --version X.Y.Z
 ```
 
-首次使用的旧 Docker 部署可从公开 mirror 的 `latest.json` 读取 `docker_update`，下载其中的 `url`，并用同一版本 `sha256sums_url` 指向的 `SHA256SUMS` 校验 `update.sh`。只有 `latest.json` 明确包含 `docker_update` 时才表示自助入口已经随 release 发布；没有该字段时，继续使用本节下方的手工 bundle/镜像包升级流程，不要拼接或猜测下载 URL。bootstrap 需要当前部署用户可执行的 Bash、Python 3、`curl`、`tar` 和本机 Docker Compose；它不要求宿主机有 `jarvis-box`，也不支持远程 Docker daemon。
+首次使用的旧 Docker 部署可从公开 mirror 的 `channels/v1/latest.json` 读取 `docker_update`，下载其中的 `url`，并用同一版本 `sha256sums_url` 指向的 `SHA256SUMS` 校验 `update.sh`。只有 `channels/v1/latest.json` 明确包含 `docker_update` 时才表示自助入口已经随 release 发布；没有该字段时，继续使用本节下方的手工 bundle/镜像包升级流程，不要拼接或猜测下载 URL。bootstrap 需要当前部署用户可执行的 Bash、Python 3、`curl`、`tar` 和本机 Docker Compose；它不要求宿主机有 `jarvis-box`，也不支持远程 Docker daemon。
 
 ```bash
 (
 set -euo pipefail
 work="$(mktemp -d "${TMPDIR:-/tmp}/jarvis-box-docker-update.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-curl -fL https://download.hengshi.com/jarvis-box/latest.json -o "$work/latest.json"
+curl -fL https://download.hengshi.com/jarvis-box/channels/v1/latest.json -o "$work/latest.json"
 python3 - "$work/latest.json" "$work" <<'PY'
 import hashlib
 import json
