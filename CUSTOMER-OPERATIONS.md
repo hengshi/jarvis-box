@@ -221,6 +221,8 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 └── connector.env      # 仅启用 IM connector 时存在
 ```
 
+首次启动或升级时，部署工具将 `runtime.env` 原样放入专用的 `data/runtime-env/runtime.env`，并保留根目录 `runtime.env` 为兼容链接。后续编辑真实文件或使用保留符号链接的配置工具；不要用另一个文件替换该链接。容器通过专用目录挂载读取同一份配置，配置保存及版本迁移可以原子更新文件；Host 身份和 connector 配置仍独立隔离。备份包含链接及其真实文件。
+
 `deployment.env` 保存已校验并加载的镜像标签或 GHCR digest 引用、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 必须位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外，不保存 Host HOME dump 或临时 context。
 同机多个 Docker 实例必须使用不同的 `JARVIS_DEPLOYMENT_HOME`、`JARVIS_DEPLOYMENT_NAME`、`JARVIS_PORT` 和 provider webhook URL，不共享 `auth/` 或 `data/`。
 
