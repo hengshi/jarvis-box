@@ -36,7 +36,7 @@ https://github.com/hengshi-jarvis/create-jarvis
 
 ## 3. 下载并校验 release
 
-新部署默认选择 1.0 稳定版，不包含 alpha、beta 或 rc 预发布。0.2.x 与 0.3.x
+新部署默认选择 1.x 最新稳定版，不包含 alpha、beta 或 rc 预发布。0.2.x 与 0.3.x
 只发布显式选择的 bug 和安全修复版本，不再增加新功能，也不替换默认稳定版入口。
 试用预发布时，下载同一版本的制品；Native 安装须显式指定版本，例如 Linux 上
 `sudo env JARVIS_VERSION=1.1.0-alpha.1 bash install.sh`，macOS 上去掉 `sudo`；只有已经发布的预发布版本才可安装。
@@ -123,7 +123,7 @@ tar -xzf "$artifact"
 从 v0.2.30 起，Docker 镜像包可从同一个下载站直接获取，无需 GitHub 账号或 GHCR 登录。先下载与安装包相同版本、匹配 Docker 主机架构的镜像包：
 
 ```bash
-version=1.0.0
+version=1.1.0
 arch=amd64
 # Linux ARM64 或 Apple 芯片 Mac 使用 arch=arm64
 base="https://download.hengshi.com/jarvis-box/releases/v$version"
@@ -139,7 +139,7 @@ macOS 将校验命令替换为 `shasum -a 256 -c "$image_archive.sha256"`。校�
 在 `deployment.env` 中填写导入后的镜像标签：
 
 ```dotenv
-JARVIS_IMAGE=hengshi/jarvis-box:v1.0.0
+JARVIS_IMAGE=hengshi/jarvis-box:v1.1.0
 ```
 
 然后按第 5 节使用同版本安装包内的部署脚本。镜像包不能代替安装包；`docker load` 只导入镜像，不创建运行中的服务。
