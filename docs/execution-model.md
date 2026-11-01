@@ -53,7 +53,7 @@ Provider lane、ChatBridge、MR/PR review、follow-up、Delivery Metrics 和定�
 | `EM-METRIC-001` | 历史受理、已记录 Run、今日/昨日 Run、趋势、活动 Task、活动 work item 和存储 inventory 是不同指标；每项只读声明的 ledger/projection，并携带 availability 与 as_of。 |
 | `EM-METRIC-002` | 单个 Run 的 runtime token usage 只有完整 `{task_id, task_instance_id, task_registration_sequence, task_dir, run_id, run_sequence, agent, agent_conversation_id}` 都匹配的 private typed final-cumulative adapter receipt 及其 usage digest 才能为 known；stdout/stderr、result JSON、全局 home session、mtime、目录存在和旧 Run receipt 都只能使其保持 unknown/partial。 |
 | `EM-OPERATIONAL-001` | Doctor/内部轮询的运行状态只来自配置、OS/command exit 和带稳定 identity 的 typed receipt；log/detail/error、mtime、目录扫描及 workflow/comment 审计只能展示，不能反投影 success/no-op/failed/issue。Provider history CLI 必须用 documented HTTP response frame 产生 closed transport outcome；stderr、exit 文案和 response body 不能分类 auth、retry 或 capability。缺 receipt/frame 必须是 unknown，不能伪造成成功或失败。 |
-| `EM-RUNTIME-001` | 只有 exact Run 的受信版本化原生终止事实，经 TaskService 接受并持久化后，才授权三类有界自动 Continue：Codex capacity、Codex usage limit、Claude＋DeepSeek context 超限。恢复预算、到期、认领和失效由同一 Task owner 决定；无全局 cooldown，不重新解释历史日志。助手/工具正文、stderr、中间错误后成功、其他失败及缺失/未知 receipt 均不授权自动执行。 |
+| `EM-RUNTIME-001` | TaskService 接受 exact Run 的真实失败结束事实后，普通 Agent 失败沿用原 Agent 有界自动 Continue；Codex capacity、Codex usage limit、Claude＋DeepSeek context 超限保留专门恢复。恢复预算、到期、认领和失效由同一 Task owner 决定；无全局 cooldown，不重新解释历史日志。助手/工具正文、stderr 和中间错误后成功本身不授权恢复；取消、超时、基础设施或交付故障不进入普通 Agent 续跑。 |
 | `EM-CI-001` | managed CI wait 必须先由 TaskService 从 immutable Task Target 与 exact Run fence 生成 sealed CI Target claim；claim 固定 provider authority、project、selector kind/value 和 canonical endpoint。CLI 参数、环境 host、pipeline URL 或 provider payload不能创建/改写 claim；每个 poll/result receipt 必须回显同一 claim，并验证 pipeline identity 属于该 authority/project，缺失、漂移或 unsupported Target 在发起 provider call 和写 Task 投影前 fail closed。 |
 | `EM-DISPOSAL-001` | Workspace/外部资源处置是独立维度；清理失败或重试不得改写已提交的 Run/Task delivery outcome。 |
 | `EM-SUPERSESSION-001` | 只有两端都携带完整 `{task_dir, task_id, task_instance_id, task_registration_sequence}` 的显式 lineage，且 successor 已满足完整成功条件时，历史 Task 才投影为 superseded；名称、裸 Task/Run ID、时间和同 Target 不足以推断。`effective_status`、`monitor_status=superseded`、summary/evidence 等字段只是单次 read-model overlay：strict aggregate 每轮先清除旧 overlay，再由本轮验证成功的 lineage 附加不可由持久化 JSON 伪造的 sealed supersession 结论，TaskView 只消费该结论。旧的 bare-id lineage 和残留 overlay 只保留审计，不参与投影。人工关联先把 selector 唯一解析成两端 TaskRef，再在同时持有两端 lifecycle lock 时复验 registration、subject 与 successor 完整成功 receipt；任一端被重建或 selector 歧义都 fail closed。 |
@@ -63,6 +63,8 @@ Provider lane、ChatBridge、MR/PR review、follow-up、Delivery Metrics 和定�
 | `EM-DEPLOY-001` | Native、Docker、安装、升级和运行时配置不得引入第二套 identity、storage、lifecycle、scheduler owner 或事实源。版本迁移的唯一代码 owner 是目标 release 中已经完成 artifact digest 校验的新二进制，旧二进制不得预执行自己所知的 migration 冒充目标版本迁移。Native `update` 必须在停服前由当前安装器仅执行无 canonical runtime 写入的 target preparation：下载并校验完整目标 release、从受校验 archive 提取目标 `install.sh`；停服后只执行该目标安装器，禁止已安装旧脚本在替换 target artifact 后继续控制 migration/start。`0.x` 的 minor 线（例如 `0.2` 与 `0.3`）是独立兼容线，跨线与正式 major 升级相同，必须在任何下载或 service mutation 前取得显式 opt-in。Native 升级固定顺序为 cross-process install transaction lock -> strict active-work preflight -> **在任何 ensure-path、env reconcile、artifact/state 写入前** service stopped / exclusive maintenance window -> verified target artifact install -> canonical ownership -> 安装器以已验证 target artifact 和本次安装 attempt 签发短生命周期 migration grant -> 目标新二进制在最终 lock 内复验同一 grant attempt，写 durable migration intent -> 在 canonical runtime env/state 上执行幂等 migration -> durable matching receipt（每条 receipt 必须同时匹配当前 migration implementation identity；仅 intent=receipt 不足）-> grant 严格由 `issued` 推进到 target artifact/attempt/journal-bound `lease-pending`，再推进到 `lease-issued` startup lease（`lease-pending` 是唯一可恢复 crash 状态）-> service start 消费 lease 且持有全生命周期 runtime singleton lock -> health receipt。install transaction lock 必须按 physical host root 唯一且落在 host-stable、独立于 `TMPDIR`、不可由单次 installer 配置改写的固定位置，否则同一 runtime 会产生双 owner；打开该固定 path 必须 no-follow/exclusive-create，并在任何 truncate/write 前从已打开 fd 复验 regular file、当前 euid owner、单 hardlink 且 group/other 不可写，任一不满足都 fail closed。systemd 只有明确 inactive/failed 的已加载服务，或明确 `LoadState=not-found` 的首次安装，才是 stopped；launchd 在 `jarvis-box stop` 执行 `bootout` 后不保留 loaded-but-inactive 状态，因此只有同时包含 exact label 与 exact user domain 的 `launchctl` could-not-find-service（首次安装或已安装 runtime 被显式 bootout）才是 stopped。两种 service manager 的任意 command failure、空输出或 `unknown` 都不是 stopped 证据。`serve` 只验证并消费该 lease 与已闭合的 migration journal，绝不得自行执行 migration、签发 grant 或把旧 target 的 lease 当作新 target 授权；首次开发/未安装 runtime 只能经显式 development bootstrap 的 `migrate runtime` 取得同一类 lease，不能由直接 `serve` 隐式创建。首次安装、跨版本升级和重复安装必须走同一 owner。journal schema 是已发布的闭集，未发布 schema（包括 v1）必须 fail closed；任何 current inventory 之外的 intent 或 failed receipt 都是未闭合 migration，必须阻断 startup；已知且 implementation 全等的有效 intent 在进程崩溃后没有 receipt 时，只能由停服且持有当前安装授权的目标 migration owner 在同一 journal lock 下，追加保留原 attempt/binary identity 的 failed 记录，明确该次结果未经确认；再以递增的新 attempt 重入同一幂等 implementation。原 intent 和已发布数据必须保留，不猜测成功，不删改日志；恢复再次中断仍按相同规则重试。attempt 必须连续递增，前一 attempt 未闭合时不能出现下一 intent。Serve 和 lease issuer 只消费全部有匹配 succeeded receipt 的 inventory，不执行恢复。migration 失败、尚未恢复的 intent 无 receipt、implementation/target binary/version/digest/attempt/journal identity 不匹配、service-stopped 证据为 unknown 或 canonical path 不可写时，安装器不得启动新服务、恢复暂停 Task 或报告升级成功；重试只能继续同一 migration identity。taxonomy 替换必须在交付时明确选择带可证明映射及回滚策略的数据迁移，或明确的只读退休投影；不得用 runtime alias、effect 兼容或下一次升级可能补跑来代替迁移。 |
 
 `EM-ADMISSION-001` 的 review T2 原始 provider payload 只能存在于 launcher 私有临时 staging，读取 opened/merged/closed 后即销毁；不得复制到 exact Run。prefetch 的返回合同只有归一化后的 `mr_state`，staging 中的任意 `RunContext`、provider identity、URL、Agent 命令或 Meta 都不是事实，禁止覆盖 sealed C1。exact Run 暴露给 Agent 的 `merge-request.json` 必须由 C1 admission 的 provider/object/project/IID/source branch/target branch/commit 合成，只允许叠加 T2 reachability state；`notes.json` 不得装入 T2 live comments。Prompt 必须禁止 Agent 用 glab/gh/provider API 重新读取或覆盖 identity、diff、branch、commit、notes，实际 review 只能消费已经精确 checkout 并复验 HEAD 的 admitted commit。这样 workspace、Agent 输入、review result、publication 与 Followup 始终是同一个 C1；只在 summary 中回填 `reviewed_commit_sha=C1` 不能修复被 C2 context 污染的 review。
+
+固定评审提交的本地对象缺失不等于远端不可取得。`EM-WORKSPACE-002` 的准备流程须从原仓库补取本轮 admission 的精确 SHA，再检出并复验 HEAD；源分支在受理后被改写不得改变本轮评审对象，也不应仅因缺少本地对象要求人工 Continue。远端确实无法提供该提交时保留明确准备失败，不改用新 head 或默认分支，不删除重建已有工作区。
 
 `EM-TARGET-001` 要求 provider adapter 的兼容 kind 先归一化为 canonical Subject kind，再与 typed Subject 或 canonical URL 比较；例如 Jira `jira_issue` 只是历史 adapter 拼写，必须归一为 `issue`，Feishu 只有已知的 `feishu_work_item`/`work_item` 可归一为 `work_item`。兼容别名不得因为字符串不同把一个已有 authority/project/number 的合法 Target 变成 providerless，也不得把未知 kind 强制归到另一个 canonical Target。下游 workflow-input 必须继续使用已经归一化的 Subject kind；adapter Meta 的历史 object kind 只能作为缺失证据的兼容输入，不能反向覆盖 canonical Subject。
 
@@ -172,7 +174,7 @@ type Work interface {
 
 | 生产入口 | 当前直接写面 | 目标输入 / owner | 收口判据 |
 | --- | --- | --- | --- |
-| Runner execution 与 resume | managed 路径把 identity capture、spawn、launch commit、timeout/reap、exit disposition、runtime activity、marker、session audit、callback fault 和 browser cleanup 上报为 typed observation；`legacyState` 只服务非 managed 兼容路径。Runtime adapter 只能从自己的 closed protocol event 生成 `RuntimeFailureReceipt` / `AgentResumeHandleReceipt`，不得把 stdout/stderr 或另一个 Agent 的输出交给正则、模型或通用文本 classifier 后当作事实 | `taskservice.Service.Advance(CommandObserveRunner)` 强制 observation 携带并复验 `{task_id, task_instance_id, task_registration_sequence, run_id, sequence}`，process mutation 再校验 PID/generation/containment；failure/resume receipt 还绑定 agent、agent conversation、adapter schema 与 receipt id；completion 仍由 TaskService terminalization WAL | managed Runner 不直接提交 Task/Run lifecycle；旧 Task instance/R1 observation 不写 successor state/event/effect。未知 failure 只终结当前 Run，不触发 router unavailable/cooldown/failover。共享 WorkLedger event id 同时包含 Task registration 与 Run generation，TaskID 与 RunID 分列保存 |
+| Runner execution 与 resume | managed 路径把 identity capture、spawn、launch commit、timeout/reap、exit disposition、runtime activity、marker、session audit、callback fault 和 browser cleanup 上报为 typed observation；`legacyState` 只服务非 managed 兼容路径。Runtime adapter 只能从自己的 closed protocol event 生成 `RuntimeFailureReceipt` / `AgentResumeHandleReceipt`，不得把 stdout/stderr 或另一个 Agent 的输出交给正则、模型或通用文本 classifier 后当作事实 | `taskservice.Service.Advance(CommandObserveRunner)` 强制 observation 携带并复验 `{task_id, task_instance_id, task_registration_sequence, run_id, sequence}`，process mutation 再校验 PID/generation/containment；failure/resume receipt 还绑定 agent、agent conversation、adapter schema 与 receipt id；completion 仍由 TaskService terminalization WAL | managed Runner 不直接提交 Task/Run lifecycle；旧 Task instance/R1 observation 不写 successor state/event/effect。普通 Agent failure 通过现有有界 Continue 继续原 Task，不触发 router unavailable/cooldown/failover。共享 WorkLedger event id 同时包含 Task registration 与 Run generation，TaskID 与 RunID 分列保存 |
 | Status Start/Continue/Cancel/retry | `internal/server/status.go`、`task_actions.go` 及 lifecycle handler 的直接 transition/writeback mutation | structural Task ref + expected revision 的 `Command`；Continue/Cancel 另携带 frozen exact Run expectation；Chat retry 另携带 TaskService-sealed opaque exact-Run plan；`taskservice.Service` | GET ActionPolicy 与 POST 共用同一 plan；每次 POST 对 strict Task 立即投影一次并只消费该 closed policy 的 `enabled/reason/strategy/requires_input`，disabled 一律拒绝且不写 lifecycle；Continue 的每个 production lane adapter 必须把同一 source/current expectation 原样送到 Run claim，Chat retry launcher 必须把同一 opaque plan 原样送回 TaskService，二者都不能在 adapter 内按 latest/current 重选；handler 只做 transport、鉴权和 response，不写 lifecycle |
 | Admin、storage 与启动恢复 | `internal/server/admin.go`、`storage_wait.go`、terminal/writeback recovery 路径的 state 修复 | 已存在 durable intent/receipt 指向的 recovery Command | recovery 不新造业务意图，只推进 exact owner；所有物化修复带 revision/receipt |
 | ChatBridge / IM binding、Start、Continue、Cancel 与 completion | ChatBridge 只归一化 conversation Target、不可解析 binding intent、strict Run artifact 和 IM transport；TaskService 准入后才提交 exact TaskRef binding outcome，`chat_reply_delivery` intent/receipt/projection 归 `taskservice.Service` | `CommandLaunchRun`、`CommandCancelTask`、`CommandChatBridgeLifecycle` 与 sealed-plan `CommandRetryChatBridgeWriteback`；取消和 delivery receipt 分别携带 exact TaskRef、以及 exact `{task_id, task_instance_id, task_registration_sequence, run_id, sequence, receipt_id}` | intent 不可被选择/取消消费；owner 成功登记 Task 后才提交 binding。delivery owner 先持久化 claimed intent，解锁后才发送；receipt 派生终态。Chat retry 的 artifact reader 仅可读 sealed plan.RunDir，plan 后出现 successor 必须在 effect 前 typed stale conflict。claimed 无 receipt 收敛 unknown，绝不自动重放 |
@@ -197,9 +199,9 @@ CLI service stop/restart/update 的维护读取也遵守这一条：TaskService 
 
 没有 current Run 的 admission（包含它仍在等待存储的同一 zero-Run admission）没有 Run/browser owner：stop/restart 只能 cancel，update 一律拒绝恢复/中断；带 current Run 的 storage wait、process identity unresolved、terminalization/recovery pending、missing/corrupt/ambiguous aggregate 都是 fail-closed `block`，不得从任意文本或空字段降级为可暂停。effect receipt 的 `status` 是该 effect 自己的 closed receipt schema，不是 Task lifecycle state。`workspace list` 同样只通过 complete environment fence 和 `MutationService.CurrentWorkspaces` 读取；缺少或过期 fence 必须失败，不能由 `task-state.json`、`taskStateTerminal` 或目录状态补全。
 
-Runtime adapter 的失败观察必须携带完整 Task/Run fence、AgentConversation、Agent、受信的版本化协议、closed failure kind 和本次调用内的终止 event identity。只有“原生终止的有界自动 Continue”中列出的三类顶层终止事件，经 TaskService 在 current owner 下接受并落盘后，才能申请同一 Task 的后继 Run。普通非零 exit、signal、context cancellation、spawn error 只是进程事实；原始 stdout/stderr、error.Error()、日志 tail、助手或工具生成的 JSON 分类及 try-again 文案不能授权自动执行。
+Runtime adapter 的专门失败观察必须携带完整 Task/Run fence、AgentConversation、Agent、受信的版本化协议、closed failure kind 和本次调用内的终止 event identity。专门恢复只接受“Agent 中断的有界自动 Continue”中列出的三类原生终止事件。普通非零 exit 或受信协议明确报告失败可由 TaskService 建立通用续跑事实，复用同一 Task 的 Continue；signal、context cancellation、timeout、spawn error 和基础设施故障不授权该续跑。原始 stdout/stderr、error.Error()、日志 tail、助手或工具生成的 JSON 分类及 try-again 文案本身不能授权自动执行。
 
-协议适配的版本、终止事件及最终失败退出必须全部成立；receipt 缺失、版本不支持、完整身份不符或持久化失败均 fail closed，不产生恢复权限。Codex thread.started.thread_id 仍只授权私有 AgentResumeHandleReceipt，不能单独证明 failure 或 usage。三类恢复采用 Task 内预算和到期时间，不建立全局 availability/cooldown。runtime token usage 继续要求独立稳定的 final-cumulative event identity；普通 terminal result、助手 message/item id 和 session id 不能替代它，没有该证明时 usage 保持 unknown。
+专门恢复要求协议适配版本、终止事件及最终失败退出全部成立；其 receipt 缺失或版本不支持时不获得切 Agent、容量退避或压缩权限，但真实普通失败仍可同 Agent 续跑。完整身份不符、receipt 无效或持久化失败仍 fail closed。Codex thread.started.thread_id 仍只授权私有 AgentResumeHandleReceipt，不能单独证明 failure 或 usage。三类恢复采用 Task 内预算和到期时间，不建立全局 availability/cooldown。runtime token usage 继续要求独立稳定的 final-cumulative event identity；普通 terminal result、助手 message/item id 和 session id 不能替代它，没有该证明时 usage 保持 unknown。
 
 managed `jarvis-box ci wait` 在任何 GitLab API call 前把解析后的 CLI request 与完整 Task/Run fence交给 TaskService。TaskService 只从当前 Task 的 immutable GitLab Target 生成 `CITargetClaim`：`merge_request` 只允许同 project + 同 MR iid，`commit` 只允许同 project + 同 SHA；`issue`、branch selector、缺 authority、legacy URL、Run context 和后来 Artifact 不能合成 claim。命令参数必须与 claim 的 canonical endpoint 完全一致，实际 `GITLAB_HOST` 只能取 claim authority。每个 phase/poll/result command 都携带 claim id、authority、project、selector 与 endpoint；TaskService 在 lifecycle lock 中重新加载 current Target/Run 并重算 claim。pipeline id 必须是 provider 返回的 closed scalar identity；非空 pipeline URL 必须与 claim authority、project 和 pipeline id 精确匹配。无 claim、参数漂移、环境 host 冲突、payload URL 越界、R1→R2 或 Task ABA 都不得调用 provider 或写 `ci-wait`、pipeline URL、result/event。非 managed CLI 可以保留显式参数的只读等待，但它没有 Task 投影权。
 
@@ -266,6 +268,8 @@ Follow-up status intent/plan/receipt 还必须固定 sealed Subject/Target diges
 8. 在一次 projector 调用中生成 lifecycle、action policy、status group、diagnostics 和 consumer counts。
 
 loader 返回的 aggregate 是带 revision 的一致快照。页面、CLI 和后台恢复不得在一个请求中混用两次不同 revision 的结果。Task state 与 strict Run aggregate 分步读取时，loader 必须在二者完成后复核同一 Task-state revision；若写事务在读取窗口内推进了 revision，本次混合观察不属于业务上的 `projection-incomplete`，必须整体丢弃并立即做有界重读，不能把这个瞬时读取窗口投影成 `needs-human`、禁用原本可用的操作或写入缓存。只有有界重读仍无法取得闭合快照，或者同一稳定 revision 的事实确实缺失、损坏、歧义时，才发布 fail-closed projection。一次复核成功后，Task state、Operational/Historical Run 集合、Artifact scope、lifecycle、action policy 和 response revision 必须冻结为同一 request-local snapshot；后续磁盘变化属于下一 revision，不能反向使已封存的本次读取失效。
+
+调用方在等待 Task 生命周期锁时取消请求或达到自己的 deadline，等待必须返回对应的 context 错误；不得进入受保护操作、返回部分 Catalog，或把请求取消记为持久化故障/任务损坏。取消等待不改变持锁者或 Task/Run 状态；没有取消或期限的调用仍按原规则等待同一把锁。
 
 ### `EM-RECOVERY-001` root maintenance repair ledger
 
@@ -478,7 +482,7 @@ Work feed 中没有 TaskView owner 的外部 activity/webhook 行只能消费 ad
 
 Catalog 搜索先在未套 provider/user scope 的完整候选集中解析规范化 Task/Run identity：存在结构化精确命中时只能返回该 owner；若精确 owner 被 scope 排除则结果为空，绝不能用同前缀的兄弟 Task/Run 顶替。只有完整候选集中不存在精确 identity 时，才执行标题、Target 和 identity 前缀等模糊检索并保留全部合法候选。模糊检索是发现能力，不是改写 exact owner 的回退规则。
 
-`Catalog` response 中 Task 列表、`counts`、Target inbox、work-items 和 related Tasks 必须携带/消费同一 canonical `task_view_revision`。该 revision 只能由 durable TaskView、maintenance projection 与聚合成员的规范化内容计算；`age_ms`、顶层或嵌套 `duration_ms`、`process_segments.duration_ms`、`wall_elapsed_ms`、`total_agent_duration_ms` 以及任何由 captured `now` 推进的 registry fingerprint 字段都必须先排除。Run registry fingerprint 只能依赖 immutable identity、durable registry/evidence 和 closed outcome，绝不能依赖查询时钟；否则没有业务变化也会持续发布新 revision，形成 SSE/页面刷新风暴。派生缓存不能仅凭自身 TTL 判断 fresh；缓存携带的 revision 与当前 Catalog revision 不相等时必须丢弃并从当前 Catalog 重建。只有请求携带的 expected revision 精确等于当前缓存 Catalog revision 时，Inspect mismatch 才能把该已证明过期的缓存失效；任意未知 revision 不得作为远程 cache flush 能力。`counts` 只能统计 TaskView 的 `ready|doing|needs-human|failed|completed|historical`；其中 `historical` 不计入 current/attention/completed，`all` 只是总数/筛选器，不是 Task 状态。counts 不能另按 raw `monitor_status` 计数，也不能把 `needs-attention` 重复叠加到 `failed`。cursor snapshot 同样排除上述 observation clock；只有 durable TaskView revision、聚合成员或持久事实变化才能使 cursor 失效。
+`Catalog` response 中 Task 列表、`counts`、Target inbox、work-items 和 related Tasks 必须携带/消费同一 canonical `task_view_revision`。该 revision 只能由 durable TaskView、maintenance projection 与聚合成员的规范化内容计算；`age_ms`、顶层或嵌套 `duration_ms`、`process_segments.duration_ms`、`wall_elapsed_ms`、`total_agent_duration_ms` 以及任何由 captured `now` 推进的 registry fingerprint 字段都必须先排除。Run registry fingerprint 只能依赖 immutable identity、durable registry/evidence 和 closed outcome，绝不能依赖查询时钟；否则没有业务变化也会持续发布新 revision，形成 SSE/页面刷新风暴。派生缓存不能仅凭自身 TTL 判断 fresh；缓存携带的 revision 与当前 Catalog revision 不相等时必须丢弃并从当前 Catalog 重建。只有请求携带的 expected revision 精确等于当前缓存 Catalog revision 时，Inspect mismatch 才能把该已证明过期的缓存失效；任意未知 revision 不得作为远程 cache flush 能力。`counts` 只能统计 TaskView 的 `ready|doing|needs-human|failed|completed|historical`；其中 `historical` 不计入 current/attention/completed，`all` 只是总数/筛选器，不是 Task 状态。counts 不能另按 raw `monitor_status` 计数，也不能把 `needs-attention` 重复叠加到 `failed`。工作项列表一次返回所选来源的完整集合，不通过分页截断未结束工作；来源筛选不改变本机指标或 Catalog revision。
 
 `Inspect` 一次返回：
 
@@ -533,6 +537,8 @@ pre-current ledger 中已经存在的 `accepted` 行是不可变的 legacy 接�
 managed Run 的 `started`、timeout/failed 和 completion 账本事件由 TaskService 在 exact Task/Run transition 被接受后写入；`event_id` 必须由 `{task_dir, task_id, task_instance_id, task_registration_sequence, run_id, run_sequence, transition}` 稳定派生并以 append-once 语义提交。账本的 `task_id` 永远保存 Task identity，Task registration 与 Run identity 分别保存在 detail；不得用 RunID 填充 TaskID，也不得由 Runner 和 TaskService 各写一次同一 transition。相同目录、TaskID、RunID 与 Run sequence 被新 Task registration 复用时不能与旧实例合并成同一 ledger receipt。
 
 自动修复漏斗是只读业务观察，聚合 GitLab、GitHub、Jira、飞书项目、TAPD、禅道与云效已接入工单，不受页面来源筛选影响。workflow 通过独立 `metrics.issue_type` 与 `metrics.change_requests` 报告分类和本次修复链接；这些字段不授予动作或 lifecycle 权限，客户 `outcome` 继续不透明。实际 workflow.start 子 Task 与有效结果的观察使用完整 Task/Run generation 追加到既有 work ledger 的 `issue_funnel` 记录，不维护第二套任务状态机；普通 Task 清理保留这些记录。即时观察追加失败只记录警告，不改变 provider receipt 或业务完成状态；TaskService 的清理事务在固定 Task/Run 身份与生命周期锁内先向历史投影器补齐本地观察，追加失败不得删除源 Task/Run。清理重试只重放 append-once 观察，不执行 provider effect，不创建新 Run；dry-run 不执行历史写入。原工单以 provider、authority、project、kind、ID 的准入身份关联子 Task；修复独立以实际 GitLab MR / GitHub PR 身份核验，允许跨仓库、跨代码平台，不要求复制工单。历史入口按规范化工单身份合并平台留存的自动 post-check 回执与既有受理、执行台账（包括 Issue Hook 的 work_items URL），不运行分类 Agent。平台历史恢复独立发现入口，不能用本机保留的 issue 集合限制平台查询；明确的自动发布回执与绑定本 issue 的创建任务审计标记可证明受理，普通提及、其他 issue 的复制结论或独立 command 重跑不建立自动入口，独立 command 启动也不证明自动 bugfix 准入。历史结论支持已发布的 Markdown 加粗，只读取结论段；原工单可信自动执行后的明确 MR/PR 交付回执直接关联对应修复，背景引用仍不能证明交付。已发布 v1 存储的 Task 级 workflow 报告可在原始版本、注册身份、Task 级 handle 与原工单规范化身份和 URL 全部匹配时贡献只读历史观察；这不是现代 Run Artifact 根目录回退，不改变 Task/Run 投影或动作权限。已有有效 post-check 结果、已发布 v1 评论处置及 workflow.start 修复建议不依赖新增 metrics 字段。离线历史恢复工具可将已发布 Task 级报告的明确交付处置及实际修复关联规范化为既有台账观察；runtime 继续保持 outcome 不透明，不把 feature 链接或本地准备当作交付，也不参与动作授权。确已丢失的结果和修复链接显示证据缺口：受影响阶段的数量显示已证实下限，完整历史转化率保留未知；Status 可展示明确标注的已记录数量之比，未知的零值或零分母不显示为 0%。最后一层需要匹配身份的平台合并时间或带完整 authority 的平台合并回执，可复用本机保留的平台记录，不能从本地完成、approve 或账号提交总量推断。详细统计与可用性口径由 [Status API](status-api.md#自动修复交付漏斗) 维护。
+
+自动修复漏斗还保留标准 workflow `status` 与完成时间，按同一完整工单身份关联各次修复结论、已有独立指令启动和已核验交付。最近一次已记录的业务结论与 Task/Run 执行成功分开：`blocked` / `needs-input` 不增加生命周期状态、调度分支或工作区保留要求。受阻后指令触发只表达有时间证据的先后关系，不证明人工纠正或自动交付；缺失的旧结论保持未知，保留产物可补齐时向既有 append-once 观察追加业务字段，不能改写旧行或重新执行任务。
 
 ### `EM-METRIC-002` Run runtime token usage receipt
 
@@ -743,6 +749,10 @@ Command 与 workflow 评论由 `ProviderActionExecutor` 在发送前统一处理
 
 `Run` 是一次 agent CLI 调用。
 
+Run state 的当前存储版本为 schema 3。1.0.0 及更早已发布的 Run 解码为原有单向进程完成合同；1.1.0 追加的停服 Flyway 在签发启动租约前发布新格式，不推进业务 revision、重跑任务或改变历史结果。
+
+新 Run 的私有 v3 输出日志头保存非敏感的协议和消息映射，原始 stdout/stderr 字节保持不变。显示与执行结果由同一协议模块解释，显示消息不授权恢复。更改或删除 Agent 配置、重启服务后，历史 Run 使用其固定映射；已发布且没有映射的 v2/v3 日志按原合同只读，不回填或重写日志。
+
 字段：
 
 - `id`
@@ -752,6 +762,7 @@ Command 与 workflow 评论由 `ProviderActionExecutor` 在发送前统一处理
 - `agent_name`
 - `agent_cmd`
 - `agent_conversation_id`
+- `completion_protocol`: claim 时为 `unbound`，新执行绑定实际进程时固定为 `process-exit/v1`；历史记录保留原协议身份供只读校验
 - `input_event_id`
 - `request_fingerprint`
 - `prompt_artifact_id`
@@ -765,6 +776,7 @@ Command 与 workflow 评论由 `ProviderActionExecutor` 在发送前统一处理
 规则：
 
 - pid 只属于非终态 Run。
+- Run 的登记身份在启动进程前持久化；`completion_protocol` 由 TaskService 从返回的实际 RunHandle 绑定一次，在消费进程完成事实前持久化。一次性命令的 prompt 随 argv 启动，不依赖启动后的协议激活步骤；绑定失败必须停止并 join 已启动进程。`unbound` 不得成为 running 或 succeeded。现代 schema 3 缺少该字段是损坏，不能借用旧版的进程退出默认值。
 - Run id 使用 compact canonical 形式 `r_<12 Crockford Base32>`；Task、sequence、provider、时间和来源消息是独立字段，不编码进 id。
 - 终态 Run 在 compare-and-swap 后不可变。
 - 迟到完成由 TaskService 追加 `late_run_completion_ignored` 审计事件；失去终态竞态的 Runner 不得追加 terminal completion 事件、共享 work-ledger completion 或 provider writeback，也不得重写当前 Task binding。
@@ -818,6 +830,7 @@ Command 与 workflow 评论由 `ProviderActionExecutor` 在发送前统一处理
 - Copilot CLI conversation
 - Gemini checkpoint
 - Opencode session
+- Qwen session
 
 规则：
 
@@ -826,6 +839,7 @@ Command 与 workflow 评论由 `ProviderActionExecutor` 在发送前统一处理
 - jarvis-box 不把一个 runtime 的 AgentSession 内容转成另一个 runtime 的历史。
 - Adapter 可以捕获一个 opaque resume handle 或 source ref metadata。
 - 私有 handle value 只在 adapter dispatch 时解析。
+- Runtime Agent 的命令、参数模板、输出协议、会话选择和可选能力由同一 `exec-v1` 描述目录提供，发行预设与客户自定义项没有另一套品牌 dispatcher。Task 生命周期只消费经过协议验证的执行与恢复事实。原生恢复或压缩未获协议支持时，普通 Continue 在原 Task 创建 child AgentConversation 和新 native session，保留工作区、已有产物与交付契约。适配器注册、配置和能力边界见 [Runtime Agent](runtime-agents.md)。
 - Start 保存已选择的启动参数，包括其中显式选定的模型；同 Agent Continue 沿用该选择，原生会话缺失并不授权切换模型。旧 Run 未保存参数时，只按当前明确配置解析：工作类型仍选择该 Agent 才使用其模型参数，否则仅使用该 Agent 自身的配置，不套用其他 Agent 的参数或从历史聊天推测。后继 Run 保存解析结果，跨 Agent Continue 按目标 Agent 的配置重新选择。
 - Codex、Claude 和 Copilot Continue 校验由 exact Run receipt 选定的本地会话记录是否可用。Codex 的 active 与官方 `archived_sessions` 记录均须为唯一的 regular file 且 `session_meta.id` 匹配；官方归档由已配置的 Codex CLI 解除归档，完成后重新验证 active 记录，再沿用原 native session。外部历史轮转的压缩归档识别显式 `source` 的元数据，以及带 `prefix`/`archive` 的历史元数据：前者绑定当前 sessions 根，后者必须匹配当前 HOME 下同名归档对，各自仅采用已知 stat 布局中的原字节数。两者均只恢复成员路径、原字节数、SHA-256 和 `session_meta.id` 都匹配的单个 regular 文件，不覆盖已有文件，不猜测未知格式。记录不可用或归档无法验证、恢复时，返回无可用 handle，由同一个 Continue 创建 child AgentConversation 和新 native session，保留 Task、Workspace、当前指令和交付契约，并记录运行时诊断；不要求用户 `/new`。此检查不从其他会话发现 handle，不导入历史聊天，也不放宽 Task/Run receipt 的身份校验。
 
@@ -859,6 +873,7 @@ Command 与 workflow 评论由 `ProviderActionExecutor` 在发送前统一处理
 - handle 只能来自对应 runtime adapter 的 closed structured start/resume receipt。Codex adapter 只接收自己启动的 `exec --json` 进程首条 `thread.started` 协议事件，绑定完整 Task registration、Run generation 和 AgentConversation 后写入 runtime-private receipt；Continue 在 lifecycle lock 内校验该 receipt。缺少凭据的新任务或旧记录启动新会话，凭据身份损坏拒绝继续；不通过扫描旧 session JSONL 补造凭据。stdout/stderr 中的 UUID、`session id:` 文案、JSON-looking 日志、用户 prompt echo 和另一 runtime 的事件都不是 handle capture authority。
 - Claude/Copilot adapter 在启动前明确签发或选择 native session ID，并核对实际 argv 中唯一的 `--session-id` / `--resume` 选择与该值一致；只有进程成功启动并取得 exact Run ownership 后才能保存私有 receipt。后继 Run 读取同一 Task/Run/Conversation/Agent 绑定的 receipt 续接原会话，不能根据日志猜 ID。已发布的 Codex receipt 缺省 Agent 字段仅代表 Codex，不得被其他 Agent 使用。
 - 已发布 0.2 的 Codex/Claude/Copilot terminal Run handle 由追加的停服 Flyway migration 导入：必须同时核实原 Task registration、Run creation event、Run Agent、handle kind、原 Run ID 和有效 session ID；不从目录或缺失值重建。迁移只写私有续接 receipt，保留原历史生命周期，不启动进程；重复迁移不得覆盖冲突 receipt。Gemini/OpenCode 继续遵守各自已有的能力声明；已移除的 Agent 不恢复支持。
+- 新协议的私有 native receipt 使用 schema 2，额外绑定稳定的会话协议与 Agent；同名配置切换协议不能借用旧 handle。新 ID 只接受其声明的 UUID 或有界 opaque 语法，opaque ID 原样保留、不得 trim，也不得未经路径校验用于文件查找。协议接受先保留为本次进程的待确认事实，迟到拒绝或畸形输出会撤销；进程结束后才发布回执。已发布的无 schema receipt 仅按原 Codex/Claude/Copilot 闭集读取，不为新协议补造 handle。
 - 公开 JSON 只可暴露 handle metadata 和 safe status。
 - `value` 不得出现在 Run JSON、launch request JSON、Status projection response、Artifact、logs、E2E evidence 或用户可见摘要中。
 
@@ -971,13 +986,15 @@ Status 的 Target 聚合不合并 Task 身份：同一 Target 下的所有关联
 9. 其他情况创建 child AgentConversation。目标 agent 可以与当前 agent 相同，也可以不同；source native handle 可以缺失。
 10. 在 Task state mutation 中创建新的 Run，并合并当时最新的 `workspaces[]`，避免并发追加登记被旧快照覆盖。
 11. Run claim 提交后，重复检查存储并重新验证、准备目录；通过后把 `primary` 作为默认 `cwd`。这次检查覆盖预检之后发生的并发变化；它失败时按 successor launch failure 收敛，但不能把不可预测的进程启动错误描述成完全事务化切换。
-12. `prompt.txt` 只写入本次 Run 的新用户消息和 adapter 执行契约，不复制历史对话。
+12. `prompt.txt` 只写入本次 Run 的新用户消息和 adapter 执行契约，不复制历史对话。唯一例外是：同一 native adapter 为 exact source Run 持久化了“尚未接收输入”的私有回执，且该 Run 有本版本写入的 exact `input.txt` 时，TaskService 按 source Run 后、本次消息前的顺序把那一条未接收输入带入 successor。`thread.started`/resume handle 不是输入接收回执；`turn.started` 才能清除此例外。`turn.started` 已到达但其 receipt 无法持久化时，或停止后的 exact Run observation 无法建立 receipt 安全性时，Run 必须保留 input-receipt persistence failure/unknown 并 fail closed，绝不能把缺文件解释为未接收后重放。缺少新版本 input artifact 的已发布 Run 保持普通 Continue，不得从完整 process prompt、会话记录或 Task root 猜测或重建输入。
 13. 复用 AgentConversation 时调用 adapter native resume；创建 child AgentConversation 时启动目标 agent 的新 native session，并提供 Task、已登记 Workspace 集合和来源 lineage。
 14. 如果 Task 绑定外部 provider Target，新 Run 必须继承该 provider 的 delivery/writeback contract；same-agent resume 和 cross-agent child AgentConversation 都不能把契约降级成本地 prompt。每次 Run 的 writeback action/response 写入该 Run Artifact，再由 TaskService 按当前 Run ownership 投影到 Task 根目录。
 
 Agent strategy 不读取历史聊天消息，不把一个 runtime 的 native handle 传给另一个 runtime，不修改终态 Run。跨 agent 时，Task 连续性来自同一个 Task、已登记 Workspace、Artifact 和 lineage；目标 agent 获得的是新的 native session。
 
 准备阶段失败也必须保留 exact Run 的已受理输入，允许操作者修复环境后以新消息 Continue。对 strict latest Run 严格终态为 failed、从未 started 且 run-context 不存在的情况，显式 agent Continue 只继承 strict Task 身份和已登记 Workspace，使用本次新消息准备后继 Run。此规则不根据 schema 猜测来源版本，也不认证或补造遗失输入；它同时适用于已发布 0.3 在 PrepareRun 失败后未写入输入的记录。原 lane 的完整输入与权限必须独立核对，不能降级为普通本地 prompt。已经 started 的 Run、损坏或身份不符的现存 context 仍拒绝；IM private reply handle、workflow input、review publication 与其他 delivery 权限仍须各自的完整证据。
+
+未接收的 IM 输入同时保留已下载的附件：TaskService 固定 exact source Run，ChatBridge 校验来源身份和文件归属后复制到后继 Run；附件单独消息允许空文字。准备失败前尚未完成附件复制时，只能沿同一 Task 内序号严格递减的 exact source Run 引用读取输入资源。回复目标、private reply handle 与 outbox 始终属于本次 Run。sealed recovery 的控制 prompt 不得被修改，已受理用户输入须在任何可失败的准备操作前独立固定；准备失败不能把恢复模板当作用户输入保存。
 
 ## 内部 Stop Run 原语
 
@@ -1018,13 +1035,14 @@ Agent 切换不是 import/export。jarvis-box 不转换历史记录。目标 run
 
 ## Continue：writeback strategy
 
-当 delivery pending/failed 且 provider-ready 内容存在时，Continue 只重试同一 Task 已生成结果的 provider delivery。
+当 delivery pending/failed，或原 Run 因服务端关闭写回而明确跳过发送，且 provider-ready 内容存在时，Continue 只重试同一 Task 已生成结果的 provider delivery。
 
 规则：
 
-- 只在 writeback pending 或 failed，且待发送内容存在时启用。
+- 只在 writeback pending 或 failed，或 `provider.comment` / `provider.workflow` 的 exact Run 私有回执明确为 `skipped/provider-writeback-disabled/not-attempted`，且待发送内容存在时启用。关闭写回的原跳过事实保持，重新开启后显式 Continue 追加同一 Run 的交付 attempt，不运行 Agent；其他 skipped 原因不取得重试权限。
 - GitLab/GitHub/Jira/飞书项目 comment 和 ChatBridge reply 使用各自 provider writer。
 - 不启动 runtime agent，不创建 Run，不修改终态 Run。
+- 已完成工作区处置的 Task 进入同一 latest Run 的 sealed delivery retry 时，可在该 finalizing 事务中复位清理完成标记；原登记和处置回执保持，不重新创建工作区。没有新 Run 或合法的 exact delivery retry intent 不得清除此标记。
 - 重放目录服从统一 ArtifactScope：provider command 读取已严格投影的 delivery Run；post-check、MR review 和 ChatBridge 只有在 `task-artifact-projection.json` 的 Task、Run、sequence 与逐文件清单精确匹配时，才可读取 Task-root current-Run alias。无 Run 的 pre-generation lane-owned Task-root artifact 是唯一无 marker 例外。每个 lane 必须明确选择一种所有权路径，禁止 root/latest/sibling fallback。投递目标从 Task 的不可变 `subject` 恢复，历史 Run context 只补充经过该 subject 校验的 provider-specific 参数。
 - 成功或失败都追加 writeback audit event，并更新 provider-facing projection；成功后 Task 收敛到 `completed/completed`。可确定且安全重试的失败投影为 `Task lifecycle=needs-attention + Delivery=failed + next_action=retry-writeback`；结果不确定时使用 `Delivery=outcome-unknown + next_action=operator-check` 并禁用重发——系统自己不得重发，唯一的出口是人去目标系统查证后给出裁定：`delivered` 直接收敛为完成，`not-delivered` 把这条 effect 变成一次确定的 `failed` 并接回上面那条原地重投。两个裁定由 policy 在 `actions.continue.attestations` 里列出（未知分支列出两项；不可重试的明确失败只列出 `delivered`，仅用于操作员实际修复投递并查证成功后收尾，不授权系统重发），页面只是它的投影，不自行从 `effects` 推断。
 - exact Run 的合法 `failed` receipt 是一个已完成、可解释的 delivery 结果，不是 completion transaction 损坏：TaskService 的正常 completion 与启动恢复都必须保留不可变的 `Run=succeeded` 并完成 Task 终态提交，不得把它当成本地 Artifact 合同失败去改写 Run 终态或投递分类。这条分类同时适用于 provider delivery 和本地 workflow action delivery；两者的 definite/retryable failure 都投影为 `status_group=needs-human`，不得因 blocker 名称不同把 workflow action 伪装成 Run `failed`。raw Task 可保留 execution 终态 `completed/completed`，strict aggregate 再从同一 exact receipt 封存 `lifecycle=needs-attention + delivery=failed`及它的 action policy；旧存储中的 `completed/writeback-failed` 只是兼容编码，不是第二个状态权威。未经裁定的 `outcome-unknown`、`invalid` 和必需 effect 的 `unrecorded` 仍不能完成 finalization，也不能授权重发；`outcome-unknown` 只有被人裁定成一个确定的事实（`delivered`/`not-delivered`）之后才离开这个集合，裁定本身是一条新的 effect attempt receipt，不是对原回执的改写。对于不可重试的明确失败，操作员完成外部投递修复并查证结果已送达后，也可追加 `delivered` 裁定，保留原失败回执；不接受 `not-delivered` 裁定或自动重发。未知回执因此是 attempt 链的终点：只有带裁定的后继才允许接在它后面。
@@ -1068,29 +1086,30 @@ ChatBridge lifecycle 只有 `prepare-recovery` 与 `complete-reply` 两种 typed
 
 进程在 claimed intent 之后退出时，recovery 只能通过只读 receipt observer 读取并校验同一 v2 private receipt：匹配则用原 digest 收敛，找不到 receipt 就写 `delivery_state=unknown`，冲突则 invalid；observer 永远不能执行旧 closure。单纯 `status=completed`、Agent Run succeeded、private receipt 单边存在或 Task delivery map 单边存在都不是 IM 已送达证据。`retry-writeback` 也走这条 Command；新 receipt 由前一 exact attempt identity 与 next ordinal 派生，不能由 display reason 文本决定。
 
-## 原生终止的有界自动 Continue
+## Agent 中断的有界自动 Continue
 
-只有 TaskService 在 exact current Run 下接受的原生终止事实可以新增自动恢复权限，允许的类别固定为：
+TaskService 在 exact current Run 下接受真实失败结束事实后，复用同一条持久化恢复链与 Continue。普通 Agent 失败直接交回原 Agent 检查日志和已有产物、继续未完成工作；三类模型受限情况保留专门处理：
 
-| 原生终止 | 同一 Task 的恢复方式 | 边界 |
+| 失败情况 | 同一 Task 的恢复方式 | 边界 |
 | --- | --- | --- |
+| 普通 Agent 执行失败 | 下一轮恢复调度沿用原 Agent，按普通 Continue 的会话策略继续 | 不按错误文字分类或切 Agent；保留原任务、工作区和已有产物，由 Agent 判断后续处理 |
 | Codex model capacity | 15、30、60、120、240 秒退避，附少量稳定抖动，再原 Agent、原模型、原 native session Continue | 不切 Agent，不要求上游提供额度重置时间 |
-| Codex usage limit | 按 canonical 配置的 fallback order 选择已启用且命令可用的下一 Agent，以 child AgentConversation Continue | 保留工作区、原目标与 Artifact；不复用 Codex handle，不改全局首选，不在候选间循环 |
+| Codex usage limit | 仅按 canonical 配置的完整 fallback order，先核实际计费账户的可用余额，再以同一配置调用真实 Agent 和模型做一次有期限的轻量验证；两步通过才以 child AgentConversation Continue | 余额未知、不可查询、不足或模型验证失败均不选用；不追加其他目录条目，不保留启用/禁用状态；保留工作区、原目标与 Artifact，不复用 Codex handle、不改全局首选、不在候选间循环 |
 | Claude Code＋DeepSeek context 超限 | 原模型、原 native session 执行一次必要的上下文压缩，确认压缩成功后 Continue | 不清空会话、不切模型或 Agent；压缩失败或再次超限立即停止 |
 
 一个 Run 仍对应一次 CLI 调用。context 恢复先以 Continue 调用同会话 `/compact`；该 Run 的成功只保存原生压缩回执，不代表原任务交付完成。TaskService 持久化压缩成功和下一次普通 Continue 的来源，再由既有恢复 sweep 沿用同一会话继续原任务。压缩和恢复工作各占一次累计预算；CLI 退出 0 但没有原生压缩成功及 boundary 证明时停止，不重复发送未改变的超限输入。
 
-Runner 仅适配 stdout 中受信的顶层原生终止事件。Codex exec-json 0.163.0 的 `turn.failed.error.message` 使用经该版本源码及原生 CLI 验证的窄映射：capacity 为完整固定消息；usage limit 为该版本的明确额度耗尽消息。Claude stream-json 的版本闭集为2.1.235、2.1.304，同时要求 init 的版本及 DeepSeek 模型、终态 `result.is_error=true` 和 `terminal_reason=prompt_too_long`，回执保留该次 init 的实际协议版本；旧2.1.235回执保持可读。二者还必须最终非零、非 signal、非 timeout、非取消退出，并绑定完整 Task registration、Run generation 与 AgentConversation。闭集以外的版本或未知事件不获得权限。助手/工具正文、普通 stderr、日志片段及中间错误后成功均不触发恢复。版本适配本身不代替目标CLI的真实超限、压缩和继续交付资格；完整链路结果单独记录。
+Runner 仅适配 stdout 中受信的顶层原生终止事件。Codex 使用 exec-json 的 `turn.failed.error.message` 窄映射：capacity 为完整固定消息；usage limit 为明确额度耗尽消息。该事件合同与 CLI 发布版本独立，符合合同的新旧 Codex 均可使用，不按 CLI 版本号设白名单；新回执标记为 `codex-exec-json/v1`，已发布的 `codex-exec-json/0.163.0` 回执继续可读。未知事件或不认识的错误消息不能获得专门恢复权限。Claude stream-json 的版本闭集为2.1.235、2.1.304，同时要求 init 的版本及 DeepSeek 模型、终态 `result.is_error=true` 和 `terminal_reason=prompt_too_long`，回执保留该次 init 的实际协议版本；旧2.1.235回执保持可读。二者还必须最终非零、非 signal、非 timeout、非取消退出，并绑定完整 Task registration、Run generation 与 AgentConversation。助手/工具正文、普通 stderr、日志片段及中间错误后成功本身不触发恢复；普通续跑只依据已核实的失败结束事实。协议适配本身不代替目标CLI的真实超限、压缩和继续交付资格；完整链路结果单独记录。
 
-capacity 自动 Continue 必须能确定原模型：优先使用本次启动已固定的模型；使用 CLI 内置默认值时，只允许本次 `thread.started` 唯一对应的原生会话元数据和启动后的当前 `turn_context` 提供模型，并核验版本、provider 与当前工作目录。历史 turn、其他会话或无法验证的记录不能补造模型或恢复权限。无法确认原模型时仍保留受信的中断事实，以具体原因停止自动恢复，并跳过尚未开始的成功产物发布收尾。
+capacity 自动 Continue 必须能确定原模型：优先使用本次启动已固定的模型；使用 CLI 内置默认值时，只允许本次 `thread.started` 唯一对应的原生会话元数据和启动后的当前 `turn_context` 提供模型，并核验会话身份、provider 与当前工作目录；会话创建时的 CLI 版本不限制后续升级后的续跑。历史 turn、其他会话或无法验证的记录不能补造模型或恢复权限。无法确认原模型时仍保留受信的中断事实，以具体原因停止自动恢复，并跳过尚未开始的成功产物发布收尾。
 
 TaskService 将来源事实与恢复意图一起持久化，正常结算旧 Run 为 failed；等待不占用 Agent 进程槽位。所有类别共用一条最多五次的恢复链预算，重启、新 Run、类别变化均不清零；context 压缩至多一次，usage 候选不得回到已使用 Agent。每次 Continue 在 Task lifecycle lock 内复验完整来源、当前状态、到期时间、预算和旧 claim，再与后继 Run 原子提交认领结果。重复回调、并发唤醒和重启只能创建一个合法后继。取消、人工 Continue、Task 换代或已有后继立即使旧意图失效。
 
-恢复复用原 lane 的 PrepareRun、目标、已登记 Workspace 和交付合同，仅继续未完成工作。原 Run 历史不改写成功。三类中断没有成功 Artifact 时跳过需要成功产物的发布收尾，不能把缺少 workflow-result.json 误报为外部回写未知；已开始的外部 effect 仍执行原有 receipt/unknown 保护，禁止自动重发。恢复成功解除当前异常；预算、context 次数或候选耗尽，以及无法安全保留原会话时停止并显示具体原因。
+恢复复用原 lane 的 PrepareRun、目标、已登记 Workspace 和交付合同，仅继续未完成工作。原 Run 历史不改写成功。可恢复中断没有成功 Artifact 时跳过需要成功产物的发布收尾，不能把缺少 workflow-result.json 误报为外部回写未知；已开始的外部 effect 仍执行原有 receipt/unknown 保护，禁止自动重发。恢复成功解除当前异常；预算、context 次数或候选耗尽，以及专门恢复要求原会话却无法安全恢复时停止并显示具体原因。普通失败仍按正常 Continue 的会话策略处理会话不可用。
 
 Status/CLI 只消费同一 TaskView 的 runtime_recovery 投影：原因、到期时间、次数、状态和停止原因。等待为 machine-owned，is_processing=false；恢复中的 Agent Run 按普通执行投影。没有新恢复权限的历史失败 Task 不因启动扫描自动运行。持久字段经目标版本既有 Flyway 清单验证，不创建全局 cooldown、availability router、隐藏队列或通用重试框架。
 
-普通网络、429/5xx、认证/权限、未明确归入 Codex usage limit 的余额文案、业务失败、缺输入/文件、未知失败，以及其他 Agent/provider 的同名错误均不获得恢复权限。Provider publication guard、workflow contract、writeback 和外部 CI 等待继续属于 completion finalization；agent-output-invalid 的显式 Continue 仍需 exact Run 私有发布校验回执，其余写回恢复遵循原保护。
+普通 Agent 失败无需证明模型可用，也不从未知错误推断模型不可用；在共享预算内让原 Agent 自行判断修复、继续或说明阻塞。恢复保持原任务和上游安全约束，不改写请求绕过拒绝。取消、signal、timeout、spawn error、产物持久化失败和浏览器清理失败不进入普通续跑。Provider publication guard、workflow contract、writeback 和外部 CI 等待继续属于 completion finalization；agent-output-invalid 的显式 Continue 仍需 exact Run 私有发布校验回执，其余写回恢复遵循原保护。
 
 ## Continue：recovery strategy
 
@@ -1100,7 +1119,7 @@ Status/CLI 只消费同一 TaskView 的 runtime_recovery 投影：原因、到�
 
 - `recovery-required`
 
-Recovery strategy 不执行 native resume，不接受用户对话消息，保持 source Agent；它不从失联、错误文案或全局 availability 推断 Agent 切换。三类受信原生终止的自动 Continue 是独立的 Task 内权限，不能借给 lost-Run recovery。后继 Run claim 仍在 lifecycle lock 内拒绝 R2、Task ABA 和 lane 漂移。
+Recovery strategy 不执行 native resume，不接受用户对话消息，保持 source Agent；它不从失联、错误文案或全局 availability 推断 Agent 切换。Agent 失败后的有界自动 Continue 是独立的 Task 内权限，不能借给 lost-Run recovery。后继 Run claim 仍在 lifecycle lock 内拒绝 R2、Task ABA 和 lane 漂移。
 
 `recovery-required` 必须来自进程/结果证据矛盾，例如非终态 Run 记录的 PID 已不存在且没有终态结果。运行中进程的 idle time 和 CPU 使用率只能作为观测数据，不能触发 recovery；agent 等待网络、CI 或模型响应时低 CPU 是正常状态。
 
@@ -1121,6 +1140,7 @@ Run completion 只影响匹配的 Run。
 规则：
 
 - completion 通过 compare-and-swap 写入终态。
+- 新执行消费已绑定的 `process-exit/v1` 合同。历史双向执行记录的兼容读取仍要求绑定完整 Run generation、Agent、AgentConversation、协议和请求的 `RuntimeCompletionReceipt`，并确认已记录的正常 EOF 或受控 SIGTERM 关闭；这些读取规则不提供新协议启动能力。真实退出码和信号不改写。缺少原生完成证明、错误协议、取消、超时、强制杀死、基础设施或产物失败均不能成功。实时 completion 和重启恢复消费同一 Run 合同、同一身份校验与终态映射，不根据当前可变 Agent 配置回推历史协议。
 - 重复 completion 被忽略或记录为重复事件。
 - Runner 先写 Run 私有 Artifact，再把 completion 交给 TaskService finalizer。TaskService 只有在 `current_run_id` 和 sequence 仍匹配时才先提交 write-ahead intent；取得该 ownership 的 completion 才能继续提交 Run 终态、追加唯一的 Task 级 `run_completion_finalized` 事件、以稳定 event id 写共享 work-ledger completion，并进入已持久化的原生恢复等待或外部完成回调。managed Runner 不另写 `exit` 或第二条 completion 账本。
 - TaskService 在跨进程 Task 生命周期锁下把完整 Run/Task 终态 patch 写入 durable terminalization intent，再执行 Run 终态 compare-and-swap、生成最终 provider output projection、完成 provider delivery，并通过最终 Task state mutation 重新校验 owner、写入 `completed` 与 `workspace_cleanup_due_at`。需要 provider 写回的 lane 必须在当前 Run 目录留下成功 action；Task 根目录只是当前 Run 的展示投影，历史成功 marker 不能满足新 Run。到期清理由同一 Task 生命周期锁和 Workspace lease 保护；Cancel 与 provider terminal lifecycle 才执行立即清理。锁释放前其他 Web/CLI 进程不能取得该 Task，晚到的旧 Run 不得改写状态、最终输出、delivery evidence 或删除新 Task instance 的目录。
@@ -1166,12 +1186,12 @@ Status、CLI 与维护后的 Continue 保留同一 source fence，并由原 revi
 
 ## Prompt Contract
 
-Persistent prompt Artifact 只包含当前 Run 的输入。
+Persistent prompt Artifact 只包含当前 Run 的输入。每个当前版本 Run 同时保留 exact `input.txt`，它是 adapter 加执行契约前的已受理输入，只能由同一 TaskService Continue 在 native input receipt 明确表明 source Run 尚未接收时按 source→new 的顺序带入 successor；receipt persistence failure 是未知已接收状态，必须拒绝 Continue 而非重放。它不是会话历史、队列或跨 Run state owner。
 
 允许：
 
 - Start: 首次用户 prompt
-- Continue agent strategy: 新用户消息
+- Continue agent strategy: 新用户消息；仅在 exact source Run 的 native input receipt 明确为未接收且同一 source `input.txt` 存在时，先附该条未接收输入
 - Continue recovery strategy: jarvis-box 生成的恢复 prompt
 
 禁止：

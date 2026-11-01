@@ -8,7 +8,7 @@ Jarvis Box 是 Jarvis 的任务执行运行时。它接收 GitHub、GitLab、IM�
 
 客户下载入口：[下载与安装指引](https://download.hengshi.com/jarvis-box/index.html)。无法访问 GitHub 时，直接从衡石下载站获取发布包、校验文件和 Docker 镜像包；`install.sh`、部署脚本和完整文档均包含在发布包内，无需单独从 GitHub 获取脚本。
 
-新客户默认部署 1.0 稳定版；0.2.x 与 0.3.x 只维护 bug 和安全修复，不再增加新功能。已有部署选择维护版或升级时，遵循[维护政策](SECURITY.md#受支持的版本)与[升级步骤](CUSTOMER-OPERATIONS.md#native-1)。
+新客户默认部署 1.x 最新稳定版；0.2.x 与 0.3.x 只维护 bug 和安全修复，不再增加新功能。已有部署选择维护版或升级时，遵循[维护政策](SECURITY.md#受支持的版本)与[升级步骤](CUSTOMER-OPERATIONS.md#native-1)。
 
 安装 Jarvis Box 运行时与建设 Company Jarvis 是两个独立步骤。下方 create-jarvis 方法需要可用的 GitHub 访问；Company Jarvis 的知识、workflow、Runtime Foundation 和 Agent 认证仍需分别准备。
 
@@ -40,7 +40,7 @@ GitHub seat/repository access 只控制 release 制品下载权限，不等同�
 1. 打开[下载与安装指引](https://download.hengshi.com/jarvis-box/index.html)，按命令自动选择最新稳定版、系统和架构，或点击具体文件下载。机器可读信息见 [稳定版元数据](https://download.hengshi.com/jarvis-box/channels/v1/latest.json)。
 2. 获取同版本的当前平台 release bundle、`SHA256SUMS` 和 `production-image.json`，校验后解压。目录地址不提供文件列表；指引页列出具体文件链接。有 repository access 的 GitHub 账号也可从规范私有 Release 获取同名文件。
 3. 使用 bundle 内的 `install.sh` 或 `scripts/deploy-production.sh` 完成部署。Native 无 GitHub 安装命令会显式传入本地发布包和 checksum，避免重新请求 GitHub；完整命令见[客户部署与运维指南](CUSTOMER-OPERATIONS.md#3-下载并校验-release)。
-4. Docker 模式可从下面的公开链接下载镜像包、校验并执行 `docker load`，将 `JARVIS_IMAGE` 设为 `hengshi/jarvis-box:v1.0.0`。选择 GHCR 直接拉取时，使用 `production-image.json` 中的 digest 并准备 GHCR pull access。
+4. Docker 模式可从下面的公开链接下载镜像包、校验并执行 `docker load`，将 `JARVIS_IMAGE` 设为 `hengshi/jarvis-box:v1.1.0`。选择 GHCR 直接拉取时，使用 `production-image.json` 中的 digest 并准备 GHCR pull access。
 
 Docker 自助升级入口会在 `channels/v1/latest.json` 中提供可选的 `docker_update`（`url`、`sha256`），并在安装完成后把同一入口保存为 `<deployment-home>/update.sh`。已有 Docker 客户先读取该字段、用对应版本 `SHA256SUMS` 校验 `update.sh`，再运行 `bash ./update.sh --deployment-home /absolute/deployment-home`；以后可直接运行 deployment home 中的入口并用 `--version X.Y.Z` 锁定版本。没有 `docker_update` 时表示当前 latest 尚未提供此入口，应继续使用完整 release bundle 的手工流程，不能猜测固定下载地址。
 
@@ -48,10 +48,10 @@ Docker 自助升级入口会在 `channels/v1/latest.json` 中提供可选的 `do
 
 从 v0.2.30 起，镜像包与安装包放在同一版本目录。镜像包用于 `docker load`，安装包提供部署脚本，两者都需要下载。目录本身不提供文件列表，请点击具体文件：
 
-| Docker 主机架构 | v1.0.0 镜像包 | 校验文件 |
+| Docker 主机架构 | v1.1.0 镜像包 | 校验文件 |
 | --- | --- | --- |
-| Linux x86_64 / amd64 | [下载镜像](https://download.hengshi.com/jarvis-box/releases/v1.0.0/jarvis-box_1.0.0_linux_amd64.docker.tar.gz) | [SHA-256](https://download.hengshi.com/jarvis-box/releases/v1.0.0/jarvis-box_1.0.0_linux_amd64.docker.tar.gz.sha256) |
-| Linux ARM64 / Apple 芯片 Mac | [下载镜像](https://download.hengshi.com/jarvis-box/releases/v1.0.0/jarvis-box_1.0.0_linux_arm64.docker.tar.gz) | [SHA-256](https://download.hengshi.com/jarvis-box/releases/v1.0.0/jarvis-box_1.0.0_linux_arm64.docker.tar.gz.sha256) |
+| Linux x86_64 / amd64 | [下载镜像](https://download.hengshi.com/jarvis-box/releases/v1.1.0/jarvis-box_1.1.0_linux_amd64.docker.tar.gz) | [SHA-256](https://download.hengshi.com/jarvis-box/releases/v1.1.0/jarvis-box_1.1.0_linux_amd64.docker.tar.gz.sha256) |
+| Linux ARM64 / Apple 芯片 Mac | [下载镜像](https://download.hengshi.com/jarvis-box/releases/v1.1.0/jarvis-box_1.1.0_linux_arm64.docker.tar.gz) | [SHA-256](https://download.hengshi.com/jarvis-box/releases/v1.1.0/jarvis-box_1.1.0_linux_arm64.docker.tar.gz.sha256) |
 
 后续版本使用 `channels/v1/latest.json` 的 `docker_images.url` 查看各架构链接、校验值和镜像标签。完整命令见[下载并校验 release](CUSTOMER-OPERATIONS.md#3-下载并校验-release)。
 

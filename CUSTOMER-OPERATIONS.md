@@ -36,7 +36,7 @@ https://github.com/hengshi-jarvis/create-jarvis
 
 ## 3. 下载并校验 release
 
-新部署默认选择 1.0 稳定版，不包含 alpha、beta 或 rc 预发布。0.2.x 与 0.3.x
+新部署默认选择 1.x 最新稳定版，不包含 alpha、beta 或 rc 预发布。0.2.x 与 0.3.x
 只发布显式选择的 bug 和安全修复版本，不再增加新功能，也不替换默认稳定版入口。
 试用预发布时，下载同一版本的制品；Native 安装须显式指定版本，例如 Linux 上
 `sudo env JARVIS_VERSION=1.1.0-alpha.1 bash install.sh`，macOS 上去掉 `sudo`；只有已经发布的预发布版本才可安装。
@@ -123,7 +123,7 @@ tar -xzf "$artifact"
 从 v0.2.30 起，Docker 镜像包可从同一个下载站直接获取，无需 GitHub 账号或 GHCR 登录。先下载与安装包相同版本、匹配 Docker 主机架构的镜像包：
 
 ```bash
-version=1.0.0
+version=1.1.0
 arch=amd64
 # Linux ARM64 或 Apple 芯片 Mac 使用 arch=arm64
 base="https://download.hengshi.com/jarvis-box/releases/v$version"
@@ -139,7 +139,7 @@ macOS 将校验命令替换为 `shasum -a 256 -c "$image_archive.sha256"`。校�
 在 `deployment.env` 中填写导入后的镜像标签：
 
 ```dotenv
-JARVIS_IMAGE=hengshi/jarvis-box:v1.0.0
+JARVIS_IMAGE=hengshi/jarvis-box:v1.1.0
 ```
 
 然后按第 5 节使用同版本安装包内的部署脚本。镜像包不能代替安装包；`docker load` 只导入镜像，不创建运行中的服务。
@@ -220,6 +220,8 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 ├── data/              # Agent HOME、state、workspace、cache、logs 等持久目录
 └── connector.env      # 仅启用 IM connector 时存在
 ```
+
+首次启动或升级时，部署工具将 `runtime.env` 原样放入专用的 `data/runtime-env/runtime.env`，并保留根目录 `runtime.env` 为兼容链接。后续编辑真实文件或使用保留符号链接的配置工具；不要用另一个文件替换该链接。容器通过专用目录挂载读取同一份配置，配置保存及版本迁移可以原子更新文件；Host 身份和 connector 配置仍独立隔离。备份包含链接及其真实文件。
 
 `deployment.env` 保存已校验并加载的镜像标签或 GHCR digest 引用、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 必须位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外，不保存 Host HOME dump 或临时 context。
 同机多个 Docker 实例必须使用不同的 `JARVIS_DEPLOYMENT_HOME`、`JARVIS_DEPLOYMENT_NAME`、`JARVIS_PORT` 和 provider webhook URL，不共享 `auth/` 或 `data/`。

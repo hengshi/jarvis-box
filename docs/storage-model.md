@@ -72,7 +72,7 @@ Linux system install 可以将 config、state 和 logs 映射到 `/etc/jarvis-bo
 
 Task 的可选 `runtime_recovery` 保存受信原生终止事实、完整来源 Run 身份、恢复类别、累计次数、候选使用记录、到期时间、认领的后继 Run 和停止原因。恢复预算与后继 Run 在同一 TaskService 事务中认领；重启不会清零。Claude终止及压缩回执保留实际协议标识，闭集接受`claude-stream-json/2.1.235`、`claude-stream-json/2.1.304`，旧235记录不重写为304；未知版本不授予恢复权。缺少该字段的已发布 Task 保持原语义，不因扫描历史失败而获得自动执行权限。目标版本 Flyway 在 startup lease 前验证存储，并保留旧 Task、会话、工作区与外部回执。
 
-恢复只作用于所属 Task，不创建 `runtime-agent-route.json`、`runtime-agent-events.jsonl` 或全局 cooldown，也不读取旧同名文件推断权限。原始 stdout/stderr、历史日志与助手正文不能生成恢复意图。三种允许的恢复及停止规则见 [执行模型](execution-model.md#原生终止的有界自动-continue)。
+恢复只作用于所属 Task，不创建 `runtime-agent-route.json`、`runtime-agent-events.jsonl` 或全局 cooldown，也不读取旧同名文件推断权限。原始 stdout/stderr、历史日志与助手正文不能生成恢复意图。普通续跑、三类专门恢复及停止规则见 [执行模型](execution-model.md#agent-中断的有界自动-continue)。
 
 ## Delivery Metrics 派生状态
 

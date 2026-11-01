@@ -48,7 +48,7 @@ curl -fsS "${status_url}/status/api/value?provider=${provider}" |
 
 GitHub 与 GitLab 使用相同的持久化准入：磁盘空间不足时保留原分析输入，显示资源等待，空间恢复后自动启动原分析 Task，不依赖页面刷新，也不会把已有 Task 的存在误当作分析正在执行。
 
-后台每轮为每个 Provider 最多启动一个新的 `delivery-metrics` Task，同一 Provider 已有分析正在处理时等待其完成。完成、继续和取消事件唤醒后台同步；页面关闭时也会自动接续到 `pending=0`。已有 Task 的普通业务失败或无效结果保持 pending，由操作者明确 Continue 或 Cancel，后台扫描不自动付费重试。受信的三类原生终止只按[有界自动 Continue 合同](execution-model.md#原生终止的有界自动-continue)恢复，不授权其他错误重跑。Cancel 把该 canonical MR/PR 作为最终 `judgment-unknown` 计入统计，不创建替代 Task。普通 GET 与 `refresh=1` 只同步和读取统计，不启动分析。
+后台每轮为每个 Provider 最多启动一个新的 `delivery-metrics` Task，同一 Provider 已有分析正在处理时等待其完成。完成、继续和取消事件唤醒后台同步；页面关闭时也会自动接续到 `pending=0`。已有 Task 的业务结果无效或交付失败保持 pending，由操作者明确 Continue 或 Cancel。Agent 执行失败按[有界自动 Continue 合同](execution-model.md#agent-中断的有界自动-continue)沿用原 Agent 继续，三类模型受限故障保留专门恢复，共享最多五次的预算；后台扫描不重算已有有效结论。Cancel 把该 canonical MR/PR 作为最终 `judgment-unknown` 计入统计，不创建替代 Task。普通 GET 与 `refresh=1` 只同步和读取统计，不启动分析。
 
 如果读取期间 Task 正在变化，或暂时无法取得一致的 Task/Run 证据，本次读取保守返回 `evidence-unknown`，不将它缓存为最终分类；已经留存的该类缓存也按未命中处理，后续刷新会重新读取，避免临时读取问题掩盖已经完成的分析结果。
 

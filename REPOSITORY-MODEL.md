@@ -29,7 +29,7 @@ Jarvis 使用多个独立仓库，因为构建方法、运行时实现和客户�
 
 ## 版本规则
 
-新部署默认选择 1.0 稳定版，0.2.x、0.3.x 仅接收 bug 与安全修复。当前安装器与更新入口通过 `channels/v1/latest.json` 发现稳定版本；有私有 GitHub 权限时，Native 也可从已发布 release 列表选择最高稳定 1.0+ 版本。旧客户端使用的 GitHub Latest 与根 `latest.json` 保留在旧版本线，新版本发布不修改它们。
+新部署默认选择 1.x 最新稳定版，0.2.x、0.3.x 仅接收 bug 与安全修复。当前安装器与更新入口通过 `channels/v1/latest.json` 发现稳定版本；有私有 GitHub 权限时，Native 也可从已发布 release 列表选择最高稳定 1.0+ 版本。旧客户端使用的 GitHub Latest 与根 `latest.json` 保留在旧版本线，新版本发布不修改它们。
 
 公开下载入口 `index.html` 通过 `channels/v1/latest.json.download_guide.url` 打开对应版本的说明页；`download_guide.sha256` 记录页面摘要。该字段对尚未提供网页说明的历史版本是可选的。版本说明页与固定入口先就绪，新通道才推进；说明页按版本保持不可变，安装包与原有 `SHA256SUMS` 的规范来源不变。
 

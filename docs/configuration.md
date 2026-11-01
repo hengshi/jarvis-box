@@ -29,6 +29,8 @@ Native 的 canonical env 由 `JARVIS_ENV_FILE` 选择，默认位于 `$JARVIS_RU
 |---|---|
 | `JARVIS_STATE_DIR` | 本机运行状态目录；macOS Native 默认 `${JARVIS_RUNTIME_ROOT}/state`（Runtime root 默认 `~/.jarvis-box`），Linux 默认 `/var/lib/jarvis-box`；服务、授权命令和诊断共用同一解析规则 |
 | `JARVIS_RUNTIME_AGENT` | selected Runtime Agent |
+| `JARVIS_RUNTIME_AGENT_ADAPTERS` | Runtime Agent 完整描述目录，格式为 `{"version":2,"agents":[...]}`；内置与自定义 Agent 共用 `exec-v1`，1.1.0 Flyway 兼容旧版配置，详见 [自定义 Runtime Agent](runtime-agents.md#自定义-runtime-agent) |
+| `QWEN_CMD` | Qwen Code 可执行文件名或绝对路径，默认 `qwen`；Native 由服务用户安装并登录，Docker 使用持久 Agent HOME |
 | `JARVIS_RUNTIME_AGENT_SCOPE_DELIVERY_METRICS` | optional Runtime Agent override for the Delivery Metrics lane; prefer `jarvis-box agent set --scope delivery-metrics <agent>` |
 | `JARVIS_RUNTIME_AGENT_SCOPE_DELIVERY_METRICS_PREFIX_ARGS` | arguments inserted before generated Delivery Metrics lane arguments; use for scope-specific model/runtime options |
 | `JARVIS_DELIVERY_METRICS_ENABLED` | Delivery Metrics lane 启停开关，默认 `true`；设为 `false` 后 Status 不再启动新的 `delivery-metrics` Task，操作台 Start/恢复入口拒绝该 lane，已在运行的 Task 与 Continue 收尾不受影响。操作步骤见 [Delivery Metrics 历史起点](delivery-metrics.md#启用和禁用-lane)。 |
@@ -84,7 +86,7 @@ Native 的 canonical env 由 `JARVIS_ENV_FILE` 选择，默认位于 `$JARVIS_RU
 
 授权服务是公网服务，jarvis-box 需要能出站访问 `https://jarvis-license.hengshi.com`。离线授权的机器不需要出站访问它——那条路一个请求都不发。服务端证书由**系统信任根**校验，客户端没有跳过校验的开关；私有 CA 签发时必须在运行 jarvis-box 的机器上安装该 CA（Docker 形态是容器内，见[客户派生 Docker 镜像](custom-docker-image.md)）。执行 `jarvis-box license activate` 后按提示输入激活码，输入不回显，回车提交；Docker 也支持同样的交互。自动化可使用标准输入、`activate CODE` 或 `--code CODE`，不从环境变量读取激活码。详见 [CLI 授权命令](cli.md#license)。
 
-Status 面板的「接入配置」分区写的就是这个文件，界面上的每个配置项都对应上表里的一行。几条操作员需要知道的事实：
+Status 面板的「接入配置」分区写的就是这个文件；表中部分配置只提供文件入口，例如 `JARVIS_RUNTIME_AGENT_ADAPTERS` 由操作者编辑 canonical env。几条操作员需要知道的事实：
 
 - 写的是**文件**，不是正在跑的进程。保存之后当前进程拿到的还是旧值，要重启盒子才生效；面板会把这一次真的变了的键列出来。
 - 只开放上面这些键，键目之外的键一律拒绝：这个文件会被服务管理器 source，能改任意键等于能向受监管的进程注入任意环境变量。
