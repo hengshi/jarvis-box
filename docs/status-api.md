@@ -9,12 +9,14 @@
 禅道 `bug`、`story`、`task`、`case` 使用完整 Subject 身份分别统计，同号工作项不会合并。只有自动 post-check 受理计入入口，独立评论指令不增加受理数；识别为 Bug、开始修复及实际修复 MR/PR 的提交、合并仍分别要求对应证据，关闭禅道工作项不等于修复已合并。
 
 - `scope=all-connected-work-items`；`generated_at` 是本轮同步时间。
+- `items[].workflow_results` 保留同一完整工单身份的结构化 workflow 结论，包含 workflow type、`completed` / `blocked` / `needs-input`、Task/Run 世代及完成时间 `at`；`latest_bugfix_status` 是最近一次有完成时间的已记录 bugfix 结论，没有证据时为 `unknown`。它不是当前 Task/Run 状态，后续运行缺少报告时不推定其结论。客户 `outcome` 自由文本保持不透明，不从 Run 成功退出或评论发送成功推断修复完成。
+- `items[].command_followups` 记录同一工单的独立指令启动。`business_outcomes` 按工单去重汇总：`bug_without_start` 为已识别 Bug 但无自动修复启动证据；`blocked_without_submission`、`needs_input_without_submission`、`completed_without_submission` 为最近已记录结论对应状态且尚无平台核验提交；`result_unknown` 为已自动启动但没有带时间的业务结论；`command_after_block` 为受阻或等待补充结论之后出现独立指令启动。最后一项是时间关联，可与后续提交、合并重叠，不证明人工纠正或交付，独立指令本身不增加任何自动漏斗阶段。这些都是已有台账的只读业务观察，不参与调度、重试、清理或 Task 状态转换。
 - `stages` 依次为 `accepted`、`bug`、`bugfix`、`submitted`、`merged`，每层有去重工单数 `count`、记录是否完整的 `complete`、相对上一层的 `step_rate`、相对入口的 `total_rate`。`complete=false` 时 count 是已证实下限；分子或分母不完整、或分母为零时，相关比例为 `null`。Status 图表另外以已记录的 `count` 相除展示环节比例与总转化率，并明确标注按已记录数量计算；这些展示比例不表示完整历史转化率已确定。未知的零值或零分母仍显示 `—`。
 - 身份包含 Provider、authority、project、kind（`issue` / `work_item`）、ID。代码仓库名称忽略大小写，其他工单项目保留稳定键；同编号的不同来源、实例或项目独立计数，同一工单的重试、多个修复和 backport 只计一次；任何一个实际关联修复合并即进入最后一层，不能据此声称全部版本修复完成。
 - 原工单来源与修复代码平台独立：例如 Jira `APP-42` 或飞书项目稳定工作项可关联 GitLab MR / GitHub PR，不要求另建代码平台 issue。身份来自准入时保存的规范化 subject，不能用飞书 URL 的展示别名代替稳定项目键。工单关闭不等于代码修复合并。
 - 入口按规范化工单身份合并平台留存的自动 post-check 回执与本机自动受理、post-check 启动/完成台账，支持 GitLab Issue Hook 的 `issues` 与 `work_items` URL；同一 issue 的 URL 写法和重试不重复计数。历史恢复必须独立发现平台回执，不能先以本机保留的 issue 集合限制平台查询。Bug 证据来自 workflow 的标准 metrics、post-check 已有 `workflow.start: bugfix` 建议，已发布 v1 post-check 评论中记录的明确处置，或实际 `workflow:bugfix` / 早期 `issue-execution` 启动/完成台账；自动修复必须有实际准入的子 Task或执行台账。历史结论只解析结论段中的既有 outcome / disposition，兼容 Markdown 加粗，不从证据段引用推导分类；明确的独立 command 启动记录不作为自动 bugfix 准入。查询从不启动分类任务。修复链接来自该 bugfix 的 metrics，或已发布 Task 级报告的明确交付字段；相关 feature 链接、本地准备、未推送补丁不算提交。匹配身份的平台记录可来自本机保留的 provider 读取产物，缺失时才查询目标平台。有效平台合并时间或带完整 host 身份的合并事件回执才计入合并；回执的 merge_observed_at 是本机收到事件的时间，不冒充 merged_at。独立 approve 不属于最后一层条件。
 - `items` 返回原工单的 `subject`、`url`、已到达的 `stage` 与关联 `changes`（`url`、`verified`、`state`、`merged`），用于核对聚合结果。当前 Status 仅展示漏斗图、数量与转化率，不消费 `items` 或提供 issue/MR/PR 明细展开。不相关的 MR/PR、其他账号的独立提交不能补进该链路。
-- `classification_unknown`、`repair_links_unknown`、`change_state_unknown` 分别表示 Bug 结论尚未确定（包括结果未留存或处置尚需证据）、自动修复尚无结构化修复链接（包括 metrics 缺失、空对象或空 change_requests 列表）、含任意未核验修复链接的 issue 数（即使同一 issue 已有其他修复合并，也保留该缺口）；有缺口时 `status=partial`，计数和比例表示已证实到达，不把等待或未知当成功。台账或任务读取失败时 `status=unavailable`，不返回伪零计数。
+- `classification_unknown`、`repair_links_unknown`、`change_state_unknown` 分别表示 Bug 结论尚未确定（包括结果未留存或处置尚需证据）、自动修复尚无结构化修复链接（包括 metrics 缺失、空对象或空 change_requests 列表）、含任意未核验修复链接的 issue 数（即使同一 issue 已有其他修复合并，也保留该缺口）；这些缺口或 `business_outcomes.result_unknown` 非零时 `status=partial`，计数和比例表示已证实到达，不把等待或未知当成功。台账或任务读取失败时 `status=unavailable`，不返回伪零计数。
 - 新运行观察以完整 Task/Run 世代去重，追加到已有工作台账的 `issue_funnel` 事件中；普通 Task 清理保留台账观察，删除台账则丢失相应历史。即时追加失败会记录警告；清理在固定的 Task 身份与锁内先从保留的 Run 产物幂等补齐观察，写入失败则返回清理错误并保留任务与产物。修复台账后重试普通清理即可，不重发 provider 动作或重新启动 Agent；dry-run 不写台账。清理保留同一 Task registration 已有受理观察的 identity；缺失时才以首个 Run 的身份补齐，尚无 Run 的 Task 使用空 Run 身份。历史基线复用既有自动受理/执行事件与保留 Task/Run 的 workflow 产物。离线回建从平台关联 MR 推导交付时，要求标题或关联议题字段明确引用该 issue，且具备修复分支，或同时具备对应 issue 的分支与明确修复标题，支持标准 `Issue / Issues / Related issue` 段中的完整工单引用及 URL，不能仅凭分支编号计入。原工单上可信自动执行后的明确修复回执可直接绑定其 MR/PR 字段，不依赖 MR 标题措辞；任意提及、背景链接或独立 command 回执不能建立交付关联。已有 feature MR 仍须有身份匹配的报告或原工单的明确交付回执记录本次修复已交付，且不能已在本次自动执行前合并。已发布 v1 存储的 Task 级 workflow 报告只在原始存储版本、Task 注册身份、workflow handle 与原工单身份及 URL 全部匹配时读取为历史观察，不创建 Run，不给现代 Task 增加根目录回退；已清理且无结构化证据的历史分类/修复链接无法还原。
 - 离线工具消费已有台账、保留报告及已导出的规范化平台历史包；Jira/飞书项目历史只统计已留存或已导出的证据，不提供全历史自动采集。未留存的历史不能据此恢复成完整统计。
 - 本机保留的平台记录按完整 provider/host/project/number 身份读取，可验证历史接入仓库的修复。实时 MR/PR 查询只允许当前配置的 GitLab host/projects 和 GitHub host/repositories，最多使用本轮 20 秒的查询预算；缺少本地证据且不可访问、身份不符或已移除配置的链接保持未知。
@@ -37,13 +39,12 @@ Workflow Runtime Contract 的 `workflow-result.json` 可报告以下独立于 op
 `detail.runtime_duration_ms` 是已记录运行耗时，缺失不表示零。台账属于保留的历史观察，
 其受理、启动和完成条数不必等于当前仍保留的 Task/Run 数。
 
-`GET /status/api/work-items` 返回：
+`GET /status/api/work-items` 一次返回所选来源的全部工作项：
 
-- `items` / `count`：当前分页窗口。
-- `total`：所选来源范围内的工作项总数，不受分页 `limit` 影响。
-- 可选 `provider` 在分页前筛选 Task 的规范化来源。支持值由服务端 provider 注册信息定义，与页面来源选项一致；包括 `gitlab`、`github`、`jira`、`feishu-project`、`tapd`、`zentao`、`yunxiao-projex`、`yunxiao-codeup`、`im` 和 `jarvis-box`，未注册的筛选值返回 HTTP 400；`lark`、`wecom`、`dingtalk`、`uvim` 等消息来源归入 `im`。response 的 `provider` 返回实际筛选，未筛选时为 `all`。
-- 分页游标绑定生成它的 Provider 范围；游标不能跨 Provider 重用，避免页间混入其他来源。
-- `metrics.historical_accepted_count`、`metrics.started_run_count`、`metrics.active_task_count` 和 `metrics.task_run_trend` 是本机指标；`provider` 筛选只改变工作项列表及其分页数量、总数，不得改变这些机器级指标。`recorded_task_count` / `recorded_run_count` 只表示当前保留记录。
+- `items`：所选来源的完整工作项集合。
+- `count` / `total`：该集合的工作项总数，与 `items` 长度一致。
+- 可选 `provider` 筛选 Task 的规范化来源。支持值由服务端 provider 注册信息定义，与页面来源选项一致；包括 `gitlab`、`github`、`jira`、`feishu-project`、`tapd`、`zentao`、`yunxiao-projex`、`yunxiao-codeup`、`im` 和 `jarvis-box`，未注册的筛选值返回 HTTP 400；`lark`、`wecom`、`dingtalk`、`uvim` 等消息来源归入 `im`。response 的 `provider` 返回实际筛选，未筛选时为 `all`。
+- `metrics.historical_accepted_count`、`metrics.started_run_count`、`metrics.active_task_count` 和 `metrics.task_run_trend` 是本机指标；`provider` 筛选只改变工作项列表及其数量，不得改变这些机器级指标。`recorded_task_count` / `recorded_run_count` 只表示当前保留记录。
 - 每个 item 的 `provider` 是 Task subject、run context 或 source URL 的保守规范化投影，不改变外部 Provider 的权威对象。
 - IM item 可返回 `requester_display_name` 和 `conversation_display_name`。它们是入站消息时的可选展示快照，用于 Status 文案、搜索和按发起人筛选；缺失时继续使用 provider-scoped sender ID / Task ID，且永远不替代 Target、ACL、排重或回复路由使用的稳定 ID。
 - 每个 item 的 `status_group` 来自同一 TaskView，取值为 `ready`、`doing`、`needs-human`、`failed`、`completed` 或 `historical`；`all` 仅用于筛选和总数，不是工作项状态。客户端不得从状态或错误文案重复推断分组。
@@ -63,11 +64,11 @@ RunTrace 和结果产物的公开输出会脱敏原生会话、线程和恢复�
 
 单 Task 查询接受 Task id、当前/最新 Run id，也接受仍保留 `run-state.json` 的历史 Run id。使用 Run id 查询时返回其所属 Task；Run id 不会被当成 Task identity。
 
-精确搜索只改变 Task/Run 的详情焦点，不新增工作项或改变列表统计；位于当前分页之外的任务也只作为独立详情展示。
+精确搜索只改变 Task/Run 的详情焦点，不新增工作项或改变列表统计。页面中的精确搜索受当前来源筛选约束；编号所属来源不匹配时显示原因，不切换到该任务。
 
 `GET /status/api/related-tasks?task_id={lookup_id}` 返回同一不可变 Target 的相关 TaskView，以及 `count` 和 `total`；可选 `limit` 默认20、最大50。使用 TaskView 的 opaque `lookup_id`，可同时传入已冻结的 `task_view_revision`。此列表与工作项内嵌 `related_tasks` 消费同一投影，不从相同标题或项目编号猜测归属。
 
-Catalog 返回 `task_view_revision`，`snapshot_hash` 和分页游标使用同一版本。页面随后读取 Task、progress、result、related Tasks、Artifact root/list/content 时必须携带该版本；不匹配返回 `409 task_view_revision_changed` 和当前版本，成功 JSON 同样回显版本。浏览器只对只读请求有界重读 Catalog 并重试，丢弃过期响应；修改操作冲突后不自动重放。没有版本参数的读取只用于非 Catalog 客户端。
+Catalog 返回 `task_view_revision`，`snapshot_hash` 使用同一版本。页面随后读取 Task、progress、result、related Tasks、Artifact root/list/content 时必须携带该版本；不匹配返回 `409 task_view_revision_changed` 和当前版本，成功 JSON 同样回显版本。浏览器只对只读请求有界重读 Catalog 并重试，丢弃过期响应；修改操作冲突后不自动重放。没有版本参数的读取只用于非 Catalog 客户端。
 
 单 Task 详情包含同一版本的任务及工作区信息。未固定 Catalog 版本的读取遇到正常并发状态变化时有界重读完整详情；固定版本在组装详情期间发生变化仍返回 `409 task_view_revision_changed`，不混合两个版本。持续变化或其他投影故障仍可返回不可用；读取重试不会重新提交任务动作。
 
@@ -301,7 +302,7 @@ Task response 的 `actions` 恰好使用以下 key：
 - 原 Task、Run 和 Artifact 不变。
 - source active、`needs-attention`、完成但仍缺产物/写回、进程 ownership 未解决或 lane 不支持时返回 `409` 和明确 reason；先 Continue 或 Cancel 原 Task。
 
-无 source 的原子 Start 使用 `POST /status/api/tasks/start`（人类 gateway，`jarvis-command`）或 loopback-only `POST /server/api/tasks/start`。JSON body 为 `prompt`、可选 `reason` 和 `lane`。服务端生成 Task identity、登记 intake、创建首 Run、启动并返回真实 Task/Run identities。Runtime Foundation 的 host scheduler 只从 loopback internal route 使用三个 allowlisted lane；internal launch authority 由该路由与 lane 共同推导，普通 Task、远端调用和 provider lane不会继承。
+无 source 的原子 Start 使用 `POST /status/api/tasks/start`（人类 gateway，`jarvis-command`）或 loopback-only `POST /server/api/tasks/start`。JSON body 为 `prompt`、可选 `reason`、`lane` 和 `agent`。省略或留空 `agent` 时沿用工作类型配置；显式选择只绑定本次任务，不写全局或 scope 配置。所选 Agent 与该工作类型配置不同时，使用所选 Agent 自己的参数，不继承其他 Agent 的 scope 参数。未知 Agent 返回 `400 invalid_agent`，不创建 Task。服务端生成 Task identity、登记 intake、创建首 Run、启动并返回真实 Task/Run identities。Runtime Foundation 的 host scheduler 只从 loopback internal route 使用三个 allowlisted lane；internal launch authority 由该路由与 lane 共同推导，普通 Task、远端调用和 provider lane不会继承。
 
 磁盘余量不足或存储故障锁存时，原子 Start 仍返回 `202`，`result.waiting=true`、
 `result.wait_reason=storage-wait`，Task 保留为机器等待且尚无 Run；空间恢复后按原始输入自动重试，
@@ -325,7 +326,7 @@ Task response 的 `actions` 恰好使用以下 key：
 - 同 agent 且 private handle 有效时使用 native resume；其他情况创建 child AgentConversation，并以 `agent_strategy=native-resume|new-agent-conversation` 说明选择。
 - Continue 遇到 active Run 时，服务端先同步解决旧 Run ownership，再创建后续 Run；失败返回 `409 run-stop-failed`。
 - `actions.continue.strategy=recover` 且 `requires_input=false` 时不提交 `agent` 或 `message`，由 TaskService 消费 sealed recovery plan。lost-Run recovery 是内部旧 Run 收敛；正常 idle、等待 CI、网络或模型响应不能触发 recovery。
-- `actions.continue.strategy=writeback` 且 `requires_input=false` 时，本端点提交 TaskService sealed retry plan，只重试当前 latest exact Run 中可恢复的确定失败 delivery receipt，包括上文限定的历史回复权限预检失败。请求不得携带 `agent` 或 `message`；成功或失败都追加新的 effect attempt receipt，不创建 Run。
+- `actions.continue.strategy=writeback` 且 `requires_input=false` 时，本端点提交 TaskService sealed retry plan，只重试当前 latest exact Run 中可恢复的确定失败 delivery receipt，包括上文限定的历史回复权限预检失败。服务端关闭写回产生的 `provider.comment` / `provider.workflow` 回执若明确为 `skipped/provider-writeback-disabled/not-attempted`，保有同样的显式恢复能力；重新开启写回后复用原结果，仍须完整私有回执和原产物，不改写跳过历史。其他 skipped 原因不因此开放重试。请求不得携带 `agent` 或 `message`；成功或失败都追加新的 effect attempt receipt，不创建 Run。
 - 首次IM文件预检明确未发送且具有exact-Run私有预检凭据时，文件修复后也使用上述writeback操作。原回复文本保持，重新核实合法文件与原目标；预检凭据不等于完整附件内容回执，不授权未知结果重发。
 - `actions.continue.attestations` 是独立的人工裁定闭集，当前只有 `delivered` / `not-delivered`。reason `writeback-outcome-unknown` 时 Continue 本身 disabled，exact Run 的 effect receipt 是 `unknown`，系统不自动重发。IM 等待原用户确认时，普通 `strategy=agent` Continue 仍可提交新指令，同时可列出对原未知交付的裁定；两种动作不能互相代替，也不创建管理员待办。两个值由 policy 给出，通过下面的 attest-delivery 端点提交；页面不得从 `effects` 自行推断。不可重试的明确失败只列出 `delivered`：操作员实际核对已送达后可收尾，不能借裁定启用自动重发。文件超限等待不因此开放未知结果裁定。
 - Task identity 始终不变；旧 Run prompt 不读取、不复制，新 Run 持久化的 prompt 只包含本次新输入。
@@ -467,13 +468,13 @@ Status Artifact endpoint 只解析经过授权的 safe ref。普通 `/status/api
 - `account_ref` 是当前有效高熵 credential 的短哈希引用，只用于判断多个 Agent 是否共享计费账号；response 不返回 credential、邮箱、组织名或原始账户对象。
 - `quota.kind=wallet` 返回 Provider 声明的余额和可用性；`quota.kind=rolling-window` 返回命名额度池的主/次窗口、已用比例、窗口长度和重置时间，并可返回完整重置机会。余额保留 Provider 的十进制定点字符串，不转换为浮点数。
 - `source=codex-app-server` 使用本机 Codex 账户接口读取 ChatGPT 套餐和滚动窗口；`source=deepseek-balance-api` 只在有效模型路由的 host 恰好是 `api.deepseek.com` 时，将该 Agent 实际使用的 credential 发送到固定的 DeepSeek 官方余额 endpoint。服务不向自定义 base URL 回传 credential，避免配置 URL 形成 SSRF/credential exfiltration。
-- 同一 Provider 和 `account_ref` 的实时查询在一次 request 内去重。普通 GET 复用 60 秒 snapshot，避免浏览器重连和系统事件反复查询计费方；`refresh=1` 跳过 snapshot，供“重新检查”使用。每类上游查询最多等待 5 秒；失败只投影到对应 `resource`，不让 Agent inventory 整体失败，也不发起模型推理。
+- 同一 Provider 和 `account_ref` 的实时查询在一次 request 内去重。普通 GET 始终从当前 canonical 配置读取 Agent 清单、选择、scope、命令路径与可用性；只有版本、额度和 scope 的模型账户信息可复用与当前配置匹配的 60 秒 snapshot，避免浏览器重连和系统事件反复查询计费方。旧配置的后台探测不能覆盖新的路由选择；`refresh=1` 跳过 snapshot，供“重新检查”使用。每类上游查询最多等待 5 秒；失败只投影到对应 `resource`，不让 Agent inventory 整体失败，也不发起模型推理。
 - Anthropic、OpenAI API、GitHub Copilot、Google AI / Vertex AI 和自定义网关当前只做 provider/model 解析；没有适用的安全公开账户额度接口时返回 `unsupported / provider-quota-api-unavailable`，而不是猜测余额。
 - Codex 的 profile 缺失、配置无法解析或 `model_provider` 没有对应定义时返回 `unsupported / provider-route-unresolved`；此时 provider 为 `unknown`，不会回退到 ChatGPT/OpenAI 账户探测。命令型 `model_providers.<id>.auth` 不由 Status 执行，避免额度页面触发外部认证命令。
 
 `resource.reason` 是 credential-safe 的稳定 code。Status UI 必须翻译成人类文案，不得把 `rolling-window`、`api-wallet`、probe source 或错误 code 原样直出。
 
-服务重启会恢复已经持久化的 terminalization intent，以及 TaskService 接受的三类原生终止恢复意图。`TaskView.runtime_recovery` 提供类别、累计次数、上限、到期时间、恢复状态与停止原因；Status 与 CLI 读取同一投影。等待期间 `lifecycle_stage=runtime-recovery-wait`、`next_actor=machine`、`is_processing=false`，不占用智能体进程；取消或人工 Continue 使旧等待失效。仅受信的 Codex capacity/usage limit 与 Claude＋DeepSeek context 超限允许有界自动 Continue，不创建全局 cooldown，不扫描历史失败补造权限。其他执行态恢复仍由用户选择 Continue/Cancel，失联 Run 不会被当成成功。完整规则见 [执行模型](execution-model.md#原生终止的有界自动-continue)。
+服务重启会恢复已经持久化的 terminalization intent，以及 TaskService 接受的 Agent 失败恢复意图。`TaskView.runtime_recovery` 提供类别、累计次数、上限、到期时间、恢复状态与停止原因；Status 与 CLI 读取同一投影。等待期间 `lifecycle_stage=runtime-recovery-wait`、`next_actor=machine`、`is_processing=false`，不占用智能体进程；取消或人工 Continue 使旧等待失效。普通 Agent 执行失败沿用原 Agent 有界自动 Continue；受信的 Codex capacity/usage limit 与 Claude＋DeepSeek context 超限保留专门恢复，所有类别共用最多五次的持久预算。不创建全局 cooldown，不扫描历史失败补造权限；取消、超时、基础设施及交付故障不进入普通续跑，失联 Run 不会被当成成功。完整规则见 [执行模型](execution-model.md#agent-中断的有界自动-continue)。
 
 ## 安全与审计
 
