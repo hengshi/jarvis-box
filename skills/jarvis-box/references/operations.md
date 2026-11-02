@@ -21,7 +21,7 @@ Since 0.2.35, unlicensed machines can still start the service and show Status bu
 
 ## Saving configuration and restarting
 
-Back up the exact owning configuration privately before an authorized edit; preserve ownership and modes. List lifecycle blockers with `tasks list`, then use the selected mode's ordinary lifecycle command. Do not automatically Cancel/force Tasks to apply text, Agent or provider changes. A managed Agent must hand service replacement to an external maintenance operator when it would terminate its own Run.
+For an authorized configuration edit, retain only the exact owning file privately when recovery requires it; preserve ownership and modes. Do not expand a configuration edit into a runtime or workspace copy. List lifecycle blockers with `tasks list`, then use the selected mode's ordinary lifecycle command. Do not automatically Cancel/force Tasks to apply text, Agent or provider changes. A managed Agent must hand service replacement to an external maintenance operator when it would terminate its own Run.
 
 Native `JARVIS_ENV_FILE`/`JARVIS_RUNTIME_ROOT` select paths but do not by themselves select a Linux systemd unit; prove service identity before lifecycle operations. Docker always uses the selected deployment home and release helper. A container restart alone does not recreate env injected by Compose; follow the release's `deploy`/recreate procedure after changing Host-side `runtime.env` or `deployment.env`.
 
@@ -31,7 +31,11 @@ Native `JARVIS_ENV_FILE`/`JARVIS_RUNTIME_ROOT` select paths but do not by themse
 
 For an authorized upgrade, use the same deployment mode, the target release's checksummed artifacts and its documented active-Task preflight. From 0.2.32, standard Docker deployments can use their owned `update.sh`; first bootstrap it only when release metadata explicitly publishes `docker_update`. Do not guess a URL or require a Host Native binary for Docker. Native installers have no force bypass. Docker force is only for an explicit decision to abandon current Runs and requires the release's recorded strategy.
 
-Back up the actual Native runtime or complete Docker deployment home, including persistent Agent identity, state/license, connector state and runtime hostname. Rollback must follow the old release's contract and restore its matching state backup where required; switching an image tag alone is insufficient. Connector storage changes can require restoring the corresponding connector backup. Native↔Docker migration is a separate deployment operation.
+An upgrade request authorizes the official updater and its documented maintenance window. It does not authorize an additional filesystem snapshot, archive or copy of the runtime, workspace, repository cache, Agent HOME or machine HOME. Use the updater's existing recovery provisions; do not add a parallel backup procedure. Check the selected target, active work and available space before updating, then verify the running version, health, identities and existing Task/Run history and results. Report progress and elapsed time while the official updater runs; silence alone does not prove it is stuck.
+
+If the selected release requires extra recovery material or the customer explicitly requests a backup, identify the necessary files, estimated bytes, available space, destination and service downtime before copying. Keep the scope within that authorization, including when the filesystem offers cheap clones. A customer's explicit no-backup instruction rules out extra copies; if it conflicts with a mandatory release procedure, explain that concrete conflict before mutating the deployment.
+
+Rollback must follow the old release's contract and restore matching state where required; switching an image tag alone is insufficient. Connector storage changes can require restoring the corresponding connector state. Native↔Docker migration is a separate deployment operation.
 
 ## Tools and credentials
 

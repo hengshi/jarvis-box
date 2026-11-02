@@ -606,6 +606,8 @@ Docker 同模式升级必须保留完整 deployment home。部署脚本在重建
 
 ## 11. 备份
 
+正常升级调用当前 release 的官方 updater，沿用它已声明的恢复步骤，不附加 runtime、workspace、缓存或 HOME 的复制。单独要求备份时，先明确必要文件、预计大小、目标空间和停服时间；文件系统克隆也不能扩大授权范围。明确禁止额外备份时不创建副本；若与 release 必需的恢复步骤冲突，先说明冲突再操作。
+
 Native 备份安装器报告的实际 runtime root。不要假设客户使用某个历史目录，也不要只备份当前 shell 中 `which jarvis-box` 指向的位置。
 
 Docker 备份完整 deployment home；其中的持久数据目录包括：

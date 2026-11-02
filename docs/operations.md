@@ -115,6 +115,8 @@ jarvis-box restart
 
 `jarvis-box update --check` 会显示当前版本、目标版本、元数据来源和可用下载源。`jarvis-box update` 会在停服前通过当前安装器的只读 preparation 模式下载并校验目标 release，从受校验 archive 提取目标版本的 `install.sh`；停服后只执行这个目标安装器，不允许旧脚本替换新二进制后继续控制 migration/start。下载优先使用私有 `hengshi-jarvis/jarvis-box` GitHub Release，失败时改用 `https://download.hengshi.com/jarvis-box` 的公开 S3 mirror，最终以 `SHA256SUMS` 为准。默认路径不取消 Task，活动工作会阻断升级；显式 Native `update --force` 先持久记录其实际中断清单，升级或安装失败后按收据恢复这些工作，不重跑原本已经失败或取消的任务。
 
+更新 CLI 实时转发安装器输出；目标迁移报告 migration ID、开始/完成、Task 检查数量及耗时。已发布旧 CLI 在首次升级时仍可能缓存子进程输出，这不代表目标迁移没有推进；可只读检查实际 state 目录下的 `install-state.json` 和 `runtime-migrations.jsonl`。不要修改或删除迁移记录来重试、测试或恢复。
+
 新部署默认使用 1.0 稳定版，0.2.x、0.3.x 仅接收 bug 与安全修复。当前安装器与更新入口使用 `channels/v1/latest.json`，或从 GitHub 已发布列表选择最高稳定 1.0+ 版本。已发布 0.2 客户端使用的 GitHub Latest 和根 `latest.json` 保留在旧版本线，不会因发布 1.0 自动跨线；维护线升级须显式选择该线已发布版本。
 
 从 0.x 升级到 1.0 必须显式设置 `JARVIS_ALLOW_MAJOR_UPGRADE=1`。0.3.x 支持目标安装器交接，在没有活动任务时可运行 `JARVIS_ALLOW_MAJOR_UPGRADE=1 jarvis-box update --version 1.0.0`。0.2.x 不支持此跨线 CLI 路径：旧 `update` 会先停服务再执行旧安装器，因此不能运行其无参或跨线更新；应校验目标 1.0 bundle 后按下方手工流程执行目标 `install.sh`。跨 0.x minor 版本线也需要显式授权和目标安装器，不从旧 runtime 的 `state/app` 目录运行旧脚本。
@@ -179,6 +181,8 @@ Docker 部署脚本把容器的持久机器身份记录在 `<deployment-home>/da
 自动导入只复制批准的可移植身份，不复制整个 Host credential store。IM provider secret 始终留在 `connector.env` 和 connector 边界。
 
 ## 备份
+
+正常升级使用所选 release 的官方 updater 及其既有恢复步骤，不另外复制 runtime、workspace、缓存或 HOME。额外备份属于单独的运维动作：先明确所需文件、预计大小、目标磁盘可用空间及停服时间，并取得对应授权。文件系统克隆也遵守同一范围。客户明确禁止额外备份时不得自行创建副本；若与 release 必需的恢复步骤冲突，先说明冲突再操作。
 
 Native 按实际生效配置备份所需 state、workspace、logs，以及单独明确授权的 Agent identity/config。路径以安装器输出和运行配置为准，不假设固定历史目录；外置 Agent 配置只选择所需文件，不复制整个 Host HOME 或无关凭据。文件清单避免把同一父子数据树重复归档；恢复使用对应用户的专用目标，不覆盖其他实例。
 
