@@ -1060,6 +1060,8 @@ ChatBridge 的 provider send failure 与 Agent Run failure 是两个事实。Age
 - 重试预算耗尽、永久失败或投递结果不确定时，Status 直接展示结构化原因。操作者可以用 Continue 提交经 exact Run projection marker 验证的 `retry-writeback` receipt；它不读取 service log、不提供 agent prompt，也不会在 Task lock 内发送 IM；
 - 只有 sealed `chat_reply_delivery` 中已证明可恢复的 definite failed receipt 才选择 writeback strategy，包括上述原回复权限预检失败的历史分类；其他情况仍须 receipt 标明 retryable。尚未开始 effect 的 `pending` 与已持久化 intent 的 `claimed` 投影为 delivery pending/outcome unknown，禁止重发；private receipt 或 Task projection missing/corrupt/conflict 投影为 invalid 并要求 inspect-artifacts；完整匹配的 `unknown` 收敛为 `writeback-outcome-unknown / inspect-writeback`，同样禁止 Continue 重发。
 
+IM回复目标的身份由原生ID、kind及可选`id_type`共同确定，入站、Run context、私有bound handle、恢复和主动发送须保留同一类型。存在类型时，credential摘要追加`chat-reply-target-type/v1`域及类型值，目标类型冲突或仅改类型的私有记录篡改均拒绝；缺少该字段的已发布句柄保留原v1摘要和opaque ID，不推断历史地址类型、不改写旧记录。
+
 IM送达确认只接受exact latest Run原始发送者。私有bound handle以可选`origin_sender_id`/`origin_sender_digest`扩展记录身份，摘要使用`chat-reply-sender/v1`域并绑定既有credential digest；原opaque ID、credential摘要、token及expiry不变。缺少sender pair的已发布记录继续可读；半pair或摘要冲突拒绝。无token且无expiry的消息可以保存具有完整sender证明的同一私有记录，重建时expiry仍为nil、没有凭据消费事实；半凭据不能按此处理。IM新输入绑定本次sender；Status/recovery重绑仅继承所选来源的私有sender并按新fence重算，公开context和Task首创者不能补权。
 
 停服Flyway追加`20261023_im_reply_sender`，只从已证明released registration、Run creation、消息、Target及凭据一致的exact Run旧私有完整输入补齐sender，原迁移身份保留。现代旧记录未保存该身份时不能从公开payload猜测；保留数据及普通Continue，并开放既有sealed operator attestation作为核实后的同Run补救。此可选裁定与普通新指令并存，不更改waiting-input/user投影或新增管理员待办，也不授权其他群成员通过聊天裁定。
@@ -1171,7 +1173,7 @@ Provider 同对象事件锁只保护受理至 exact Run claim 发布；进入已
 
 1. 解析 Task 的当前 Run ownership。
 2. 有 active Run 时解析其 launch owner。尚未开始 Agent dispatch 且由本服务进程持有的准备阶段，先按下一步持久化 exact cancellation intent，再取消该 owner 的准备 context，并在全部 lifecycle 锁外等待其 launch-resolution barrier；准备进程实际退出或已启动进程的精确补偿停止完成后，由原 launch owner 结算同一 intent。等待完成必须重读并核对同一 Task/Run 及取消回执，不能将 barrier 关闭或 PID 为零单独视为停机证明。已进入 dispatch 的窗口不等待自身同步启动回调，仍由严格 Stop 与 PID 绑定失败补偿解决实际进程；无匹配本地准备 owner 时仍按既有严格进程证据处理，不猜测进程已经消失。等待发生在 TaskService mutex 之外，不能与同步 completion callback 互锁。
-3. 在任何 Stop/kill/reap 副作用前，以当前 Run owner、sequence 和不可变 Task instance 为条件写入 cancellation terminalization intent；intent 保留原 PID/Run ownership，写入失败时不发送进程信号。
+3. 在任何 Stop/kill/reap 副作用前，以当前 Run owner、sequence 和不可变 Task instance 为条件写入 cancellation terminalization intent；intent 保留原 PID/Run ownership，写入失败时不发送进程信号。若同一 Run 留有 Continue 停机失败的 replacement intent，在同一事务中以 cancellation intent 替换它，不保留两份并列意图；停机失败仍由取消恢复流程接续，不创建新 Run。
 4. 若不存在 current Run owner 却仍有 PID/PGID，立即 fail closed，不发信号、不清 Workspace、不清进程证据；否则同步调用内部 Stop Run。无法证明进程已停止则保持 `finalizing/cancelling` 和 intent，由同一请求或周期恢复器重试。`recovery-required` 且没有 pid/pgid 时，以 Task/Run owner compare-and-swap 固定旧 Run。
 5. Task 原子写入 `status=cancelled`、`phase=cancelled`、`current_run_id=""` 并清除 terminalization intent；已提交 cancellation intent 拥有终态仲裁权，竞态 completion 只能被忽略。Task、Run、Workspace 登记和 Artifact 继续保留。
 6. 释放全部 Task/state locks 后，按冻结的 TaskRef、Workspace registry revision 和 canonical idle RunRef 启动 Full disposal transaction；每项按 intent/effect-start/receipt/reproject 推进。失败、unknown 或 partial-exhausted 只投影 disposal 义务和 operator action，不能把 Task business state 改回 `finalizing` 或 `needs-attention`。
