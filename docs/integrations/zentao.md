@@ -10,8 +10,8 @@
 
 ```dotenv
 ZENTAO_BASE_URL=https://zentao.example.com
-ZENTAO_API_TOKEN=<zentao-v1-api-token>
 ZENTAO_ACCOUNT=jarvis
+ZENTAO_PASSWORD=<service-account-password>
 ZENTAO_CLI_COMMAND=zentao
 JARVIS_ZENTAO_WEBHOOK_SECRET=<random-private-secret>
 ZENTAO_ALLOWED_SCOPES=product:1,execution:2
@@ -22,8 +22,8 @@ JARVIS_COMMAND_BOT_USERNAMES=jarvis
 | 变量 | 用途 |
 | --- | --- |
 | `ZENTAO_BASE_URL` | 禅道站点根地址，可包含部署子目录；不含 API 路径、userinfo、query 或 fragment。 |
-| `ZENTAO_API_TOKEN` | 服务账号的 v1 API Token，用于读取工作项、历史、附件元数据和回写评论。 |
-| `ZENTAO_ACCOUNT` | 与 Token 对应的原始服务账号；官方 CLI 读取时仍要求该账号。 |
+| `ZENTAO_PASSWORD` | 必填。服务端使用此密码自动获取 v1 API Token，读取遇到 401 时重新认证并重试一次。密码只保存在当前实例的私密运行配置中，不交付给 Agent。 |
+| `ZENTAO_ACCOUNT` | 禅道原始服务账号，需有目标工作项的读取和评论权限；自动认证不要求管理员账号。 |
 | `ZENTAO_CLI_COMMAND` | 官方 CLI 可执行命令，默认 `zentao`；支持版本为 0.2.0，SDK 固定 0.4.1。 |
 | `JARVIS_ZENTAO_WEBHOOK_SECRET` | Webhook 的 HTTP Basic 密码；用户名固定为 `jarvis`。 |
 | `ZENTAO_ALLOWED_SCOPES` | 显式允许范围，逗号分隔；启用时不能为空。 |
@@ -32,7 +32,13 @@ JARVIS_COMMAND_BOT_USERNAMES=jarvis
 
 Bug、用户故事、测试用例使用所属产品的 `product:<id>`。任务使用所属执行的 `execution:<id>`；产品、项目和执行 ID 不能互换。ID 使用正十进制整数，例如 `product:1`、`execution:2`。Jarvis Box 从实时工作项读取范围和操作者，载荷中的 scope 或账号不能替代实时校验。
 
-管理员可通过 `POST /api.php/v1/tokens`，JSON `{"account":"<service-account>","password":"<password>"}` 签发 Token。将返回的 `token` 配置为 `ZENTAO_API_TOKEN`；密码不写入 Jarvis 配置。Token 失效时重新签发并更新配置，Jarvis Box 不保存账号密码或自动登录。
+服务端通过 `POST /api.php/v1/tokens` 使用服务账号密码获取 Token，并在进程内共用当前会话。Token 不回写配置、不建立第二份凭据文件；服务重启后自动重新认证。旧实例须在同一运行配置文件中补充 `ZENTAO_PASSWORD` 并移除 `ZENTAO_API_TOKEN`，按当前部署方式受控重启。缺少密码时明确拒绝启用，不继续运行无法恢复的静态 Token 接入。不要把密码发送到聊天或写进任务提示词。
+
+评论写入收到 401 时自动重新认证，再读取原工作项历史核对同一 Run 标记，至多补写一次；已有评论则复用原 action ID，历史无法读取时停止。超时、断链和其他写入错误保留原有未知结果查证流程。
+
+每次 Agent 启动（包括继续执行）前校验当前会话，向该 Run 注入有效 Token。发布评论前的实时历史读取也会自动恢复失效会话；并发请求共用恢复后的 Token。密码被服务端拒绝时停止重复登录，避免锁定账号；修正运行配置后受控重启。网络故障、权限拒绝和业务错误不会被当作 Token 过期无限重试。
+
+`jarvis-box doctor` 与系统诊断除检查 CLI 版本外，还由运行中的 Jarvis 服务通过原生 API 验证当前配置的服务账号。两者共用服务端会话和错误密码的拒绝记录，重复执行命令或查看页面不重复提交已拒绝的密码；认证配置修改后提示受控重启，再验证新凭据。服务未启动或无法提供认证诊断时，`doctor` 报告检查失败，须先启动服务。交互式 `zentao login` 使用自己的配置，不能证明 Jarvis 服务的认证正常。
 
 ## 安装读取工具
 
@@ -61,7 +67,7 @@ https://jarvis:<url-encoded-private-secret>@<jarvis-box-host>/webhooks/zentao
 
 密码使用与 `JARVIS_ZENTAO_WEBHOOK_SECRET` 相同的值；选用 URL 安全字符组成的随机密钥可避免编码歧义。禅道原生 Others/default sender 通过 URL userinfo 发出 HTTP Basic Authorization。反向代理需要保留该请求头。密钥会保存在禅道 Webhook 配置中，应限制配置和日志的访问。
 
-需要在 Webhook 参数中加入稳定的 action `id`。禅道 21 的页面复选框未列出 `id`，因此由管理员通过原生 v2 API 创建配置。请求使用服务账号 Token，不修改 PHP 或数据库：
+需要在 Webhook 参数中加入稳定的 action `id`。禅道 21 的页面复选框未列出 `id`，因此由具有 Webhook 管理权限的账号通过原生 v2 API 创建配置。管理员配置时可通过 v1 tokens 接口获取自己的 Token；该步骤独立于 Jarvis 日常服务账号的自动认证，不修改 PHP 或数据库：
 
 ```http
 POST /api.php/v2/webhooks
