@@ -663,6 +663,8 @@ Command 与 workflow 评论由 `ProviderActionExecutor` 在发送前统一处理
 
 禅道使用原生 Basic Auth Webhook，并在准入前通过 API 重读真实对象与 action。`bug`、`story`、`task`、`case` 是独立 Subject kind，同号不合并；范围分别使用 `product:<id>` 或任务的 `execution:<id>`。只有 `opened` 触发预检，`commented` 中的明确命令进入 command lane；可实时验证的 `closed`/`canceled` 只取消同一完整 Subject。对象已删除、不可读取或 action 不匹配时拒绝推断取消。原生评论回写保留状态，备注只显示回复正文；服务端持久化隐藏的 Run 标记用于去重和阻止自身评论再次触发。完整历史、附件和官方 CLI 的版本约束见[禅道接入](integrations/zentao.md)。
 
+禅道认证由服务端持有服务账号密码并自动获取 Token；读取遇到完整 HTTP 401 时重新认证并重试一次，每次 Agent 启动前校验当前 Token，密码不交付给 Agent。评论写入的完整 HTTP 401 触发一次认证恢复，再通过原工作项实时历史核对同一 Run 的隐藏标记：已有标记时复用原 action，缺少标记才至多补写一次；无法读取历史或再次失败时停止。该有界恢复保持同一 Task/Run，不重新执行 Agent。超时、断链及其他写入错误仍按未知结果处理，不获得自动重发权限。
+
 各 adapter 先把原始事件精确分类为 `work-item.created`、`work-item.updated`、`comment.created`、`change.updated`、`review.created` 或 `subject.terminal`，再按 capability 路由。自动 post-check 只消费 `work-item.created`；后续更新不会因为字符串包含 `created` 而误触发。一个 Jira/飞书/GitLab/GitHub work item 可以关联零个、一个或多个 GitLab/GitHub 仓库，包括两种 repository host 同时关联；关联不等于二选一路由。
 
 ## Target

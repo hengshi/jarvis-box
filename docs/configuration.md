@@ -21,7 +21,7 @@ On hosts with more than one Docker instance, each instance must use a unique `JA
 
 ## `runtime.env`
 
-jarvis-box routing, allowlist, webhook and connector configuration, recommended mode `0600`. Git hosting execution Tokens and Agent API keys use the deployment authentication paths. Server-owned work-item API credentials such as `ZENTAO_API_TOKEN` belong in this private canonical file and are scoped to the corresponding Provider Runs:
+jarvis-box routing, allowlist, webhook and connector configuration, recommended mode `0600`. Git hosting execution Tokens and Agent API keys use the deployment authentication paths. Server-owned work-item API credentials such as `ZENTAO_PASSWORD` belong in this private canonical file and are scoped to the corresponding Provider Runs:
 
 Native 的 canonical env 由 `JARVIS_ENV_FILE` 选择，默认位于 `$JARVIS_RUNTIME_ROOT/envs/.env.jarvis-box`。显式文件可以放在外部目录；已有外部共享父目录的 owner 和权限由操作者维护，安装器只处理 env 文件，不接管父目录。该目录必须允许服务用户创建临时文件并原子替换 env 文件，否则安装器拒绝继续；推荐使用独立的、由服务用户拥有的私有目录。
 
@@ -49,10 +49,10 @@ Native 的 canonical env 由 `JARVIS_ENV_FILE` 选择，默认位于 `$JARVIS_RU
 | `JIRA_BASE_URL` | Jira 站点完整地址，例如 `https://jira.example.com`；工作项链接与预检回写都按它拼 |
 | `JIRA_PROJECTS` | Jira project key allowlist；不在名单里的 project 事件会被忽略 |
 | `JIRA_ISSUE_TYPES` | 允许进入工单预检的 issue 类型，默认 `Bug`。**这是一个收窄开关**：没列进来的类型盒子照样收到 webhook，然后静默忽略（工作台账里记 `jira_issue_type_not_allowed`）。要接 Task/Story 必须显式列出，例如 `Bug,Task`。每项可以写类型名（忽略大小写）也可以写 Jira 的类型 ID（例如 `Bug,10003`）；类型名会随触发者的语言本地化（同一个 Task 在中文账号触发时载荷里是「任务」），ID 不会，操作员要从页面上「没处理的事件」那行抄稳定的取值就抄 ID |
-| `ZENTAO_BASE_URL` / `ZENTAO_API_TOKEN` | 禅道 OSS 21 站点根地址及 v1 API Token；服务端读取与评论回写共用该身份，详见[禅道接入](integrations/zentao.md) |
-| `ZENTAO_ACCOUNT` | 与 API Token 对应的服务账号，官方 CLI 读取时必需 |
+| `ZENTAO_BASE_URL` / `ZENTAO_ACCOUNT` | 禅道 OSS 21 站点根地址与服务账号；读取和评论回写共用该身份，详见[禅道接入](integrations/zentao.md) |
+| `ZENTAO_PASSWORD` | 服务账号密码，由服务端自动获取并恢复 Token，密码不传给 Agent；不再使用静态 `ZENTAO_API_TOKEN` 配置 |
 | `ZENTAO_CLI_COMMAND` | 禅道 Agent 读取工具，默认 `zentao`；要求 CLI 0.2.0 与 SDK 0.4.1 |
-| `JARVIS_ZENTAO_WEBHOOK_SECRET` | 原生 webhook HTTP Basic 密码，用户名固定 `jarvis`；启用时必须同时配置站点、账号、API Token 和 scope |
+| `JARVIS_ZENTAO_WEBHOOK_SECRET` | 原生 webhook HTTP Basic 密码，用户名固定 `jarvis`；启用时必须同时配置站点、账号、密码和 scope |
 | `ZENTAO_ALLOWED_SCOPES` | 必须显式配置的禅道范围，逗号分隔；bug/story/case 用 `product:<id>`，task 用 `execution:<id>` |
 | `ZENTAO_ALLOWED_USERS` | 可选的禅道评论指令账号允许名单；匹配原始账号，不限制创建事件预检，机器人账号由 `JARVIS_COMMAND_BOT_USERNAMES` 排除 |
 | webhook secret variables | provider signature verification |
