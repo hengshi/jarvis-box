@@ -4,13 +4,13 @@
 
 ## 1. 首次部署清单
 
-1. 使用 create-jarvis 构建并发布客户自己的 Company Jarvis。
-2. 在正式部署时选择 Native 或 Docker，一旦投入使用不自动切换模式。
-3. 下载同一版本的 release bundle、`SHA256SUMS` 和 `production-image.json` 并完成校验。
-4. 按所选模式完成 Agent 与 GitHub/GitLab 等 provider 的原生认证。
-5. 安装 Jarvis Box 和 Company Jarvis Runtime Foundation。
-6. 先用受监督方式运行一条完整真实链路。
-7. 记录版本、部署模式、实际 runtime root、Runtime Foundation root、状态命令和 Docker image digest（如适用）。
+1. 收集公司资料位置和工作系统、IM、模型等必要接入信息，不等待深度知识构建。
+2. 选择 Native 或 Docker，一旦投入使用不自动切换模式。
+3. 解析当前最新正式版，下载同一版本的 release bundle、`SHA256SUMS` 和 `production-image.json` 并完成校验。
+4. 按所选模式完成 Agent 与已提供 provider/IM 的认证，安装并启动 Jarvis Box。
+5. 启用任务与原处写回，用户/会话允许名单留空；逐个验证接通入口的实际任务和回复，已验证范围即可使用。
+6. 使用 create-jarvis 继续构建并发布 Company Jarvis、repo-local skills，再安装并验证 Company Runtime Foundation，接入知识投递与定时任务。
+7. 记录实际版本、部署模式、runtime root、状态命令和 Docker image digest（如适用）；Foundation 安装后补充其 root 与 doctor 证据。
 
 没有 Company Jarvis 时，从 create-jarvis 最新代码开始：
 
@@ -199,7 +199,7 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 # install -m 0600 "$release_dir/deploy/production/connector.env.example" "$deployment_home/connector.env"
 ```
 
-在 `deployment.env` 中把 `JARVIS_DEPLOYMENT_HOME` 改为上面的绝对路径，把 `JARVIS_IMAGE` 改为已校验并加载的 `hengshi/jarvis-box:v<version>`，或 GHCR 路径的 `production-image.json` 中的 `image_ref`，并设置当前实例唯一的 `JARVIS_DEPLOYMENT_NAME`、端口和认证选择。在 `runtime.env` 中填写所需 Agent、provider、allowlist 和 verification secret；首次保持 `JARVIS_PROVIDER_WRITEBACK_ENABLED=false`。配置完成后执行：
+在 `deployment.env` 中把 `JARVIS_DEPLOYMENT_HOME` 改为上面的绝对路径，把 `JARVIS_IMAGE` 改为已校验并加载的 `hengshi/jarvis-box:v<version>`，或 GHCR 路径的 `production-image.json` 中的 `image_ref`，并设置当前实例唯一的 `JARVIS_DEPLOYMENT_NAME`、端口和认证选择。在 `runtime.env` 中填写实际启用的 Agent、provider 范围和 verification secret，启用 `JARVIS_ISSUE_POST_CHECK_ENABLED=true` 与 `JARVIS_PROVIDER_WRITEBACK_ENABLED=true`；用户与会话允许名单留空。配置完成后执行：
 
 ```bash
 "$ops" "$deployment_home" deploy
@@ -226,15 +226,16 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 `deployment.env` 保存已校验并加载的镜像标签或 GHCR digest 引用、绑定地址、端口和部署行为。`runtime.env` 保存 Jarvis Box 行为和 webhook/connector verification secret，不保存 provider execution token 或 Agent credential。deployment home 必须位于任意 Git checkout、`jarvis-build/` 和 Company Jarvis 源码目录之外，不保存 Host HOME dump 或临时 context。
 同机多个 Docker 实例必须使用不同的 `JARVIS_DEPLOYMENT_HOME`、`JARVIS_DEPLOYMENT_NAME`、`JARVIS_PORT` 和 provider webhook URL，不共享 `auth/` 或 `data/`。
 
-首次 onboarding 在 `runtime.env` 保持：
+首次部署在 `runtime.env` 启用实际任务与原处回复：
 
 ```dotenv
-JARVIS_PROVIDER_WRITEBACK_ENABLED=false
+JARVIS_ISSUE_POST_CHECK_ENABLED=true
+JARVIS_PROVIDER_WRITEBACK_ENABLED=true
 ```
 
-安装验收期间也可继续保持回写关闭：Agent 和 post-check 仍运行，本地结果与审计仍保留，但不会向 GitLab、GitHub、Jira 或飞书项目原 subject 写评论、标签、状态或 review/follow-up 更新。完成隔离测试并确认 provider identity 后再显式设为 `true`。
+用户与会话允许名单留空，不需要收集人员或群聊 ID。Company 知识尚未完成时仍可执行普通任务；Agent 优先采用适用且已验证的 workflow，否则依据实时输入和原生工具执行。仅在明确选择不向平台写回的隔离测试时设置 `JARVIS_PROVIDER_WRITEBACK_ENABLED=false`；本地结果与审计仍保留，但该测试不能证明原处回复可用。
 
-需要在 Agent 启动前准备 Company skills 时，可配置客户 Runtime Foundation 提供的程序：
+Company Runtime Foundation 尚未安装时将 prepare hook 留空。安装并验证后，需要在 Agent 启动前准备 Company skills 时，配置该 Foundation 提供的程序：
 
 ```dotenv
 JARVIS_AGENT_RUNTIME_PREPARE_COMMAND=/home/jarvis/.company-jarvis/bin/company-jarvis-prepare
@@ -305,11 +306,11 @@ claude auth login
 依次通过：
 
 1. `"$ops" "$home" verify`；
-2. Company Jarvis Runtime Foundation doctor；
-3. 真实 Agent discovery；
+2. 真实 Agent 与所需 provider/IM 能力；
+3. 已安装的可选 Company Foundation 才运行其 doctor 与知识 discovery；未安装不阻塞普通任务；
 4. 一条受监督的 provider ingress → Task/Run → workspace → Agent → writeback → cleanup 链路。
 
-得到客户批准后，将 `runtime.env` 的 `JARVIS_PROVIDER_WRITEBACK_ENABLED` 改为 `true`，只启用已经存在适用 workflow 的业务 lane，再执行：
+保持已接通范围的任务与 writeback 启用。后续配置变化通过同一 deployment home 生效，不为接入 Company 知识另建部署；需要重载运行配置时按当前任务状态执行受控操作：
 
 ```bash
 "$ops" "$home" start
@@ -317,7 +318,7 @@ claude auth login
 
 ## 6. Runtime Foundation 与定时任务
 
-create-jarvis 生成的 Company Jarvis 已包含版本化的 JARVIS 记忆整理、每日复盘和经验积累 jobs、prompts 与 scheduler manager。Runtime Agent 按模板安装，客户不需要自己编写脚本或 cron。
+Company Jarvis 交付后，create-jarvis 生成的仓库包含版本化的 JARVIS 记忆整理、每日复盘和经验积累 jobs、prompts 与 scheduler manager。Runtime Agent 按模板安装，客户不需要自己编写脚本或 cron。Company repo 尚未就绪时不安装依赖它的 jobs，也不配置尚不存在的 prepare 程序；Jarvis Box 基础任务继续运行。
 
 | 部署模式 | 唯一 scheduler owner | 调用方式 |
 | --- | --- | --- |
@@ -326,7 +327,7 @@ create-jarvis 生成的 Company Jarvis 已包含版本化的 JARVIS 记忆整理
 
 Docker 容器内不运行第二套 scheduler。Host label 已加载也不等于健康；Docker 状态还必须证明 `runtime-job` 和容器内 inner job 可达。
 
-onboarding 完成记录必须写明实际 Runtime Foundation root，以及当前 Company Jarvis Runtime Foundation 提供的准确 status/doctor 命令。Jarvis Box release 不提供或规定这条客户命令；它在 Docker 模式只提供通用 `runtime-job` transport。
+Foundation 接入完成记录必须写明实际 Runtime Foundation root，以及当前 Company Jarvis Runtime Foundation 提供的准确 status/doctor 命令。Jarvis Box release 不提供或规定这条客户命令；它在 Docker 模式只提供通用 `runtime-job` transport。基础运行可用与 Company 知识接入分别记录和验收。
 
 如果状态报告的 scheduler owner 与 Jarvis Box 部署模式不一致，停止处理并修复残留，不要自动切换部署模式。
 
@@ -600,7 +601,7 @@ force 要求 jarvis-box 容器仍在运行，并要求设置 `JARVIS_DOCKER_UPGR
 
 Docker 同模式升级必须保留完整 deployment home。部署脚本在重建前解析并固定 `data/runtime-hostname`，确保依赖容器机器身份的加密 provider profile 可继续解密；身份缺失、非法或与现存容器冲突时不会执行替换。
 
-部署脚本在容器重建后自动更新 Jarvis 管理的官方工具；失败时保留上一套可用工具并让部署失败，修复网络或上游问题后重跑同一个部署命令。可在容器内使用 `jarvis-box tools status` 查看状态、`jarvis-box tools update` 手工重试、`jarvis-box tools reset` 回到镜像基线。客户自装的独立用户级工具放在 `/home/jarvis/.local/bin`，不要覆盖 Jarvis 管理的官方同名命令；该目录属于持久化 deployment home，升级和容器重建后仍保留。需要 `apt` 管理的编译器、头文件或系统共享库通过[客户派生 Docker 镜像](docs/custom-docker-image.md)提供。
+Docker 首次安装、启动、容器重建和升级不自动下载或更新 Jarvis 管理的官方工具，直接使用镜像内工具或已有的有效持久化 overlay。需要更新时，在容器内显式执行 `jarvis-box tools update`；更新失败保留原有效工具，修复网络或上游问题后再次手动执行。`jarvis-box tools status` 查看状态，`jarvis-box tools reset` 回到镜像基线。客户自装的独立用户级工具放在 `/home/jarvis/.local/bin`，不要覆盖 Jarvis 管理的官方同名命令；该目录属于持久化 deployment home，升级和容器重建后仍保留。需要 `apt` 管理的编译器、头文件或系统共享库通过[客户派生 Docker 镜像](docs/custom-docker-image.md)提供。
 
 回滚时不能只恢复旧 image digest：必须下载并校验匹配的旧版本私有 release bundle 和 image metadata，同时恢复同一 deployment home 的完整备份（包括 `auth/`、`data/connector-state/`、`data/runtime-hostname` 以及其他 `data/` 状态），再恢复对应 release tag，执行同样的部署、验证和真实链路检查。升级目标已经开始后不自动替换 image 或 state；按 updater 输出的备份与人工恢复指引操作。Company Jarvis/Runtime Foundation 的版本升级由其自身合同管理，不随 Jarvis Box 镜像偷偷变化。
 

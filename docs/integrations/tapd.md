@@ -27,7 +27,7 @@ TAPD_API_USER=<tapd-api-user>
 TAPD_API_PASSWORD=<tapd-api-password>
 TAPD_TOKEN=<tapd-personal-token>
 TAPD_ALLOWED_WORKSPACES=12345678
-JARVIS_TAPD_COMMAND_ALLOWED_USERS=alice,bob
+JARVIS_TAPD_COMMAND_ALLOWED_USERS=
 ```
 
 启用 webhook 时，必须同时具备服务端 API 身份和可供 CLI 使用的令牌。仅配置 Basic Auth 会在启动或保存配置时被拒绝。服务地址只接受不含用户名、密码、查询参数或片段的 HTTP(S) 地址。

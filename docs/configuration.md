@@ -25,6 +25,8 @@ jarvis-box routing, allowlist, webhook and connector configuration, recommended 
 
 Native 的 canonical env 由 `JARVIS_ENV_FILE` 选择，默认位于 `$JARVIS_RUNTIME_ROOT/envs/.env.jarvis-box`。显式文件可以放在外部目录；已有外部共享父目录的 owner 和权限由操作者维护，安装器只处理 env 文件，不接管父目录。该目录必须允许服务用户创建临时文件并原子替换 env 文件，否则安装器拒绝继续；推荐使用独立的、由服务用户拥有的私有目录。
 
+新部署按已提供的接入范围开放任务：启用 post-check 和 provider writeback，用户与会话允许名单留空，不要求枚举人员或群聊。Company Jarvis 和新生成的 repo-local skills 不存在时，Agent 仍可依据实时输入和代码执行普通任务；已验证 Company workflow 是后续增强。Company Foundation 尚未安装时不配置 prepare hook，安装并验证后再接入。项目、仓库、禅道产品/执行等必需 source scope 仍填写真实范围，空值不自动表示全部。Jira 等来源还需检查工作项类型过滤：为连接范围中的受支持类型填写实际稳定 ID，避免沿用只接 Bug 的默认值。
+
 | Variable | Meaning |
 |---|---|
 | `JARVIS_STATE_DIR` | 本机运行状态目录；macOS Native 默认 `${JARVIS_RUNTIME_ROOT}/state`（Runtime root 默认 `~/.jarvis-box`），Linux 默认 `/var/lib/jarvis-box`；服务、授权命令和诊断共用同一解析规则 |
@@ -56,7 +58,7 @@ Native 的 canonical env 由 `JARVIS_ENV_FILE` 选择，默认位于 `$JARVIS_RU
 | `ZENTAO_ALLOWED_SCOPES` | 必须显式配置的禅道范围，逗号分隔；bug/story/case 用 `product:<id>`，task 用 `execution:<id>` |
 | `ZENTAO_ALLOWED_USERS` | 可选的禅道评论指令账号允许名单；匹配原始账号，不限制创建事件预检，机器人账号由 `JARVIS_COMMAND_BOT_USERNAMES` 排除 |
 | webhook secret variables | provider signature verification |
-| `JARVIS_ISSUE_POST_CHECK_ENABLED` | enable issue post-check lane after applicable workflow is available through Agent discovery |
+| `JARVIS_ISSUE_POST_CHECK_ENABLED` | issue post-check lane switch; the new-install sample sets `true`. Company guidance is optional: the Agent assesses the live issue directly when no applicable verified workflow is available. Omitted values retain the existing `false` default. |
 | `JARVIS_PROVIDER_WRITEBACK_ENABLED` | global switch for Jarvis Box-owned original-subject mutation; default `true`; set `false` during installation tests to retain local results without Jarvis Box writing comments, labels, statuses, or review/follow-up updates to GitLab, GitHub, Jira, Feishu Project, TAPD, Yunxiao, or ZenTao. It does not sandbox the high-authority Agent's provider-native CLI identity. Upgrades from a runtime env containing the removed Workflow v1 grant variables fail closed to `false` until an operator explicitly sets this switch. |
 | `JARVIS_WORK_ITEM_REPOSITORIES` | provider-neutral JSON mapping from source provider + work-item scope to zero or more allowlisted GitLab/GitHub repositories; supports simultaneous cross-provider associations and never accepts caller-supplied clone endpoints |
 | `FEISHU_PROJECT_BACKEND` | 飞书项目后端，留空用默认；一般不需要改 |
@@ -110,7 +112,7 @@ Native 默认把依赖缓存放在 `${JARVIS_RUNTIME_ROOT}/dependency-cache`。`
 
 Jarvis Box 在新 Task 的 Workspace/provider 和依赖准备完成后、Agent spawn 之前调用它，并为成功结果保存 Task-owned receipt；普通 `Continue` 会复用已成功的 receipt，不重复调用。将来若 sealed runtime-failure receipt 能力允许同一 Run 做 Agent failover，也只能复用已成功的 preparation receipt。若首次 prepare 失败，或旧 Task 尚无成功 receipt，后续 `Continue` 必须在 Workspace/provider 准备完成后重试。非零退出、超时或非法响应会阻止 Agent 启动，但不会阻止 Workspace 创建。该程序及其 repo/ref、锁、revision 判断和 Agent discovery-root 同步规则由客户 Runtime Foundation 拥有；Jarvis Box 不读取或拉取 Company Jarvis repo。Native 应配置当前服务用户可执行的 Foundation 路径；Docker 应配置持久 Agent HOME 内的容器绝对路径。
 
-Provider allowlists are direct operator configuration. jarvis-box does not reconcile them against a Jarvis repo. Enabling a workflow lane does not provide the workflow; the Jarvis Runtime Foundation must first install it into native Agent discovery roots.
+Provider source scopes and optional user/conversation restrictions are direct operator configuration; jarvis-box does not reconcile them against a Jarvis repo. Ordinary workflows, including issue post-check, can execute from their current inputs and native Agent tools before Company knowledge is installed. Enabling a lane does not supply Company-specific policy: deliver and verify customized workflows through the customer's Runtime Foundation before treating them as established guidance. Missing business definitions or actual execution authority remain concrete needs-input/blocked outcomes, as defined in the [execution model](execution-model.md#provider-lane-ownership).
 
 Compose injects state/log/workspace paths, service manager and image reference. Do not redefine those deployment-owned facts in `runtime.env`.
 In container mode, `status`, `status --smart`, and `doctor` report container ownership and query the selected runtime's health endpoint; they do not query host launchd or systemd services.

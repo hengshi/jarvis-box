@@ -15,7 +15,7 @@ ZENTAO_PASSWORD=<service-account-password>
 ZENTAO_CLI_COMMAND=zentao
 JARVIS_ZENTAO_WEBHOOK_SECRET=<random-private-secret>
 ZENTAO_ALLOWED_SCOPES=product:1,execution:2
-ZENTAO_ALLOWED_USERS=alice,bob
+ZENTAO_ALLOWED_USERS=
 JARVIS_COMMAND_BOT_USERNAMES=jarvis
 ```
 

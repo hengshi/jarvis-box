@@ -27,7 +27,7 @@ jarvis-box tools reset
 
 Native 的 `path` 返回当前用户的工具目录，默认 `$HOME/.local/bin`，可由 `JARVIS_USER_TOOL_BIN` 指定绝对目录。`status` 检查本机工具；`--json` 返回 `jarvis-box-runtime-tools/v1` 清单，包含 `deployment_mode=native`、`update_supported=false`，以及各工具的路径、可用性、生效版本和 `source=host`。缺少可选工具只记录为不可用；已找到的工具版本探测失败、超时或无输出时返回非零退出码，JSON 清单仍可读取。Native 工具通过其原安装器或包管理器更新，`update` 和 `reset` 返回非零退出码及操作指引。
 
-Docker 中 Jarvis 管理的官方工具通过持久化 overlay 原子更新，失败时继续使用镜像内基线。安装或升级会自动尝试一次更新，`update` 可手工重试，`reset` 回到镜像基线。Docker updater 缺失或执行失败时返回非零退出码。
+Docker 首次安装、启动、容器重建和升级不自动下载或更新官方工具，直接使用镜像内基线或已有的有效持久化 overlay。只有显式执行 `jarvis-box tools update` 才会下载并原子更新工具，失败时保留原有效工具；`reset` 回到镜像基线。Docker updater 缺失或执行失败时返回非零退出码。
 
 客户自装的独立用户级工具放到 `${JARVIS_USER_TOOL_BIN:-$HOME/.local/bin}`；显式值必须是绝对目录，Jarvis 会把它加入每个 Agent 进程的 `PATH`，同时保留用户默认的 `.local/bin`。Docker 默认目录为 `/home/jarvis/.local/bin`，随 deployment home 持久化，容器重建后仍保留。需要 `apt` 管理的编译器、头文件或系统共享库通过[客户派生 Docker 镜像](custom-docker-image.md)提供。
 
