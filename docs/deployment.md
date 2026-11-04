@@ -5,7 +5,8 @@
 - 已从私有 `hengshi-jarvis/jarvis-box` GitHub Release 下载并校验 release bundle；GitHub Release 不可用时可从公开 S3 mirror `https://download.hengshi.com/jarvis-box` 下载同名文件，但仍必须使用同一份 `SHA256SUMS` 校验；
 - `JARVIS_IMAGE` 指向本次 release 的正式制品：registry 可达时用 OCI digest 或 `ghcr.io/hengshi-jarvis/jarvis-box:v<version>`，离线镜像包用 `docker load` 后得到的 `hengshi/jarvis-box:v<version>`；
 - 客户批准正式 Agent/provider 权限和可选 Docker socket；
-- 若需要客户 Jarvis，Jarvis repo 已交付可执行 Runtime Foundation。
+
+Company 知识、定制 workflow 和 Runtime Foundation 可在运行时部署后构建、验证并接入，缺失它们不阻塞普通任务。
 
 Jarvis 构建由 Host Runtime Agent + create-jarvis 完成，不依赖 jarvis-box。
 
@@ -26,9 +27,9 @@ Jarvis 构建由 Host Runtime Agent + create-jarvis 完成，不依赖 jarvis-bo
 
 ## Start and identity
 
-首次 onboarding 在 `runtime.env` 保持 `JARVIS_PROVIDER_WRITEBACK_ENABLED=false`。Docker 身份只有下面两条受支持路径，二选一即可。
+首次部署在 `runtime.env` 启用 `JARVIS_ISSUE_POST_CHECK_ENABLED=true` 与 `JARVIS_PROVIDER_WRITEBACK_ENABLED=true`，用户与会话允许名单留空。仅显式选择本地结果测试时关闭回写；该测试不能证明原处回复可用。Docker 身份只有下面两条受支持路径，二选一即可。
 
-**Path A：自动导入宿主机当前用户身份（推荐）。** `start` 会先以当前宿主机用户执行 `auth-import`，把选定的 `gh/glab` 与可移植 Agent 身份导入私有 `auth/`，再启动容器；不接受业务写入。
+**Path A：自动导入宿主机当前用户身份（推荐）。** `start` 会先以当前宿主机用户执行 `auth-import`，把选定的 `gh/glab` 与可移植 Agent 身份导入私有 `auth/`，再启动容器。
 
 ```bash
 scripts/deploy-production.sh /absolute/deployment-home start
@@ -53,7 +54,7 @@ Native 部署没有隔离边界：安装器使用发起安装的现有 OS 用户
 
 ## Jarvis Runtime Foundation
 
-jarvis-box 不负责 Jarvis bootstrap。Host Runtime Agent 使用客户 Jarvis repo 的指令，通过通用 helper 在正式环境内执行：
+此步骤在 Company 知识和 Runtime Foundation 准备好后执行，不是初次使用 Jarvis Box 的前置条件。jarvis-box 不负责 Jarvis bootstrap。Host Runtime Agent 使用客户 Jarvis repo 的指令，通过通用 helper 在正式环境内执行：
 
 ```bash
 scripts/deploy-production.sh /absolute/deployment-home runtime-job \
@@ -64,13 +65,13 @@ scripts/deploy-production.sh /absolute/deployment-home runtime-job <quick-sync-c
 scripts/deploy-production.sh /absolute/deployment-home runtime-job <runtime-foundation-doctor>
 ```
 
-Bootstrap、recovery sync 和宿主调度的全量 sync 必须使用客户 Jarvis 的显式 skip-scheduler 选项。Docker 部署以 host Scheduler Adapter 为权威；若客户 Runtime Foundation 无法禁用容器内 scheduler，onboarding 必须 fail closed。
+Bootstrap、recovery sync 和宿主调度的全量 sync 必须使用客户 Jarvis 的显式 skip-scheduler 选项。Docker 部署以 host Scheduler Adapter 为权威；若客户 Runtime Foundation 无法禁用容器内 scheduler，Foundation 接入必须 fail closed。
 
 Bootstrap 的临时 material 删除后，stable commands、cache、state/log 与 Agent discovery roots 必须仍在持久 Agent HOME 中可用。真实 Agent discovery probe 属于 Jarvis onboarding，不属于 jarvis-box generic probe。
 
 Jarvis-owned host Scheduler Adapter 也调用 `runtime-job`。内部 sync、memory-consolidation、daily-reflection 和 cognitive-evolution command 不调用 Docker。
 
-Runtime Foundation doctor、真实 Agent discovery 与下述 generic verification 通过并得到客户批准后，才把 `runtime.env` 的 `JARVIS_PROVIDER_WRITEBACK_ENABLED` 切为 `true`；只启用已经具备适用 Jarvis workflow 的业务 lane，再执行首个监督任务。
+接入 Company 知识时验证 Runtime Foundation doctor 和真实 Agent discovery。它们验证新增的知识增强，不限制原有任务入口、任务类型或回写；没有适用且已验证的 Company workflow 时，Agent 按当前输入、实时证据和原生工具执行。
 
 ## Generic verification
 
@@ -90,6 +91,8 @@ scripts/deploy-production.sh /absolute/deployment-home verify
 8. container recreation 后 Agent HOME 与 Task/Run state 仍存在。
 
 它不读取 Jarvis repo、校验客户 workflow/repo refs或写 readiness lock。
+
+generic verification 通过后，从每个已接通的 Provider 或 IM 入口执行实际任务，确认 Agent 结果、原工单或会话收到的回复、审计和 workspace 清理。知识构建与其他尚未接通的入口分别继续。
 
 ## Connector and Docker socket
 

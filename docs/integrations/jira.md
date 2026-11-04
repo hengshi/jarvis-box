@@ -21,15 +21,17 @@ Jira 是 work-item provider，与飞书项目、GitLab Issues 和 GitHub Issues 
 ```bash
 JIRA_BASE_URL=https://jira.example.com
 JIRA_PROJECTS=APP,OPS
-JIRA_ISSUE_TYPES=Bug,10003   # 类型名或类型 ID 都认。名字会随触发者语言变，ID 不变（10003 是 Task，10005 是 Bug）
+JIRA_ISSUE_TYPES=10003,10005   # 示例；替换为当前站点接入范围中所有受支持类型的实际稳定 ID
 JIRA_WEBHOOK_SECRET=<shared-secret>
 JIRA_CMD=jira
 JIRA_COMMENT_ARGS=issue,comment,add,{key},--template,{body_file},--no-input
-JARVIS_JIRA_COMMAND_ALLOWED_USERS=alice,bob
+JARVIS_JIRA_COMMAND_ALLOWED_USERS=
 
 # JSON 为 provider -> source scope -> repository[]。一个 work item 可同时关联 GitLab 和 GitHub。
 JARVIS_WORK_ITEM_REPOSITORIES={"jira":{"APP":[{"provider":"gitlab","project":"group/frontend","base_branch":"main"},{"provider":"github","project":"acme/mobile","base_branch":"main"}],"OPS":[{"provider":"gitlab","project":"group/backend"}]}}
 ```
+
+用户允许名单留空时，所有非机器人作者都能使用命令。首次接入还需从实际项目查询受支持工作项类型的稳定 ID，并把这些 ID 全部填入 `JIRA_ISSUE_TYPES`；不要把示例 ID 直接用于其他站点，也不要保留 Bug-only 默认值而误以为 Task/Story 已接通。类型筛选不限制评论 command，但会影响创建事件的 post-check。
 
 JSON 中的 GitLab/GitHub repository 必须分别在 `GITLAB_PROJECTS` / `GITHUB_REPOSITORIES` allowlist 中；Jarvis Box 根据已配置 host 生成 clone URL，不接受配置传入任意 clone endpoint。没有仓库关联时，Jira create/command 仍可以作为 zero-workspace Task 运行和回写原 issue，不会猜测某个 GitLab 项目。旧的 `JIRA_DEFAULT_GITLAB_PROJECT` / `JIRA_GITLAB_PROJECT_MAP` 已移除，存在时服务拒绝启动并给出迁移提示。
 

@@ -18,7 +18,7 @@ Jarvis Box 是 Jarvis 的任务执行运行时。它接收 GitHub、GitLab、IM�
 请用 git clone https://github.com/hengshi-jarvis/create-jarvis 获取最新代码，记录 commit 和提交信息，读取其中的 SKILL.md，然后帮我构建一套 Jarvis。
 ```
 
-Host Agent 会引导你完成资料范围确认、Company Jarvis 构建、Runtime Foundation 安装和 Jarvis Box 正式部署。你只需要在部署阶段选择 Native 或 Docker，不需要自己编写 scheduler 或定时认知工作脚本。
+Host Agent 先确认资料位置和接入信息，部署最新稳定版 Jarvis Box 并接通工作系统与 IM，已验证入口即可使用；随后继续 Company Jarvis 和仓库知识建设，再安装并接入 Runtime Foundation。普通任务不等待完整知识构建。你只需要在部署阶段选择 Native 或 Docker，不需要自己编写 scheduler 或定时认知工作脚本。
 
 已经拥有 Company Jarvis 时，可直接按下载指引安装。正式 release bundle、`SHA256SUMS`、`production-image.json` 和私有 GHCR image 以私有 `hengshi-jarvis/jarvis-box` GitHub Release 为规范来源；衡石下载站提供同名安装包、可用 `docker load` 导入的 Docker 镜像包和 `channels/v1/latest.json` 元数据。公开下载无需 GitHub 账号或 repository access；需要访问规范私有 Release 或源码时再申请 GitHub access。公开仓库只保留产品说明、客户文档和 issue 入口，不提交二进制 artifact。
 

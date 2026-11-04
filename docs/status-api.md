@@ -42,6 +42,7 @@ Workflow Runtime Contract 的 `workflow-result.json` 可报告以下独立于 op
 `GET /status/api/work-items` 一次返回所选来源的全部工作项：
 
 - `items`：所选来源的完整工作项集合。
+- 可选 `include_tasks=0` 省略与 `items[].related_tasks` 重复的顶层 `tasks` 列表，供 Status 页面读取完整工作项时减小响应；默认仍返回 `tasks`，其他字段与 Catalog 版本语义不变。
 - `count` / `total`：该集合的工作项总数，与 `items` 长度一致。
 - 可选 `provider` 筛选 Task 的规范化来源。支持值由服务端 provider 注册信息定义，与页面来源选项一致；包括 `gitlab`、`github`、`jira`、`feishu-project`、`tapd`、`zentao`、`yunxiao-projex`、`yunxiao-codeup`、`im` 和 `jarvis-box`，未注册的筛选值返回 HTTP 400；`lark`、`wecom`、`dingtalk`、`uvim` 等消息来源归入 `im`。response 的 `provider` 返回实际筛选，未筛选时为 `all`。
 - `metrics.historical_accepted_count`、`metrics.started_run_count`、`metrics.active_task_count` 和 `metrics.task_run_trend` 是本机指标；`provider` 筛选只改变工作项列表及其数量，不得改变这些机器级指标。`recorded_task_count` / `recorded_run_count` 只表示当前保留记录。
@@ -54,7 +55,7 @@ Workflow Runtime Contract 的 `workflow-result.json` 可报告以下独立于 op
 - 完整可读账本中，部分完成记录缺少有效耗时时，`completed_runtime_metric` 返回 `status=partial`、已记录耗时合计和本次 `as_of`；两个耗时数值兼容字段返回相同下限。该值不能作为完整精确合计，页面以 `≥` 展示。全部完成记录都缺少有效耗时则为 `unavailable`；无完成记录为 `empty`、值为 0。单条缺少耗时不影响其他指标，也不触发历史任务重跑。
 - `metrics.run_duration_statistics` 返回已结束 Run 的平均耗时、中位耗时、有效样本数、缺失耗时数及按 lane 拆分的同口径统计，详见[运行耗时统计](#运行耗时统计)。
 
-分组与处理责任由同一版本的 TaskView 统一决定，工作项和 feed 不从旧 `monitor_status`、phase 或错误字符串重新分类。磁盘准入等待属于 `doing`、由机器恢复，不计入管理员需要处理数量；后继 Run 成功并完成必需交付后，Task 与工作项可进入 `completed`、`next_actor=none`，旧失败 Run 仍作为历史保留。取消终态同属 `completed` 分组，但 `terminal_outcome=cancelled`，不能当作成功交付。缺失、冲突或未知的安全事实按执行模型保守投影，不由历史状态文案推定完成。
+分组与处理责任由同一版本的 TaskView 统一决定，工作项和 feed 不从旧 `monitor_status`、phase 或错误字符串重新分类。单条持久记录无法安全解释时，只将该条投影为 `projection_availability=incomplete`、`status=needs-attention`、`status_group=needs-human`，不暴露未经证明的 Run/Session，不提供任务修改动作；原文件不改写，健康任务和列表继续可读。该诊断投影不按原始 `running` 文案虚构 current Run；不认识的存储 schema 仍拒绝整个读取并要求使用支持该格式的版本。磁盘准入等待属于 `doing`、由机器恢复，不计入管理员需要处理数量；后继 Run 成功并完成必需交付后，Task 与工作项可进入 `completed`、`next_actor=none`，旧失败 Run 仍作为历史保留。取消终态同属 `completed` 分组，但 `terminal_outcome=cancelled`，不能当作成功交付。缺失、冲突或未知的安全事实按执行模型保守投影，不由历史状态文案推定完成。
 
 `GET /status/api/tasks` 和单 Task detail 返回 Status task projection。默认读路径只读取 Task state 和 bounded Artifact metadata；单 Run progress 只在 exact `TaskView.runs[].prompt_artifact_id` 指向 canonical `prompt.txt` 时投影其 bounded、redacted Run 输入，并把 Runner-owned RunTrace 作为进程输出时间线。Run 输入是真正交给 runtime agent 的当次指令：人机会话可以是用户原文，workflow lane 可以包含服务端生成的契约、运行上下文和主机路径。它不得包含可用 credential、private resume handle 或 raw provider secret，也不得从 native AgentSession 或跨 Run history 补齐。
 

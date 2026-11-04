@@ -22,27 +22,14 @@ GitHub issue/PR URL 在 Task 创建 claim 中登记为规范化 `task-state.subj
 
 ## 配置运行时 env
 
-生产启用 GitHub command lane 前，先确定三类 allowlist：
+启用 GitHub 时，配置实际接入的仓库范围和触发名：
 
 - repo allowlist：哪些 GitHub 仓库允许进入 Jarvis。
 - review repo allowlist：哪些 GitHub 仓库允许 PR review lane；启用 `self-skills-improve` 时，同一范围也约束 GitHub merged PR self-improve admission。
 - shared mention names：哪些文本触发 command lane，例如 `JARVIS_MENTION_NAMES=jarvis,jarvis-box`。
-- command user allowlist：哪些 GitHub 用户允许通过 issue/PR comment 触发 command lane。
+- command user allowlist 是可选收窄设置；新部署留空，允许范围内所有非机器人作者触发命令。
 
-公开 GitHub 仓库必须配置 command user allowlist。GitHub HMAC 只证明 webhook 由 GitHub 发送，不证明评论作者是可信用户；公开仓库中的任意 GitHub 用户都可能产生合法 webhook。GitHub command user allowlist 支持 login 和 immutable numeric user id，生产推荐只写 numeric user id。
-
-有组织成员读取权限时，可用 `gh` 获取成员 login 和 id：
-
-```bash
-gh api "orgs/OWNER/members?per_page=100" --paginate \
-  --jq '.[] | [.login, (.id|tostring)] | @tsv'
-```
-
-如果组织成员列表受限，由组织管理员提供允许触发者 login 后逐个查询：
-
-```bash
-gh api users/LOGIN --jq '.id'
-```
+留空允许名单时，公开仓库中能发表评论的任何非机器人用户也可以触发命令；HMAC 验证、机器人排除和精确 subject 绑定保持生效。客户明确选择收窄范围时才填写 login 或 immutable numeric user id，不把成员清单作为接入前置条件。
 
 把真实配置写入 `JARVIS_ENV_FILE` 指向的运行时 env 文件，不要覆盖 sample：
 
@@ -52,14 +39,14 @@ REVIEW_GITHUB_REPOSITORIES=owner/repository
 JARVIS_GITHUB_WEBHOOK_ENABLED=true
 GITHUB_WEBHOOK_SECRET=<shared-secret>
 JARVIS_MENTION_NAMES=jarvis,jarvis-box
-JARVIS_GITHUB_COMMAND_ALLOWED_USERS=301658716,2253581,1201463
+JARVIS_GITHUB_COMMAND_ALLOWED_USERS=
 GH_CMD=gh
 ```
 
 `REVIEW_GITHUB_REPOSITORIES` 未设置时复用 `GITHUB_REPOSITORIES`。它不能包含不在 `GITHUB_REPOSITORIES` 里的仓库。`JARVIS_SELF_SKILLS_IMPROVE_ENABLED=true` 时，GitHub merged PR 的 repo-local `self-skills-improve` admission 复用该 review 仓库范围，不需要额外的 GitHub self-improve 仓库变量；GitLab MR 子集仍由 `JARVIS_SELF_IMPROVE_GITLAB_PROJECTS` 控制。
 `JARVIS_GITHUB_WEBHOOK_ENABLED` 默认为 `true`。若 GitHub 仓库只作为飞书项目或 Jira 工作项的受控 Workspace 目标，设置为 `false`；此时 GitHub webhook endpoint 返回 `404`，也不要求配置 `GITHUB_WEBHOOK_SECRET`，但仓库仍必须位于 `GITHUB_REPOSITORIES` allowlist 中。
 `JARVIS_MENTION_NAMES` 是 ChatBridge、GitLab command lane 和 GitHub command lane 共享触发名。每个名字在 GitLab/GitHub 中同时支持 `@name` 和 `/name`；未设置时默认为 `jarvis,jarvis-box`。
-`JARVIS_GITHUB_COMMAND_ALLOWED_USERS` 是 GitHub issue/PR comment command lane 触发人 allowlist；GitHub 部署建议使用 numeric user id。GitLab note command lane 的触发人限制由 `JARVIS_GITLAB_COMMAND_ALLOWED_USERS` 单独配置。
+`JARVIS_GITHUB_COMMAND_ALLOWED_USERS` 留空时不限制 GitHub issue/PR comment command lane 的非机器人触发人。客户选择限制时支持 login 和 numeric user id。GitLab note command lane 的可选触发人限制由 `JARVIS_GITLAB_COMMAND_ALLOWED_USERS` 单独配置。
 
 ## 配置 GitHub webhook
 
@@ -141,12 +128,12 @@ PR review 不按 marker 更新旧 bot comment。新建 review comment 返回 404
 2. 公网入口 smoke：从生产机器外部访问 `https://<jarvis-public-url>/webhooks/github`，确认 HTTPS、反向代理和 jarvis-box 串通，并确认 `/server/api/*` 与公网 `:8787` 不可访问。
 3. GitHub delivery smoke：在 GitHub webhook 页面发送 ping，或用 `gh api "repos/OWNER/REPO/hooks/HOOK_ID/pings" -X POST` 触发 ping，再查看最新 delivery。ping 事件应返回 2xx，jarvis-box body 通常包含 `github_event_not_supported`，且不会启动 agent。
 4. 真实 issue post-check 闭环：创建 allowlist 仓库的测试 issue，确认 `issues/opened` 启动且只启动一个 `post-check` Task，普通 edited/labeled 事件不会重跑，最终评论写回原 issue。
-5. 真实 command 闭环：在 allowlist 仓库的测试 issue 或 PR 中，用 allowlist 用户评论 `/jarvis summarize this PR` 或配置的 mention 名称。打开 `/status` 确认出现 `source=github` work item，等待 GitHub issue/PR 出现 Jarvis 评论。
+5. 真实 command 闭环：在接入仓库的测试 issue 或 PR 中，由不同非机器人用户评论 `/jarvis summarize this PR` 或配置的 mention 名称。允许名单留空时均应触发任务；打开 `/status` 确认出现 `source=github` work item，并核对原 issue/PR 中的 Jarvis 评论。
 6. 真实 follow-up 闭环：在 allowlist 仓库的测试 PR 中创建 changes-requested review、普通 review 正文或 inline review comment；若使用 fork PR，先确认 Jarvis 运行身份可推送该 head repository source branch。确认 `/status` 出现 `lane=followup`，PR 中只有一条带 `jarvis-box-followup-status` marker 的状态评论，任务完成后该评论从“执行中”更新为“已完成”。
 
 检查 artifact 时，不应出现 `GITHUB_WEBHOOK_SECRET`、`GH_TOKEN`、`GITHUB_TOKEN` 或 raw provider token。若真实闭环没有启动 agent，优先检查：
 
-- `JARVIS_GITHUB_COMMAND_ALLOWED_USERS` 是否包含触发评论者的 GitHub numeric user id。
+- `JARVIS_GITHUB_COMMAND_ALLOWED_USERS` 是否被意外填成非空限制；留空不要求提供用户 ID。
 - `GITHUB_REPOSITORIES` 是否包含 `owner/repo`。
 - webhook 是否选择了 `issue_comment` 事件。
 - follow-up 测试是否同时选择了 `pull_request_review` 和 `pull_request_review_comment`；fork PR 还要检查运行身份对 head repository source branch 的推送权限。

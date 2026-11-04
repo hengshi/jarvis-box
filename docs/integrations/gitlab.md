@@ -40,7 +40,7 @@ Issue、MR、command 和 review 的最终评论如果返回 HTTP 404，Jarvis Bo
 
 MR review 不按 marker 更新旧 bot note。新建 review note 返回 404，且目标项目检查成功时，Task 才进入 subject-not-found 终态。目标项目检查失败、鉴权错误和配置错误仍是普通写回失败，Status 会保留 `needs-attention` 供排查。
 
-MR follow-up 不限于特定客户 workflow 创建的 MR，也不搜索 `bugfix-result.json`。Runtime Agent 通过原生 discovery 选择适用的客户或 repo-local workflow。
+MR follow-up 不限于特定客户 workflow 创建的 MR，也不搜索 `bugfix-result.json`。Runtime Agent 优先通过原生 discovery 采用适用、已验证的客户或 repo-local workflow；缺少这些指导时仍按实际评论、代码与验证入口执行。
 
 Provider terminal 事件仅匹配不可变的 `task-state.subject` 元组与 Task 已登记的 `workspaces[]`。分支名、artifact 路径和目录扫描永不建立所有权。
 
@@ -67,7 +67,7 @@ jarvis-box test 42 open "agent smoke" group/project
 真实 onboarding 证明应使用批准的测试 subject 并确认：
 
 1. provider delivery 创建了一个 Task 和一个 Run；
-2. Runtime Agent 从持久 Agent HOME 中原生发现了客户 workflow；
+2. Runtime Agent 执行实际任务；存在适用且已验证的客户 workflow 时原生发现并采用，没有 Company 知识时也能直接读取证据完成评估；
 3. `workflow-input.json`、`workflow-result.json` 和 `workflow-actions.json` 指向同一个精确 subject；
 4. 请求的安全 writeback 出现在同一 provider subject 上；
 5. 重放不会重复已完成的 action。

@@ -12,7 +12,7 @@ Company Jarvis 建设与运行时安装分别进行。可访问 GitHub 时，让
 请运行 git clone https://github.com/hengshi-jarvis/create-jarvis create-jarvis，读取本地 create-jarvis/SKILL.md，然后帮我构建并部署一套 Jarvis。
 ```
 
-Host Agent 会盘点授权的数据源和代码仓库，建设客户拥有的 Jarvis repo、workflow 与 Runtime Foundation，然后引导选择部署模式。
+Host Agent 先收集授权资料位置和连接信息，部署最新稳定版 Jarvis Box 并接通工作系统与 IM；已验证入口即可使用。随后继续建设客户拥有的 Jarvis repo、repo-local skills 与 workflow，再安装并接入 Runtime Foundation。完整知识构建不阻塞普通任务。
 
 ## 2. 已经有 Jarvis
 
@@ -47,10 +47,11 @@ jarvis-box stop
 
 ## 4. Docker 上线
 
-准备 deployment home，填写 release bundle 提供的 `deployment.env`、`runtime.env` 和可选 `connector.env`。首次在 `runtime.env` 保持回写关闭：
+准备 deployment home，填写 release bundle 提供的 `deployment.env`、`runtime.env` 和可选 `connector.env`。首次在 `runtime.env` 启用任务与回写，用户和会话允许名单留空：
 
 ```dotenv
-JARVIS_PROVIDER_WRITEBACK_ENABLED=false
+JARVIS_ISSUE_POST_CHECK_ENABLED=true
+JARVIS_PROVIDER_WRITEBACK_ENABLED=true
 ```
 
 执行：
@@ -65,23 +66,17 @@ home=/absolute/deployment-home
 
 `start` 自动导入当前 Host 用户的必要认证。多 GitHub 账号时在 `deployment.env` 选择明确的 machine user；不要进入容器复制 Host credential store。
 
-随后由客户 Jarvis 的 Runtime Foundation 在正式环境中完成 bootstrap、sync、doctor 和真实 Agent discovery。全部通过并得到客户批准后，再把 `runtime.env` 的 `JARVIS_PROVIDER_WRITEBACK_ENABLED` 切为 `true`：
-
-```dotenv
-JARVIS_PROVIDER_WRITEBACK_ENABLED=true
-```
-
-只启用已经具备适用 workflow 的 provider lane。
+验证实际任务执行和原处回复后即可使用。客户知识随后交付，由 Runtime Foundation 完成 bootstrap、sync、doctor 和真实知识 discovery；尚未安装 Foundation 时 prepare hook 留空，缺少 Company 或 repo-local skills 不阻塞普通任务。Company 知识投递使用现有部署，不重建 Jarvis Box。
 
 ## 5. 什么算真正上线
 
 必须同时看到：
 
 1. `health`、`jarvis-box doctor` 和 Agent smoke 通过；
-2. Runtime Agent 能发现客户 Jarvis workflow；
+2. Runtime Agent 能执行实际请求；没有 Company/repo-local 知识时也能直接调查和完成任务；
 3. 一条真实 provider 或 IM 任务完成 ingress、Task/Run、workspace、Agent 和 writeback；
 4. Task 终态后 workspace 与外部资源按所有权正确清理。
 
-Generic health 通过不等于客户 workflow 已经可用。
+Generic health 通过不等于任务与回复链路已可用。Company 定制 workflow 的验证另行记录，不冒充完整知识建设已完成。
 
 日常操作见 [运维入口](../operations.md)。Docker 详细合同见 [部署参考](../deployment.md)，变量解释见 [配置参考](../configuration.md)。

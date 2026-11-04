@@ -55,7 +55,8 @@ These are env-file values, not instructions to export shell variables as the dur
 | Connect ZenTao 21 work items | `ZENTAO_BASE_URL`, `ZENTAO_ACCOUNT`, `ZENTAO_PASSWORD`, `JARVIS_ZENTAO_WEBHOOK_SECRET`, `ZENTAO_ALLOWED_SCOPES`, `ZENTAO_ALLOWED_USERS` | `docs/integrations/zentao.md`; scopes are `product:<id>` for bugs/stories/cases and `execution:<id>` for tasks |
 | Associate a work item with repositories | `JARVIS_WORK_ITEM_REPOSITORIES` | `docs/configuration.md`; retain provider scope and allowlists |
 | Disable runtime-owned provider writeback | `JARVIS_PROVIDER_WRITEBACK_ENABLED` | `docs/configuration.md`; does not sandbox an Agent's own CLI credentials |
-| Enable issue post-check / merged-change self-improvement | `JARVIS_ISSUE_POST_CHECK_ENABLED`, `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` and documented scope subsets | Install the Company/repo workflow first; a switch does not provide a workflow |
+| Enable issue post-check | `JARVIS_ISSUE_POST_CHECK_ENABLED` | `docs/execution-model.md`; Company/repo skills are optional guidance, and ordinary assessment can execute before knowledge construction |
+| Enable merged-change self-improvement | `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` and documented scope subsets | Configure the applicable repository improvement workflow; a switch does not supply repository-specific instructions |
 | Add a customer executable | `JARVIS_USER_TOOL_BIN`, `jarvis-box tools path/status` | `docs/cli.md`; use a derived Docker image for OS libraries/compiler packages |
 | Use an automation browser | `AGENT_BROWSER_EXECUTABLE_PATH` | `docs/configuration.md`; managed browser/socket belong to a Run, never desktop Chrome |
 | Update Company skills before a new Task's Agent starts | `JARVIS_AGENT_RUNTIME_PREPARE_COMMAND`, `JARVIS_AGENT_RUNTIME_PREPARE_TIMEOUT_SECONDS` | Company Runtime Foundation owns the executable, repo/ref, locking and discovery roots |
