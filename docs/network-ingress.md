@@ -1,55 +1,61 @@
-# Network ingress
+# 网络入口与来源验证
 
-正式 Docker 部署在容器内监听 `0.0.0.0:8787`，并默认将宿主机 `0.0.0.0:8787` 发布到该端口，受信任网络中的其他机器可直接使用宿主机地址访问。只允许本机 reverse proxy 或 tunnel 访问时，在 `deployment.env` 中显式设置 `JARVIS_BIND_ADDRESS=127.0.0.1`。
+本页面向公开 Jarvis Box webhook 或接入 IM 的部署管理员。先决定谁能从网络访问服务，再逐一配置来源认证、允许范围和真实闭环验证。
 
-`0.0.0.0` 只控制端口发布，不提供 TLS、认证或防火墙。Operator 必须用宿主机防火墙、private network 或带访问控制的 TLS reverse proxy 限制入口；部署 release 不自动创建公网入口。
+## 先选择端口暴露范围
 
-从旧 release 升级时，部署不会覆盖 Operator 已有的 `deployment.env`。如果该文件仍是 `JARVIS_BIND_ADDRESS=127.0.0.1`，将其改为 `JARVIS_BIND_ADDRESS=0.0.0.0`，再执行 `scripts/deploy-production.sh <deployment-home> compose up -d --force-recreate jarvis-box` 使新的宿主机发布地址生效。
+正式 Docker 在容器内监听 `0.0.0.0:8787`，默认将宿主 `0.0.0.0:8787` 发布到该端口，受信任网络的其他机器可访问。若只让本机反向代理或 tunnel 访问，在 `deployment.env` 设置：
 
-## GitLab/GitHub/Jira
+```dotenv
+JARVIS_BIND_ADDRESS=127.0.0.1
+```
 
-每个 provider 必须配置：
+`0.0.0.0` 只决定端口发布，不提供 TLS、认证或防火墙。用宿主防火墙、private network 或带访问控制的 TLS reverse proxy 限制入口；release 不会自动创建公网入口。
 
-1. project/repository allowlist；
-2. command author allowlist（公开仓库尤其需要）；
-3. 正式 Agent identity 的 provider-native auth；
-4. callback public URL；
-5. 一条真实 webhook 与 writeback probe。
+从旧 release 升级时，部署不会覆盖已有 `deployment.env`。若仍为 `JARVIS_BIND_ADDRESS=127.0.0.1` 而需要受信任网络访问，改为 `0.0.0.0` 后执行：
 
-**Webhook secret 分两类，两类对「未配置」的反应不同，这是有意为之：**
+```bash
+scripts/deploy-production.sh <deployment-home> compose up -d --force-recreate jarvis-box
+```
 
-- **明文 token 入口**：GitLab 的 `X-Gitlab-Token`，以及不带 `X-Hub-Signature` 的 Jira `X-Jira-Token`。secret 为空时不校验，请求直接放行。GitLab、Jira 通常部署在内网，留空是允许的部署选择；确实需要校验来源时再配 `GITLAB_WEBHOOK_SECRET`。
-- **签名入口**：GitHub 的 HMAC，以及飞书项目。secret 未配置时一律拒绝（飞书项目端点直接返回 503 `feishu_project_not_configured`）。这一类入口面向 SaaS，不允许裸奔。
+## 工作系统 webhook
 
-带 `X-Hub-Signature` 的 Jira 请求走签名校验，此时明文 token 不再参与判定。
-
-GitHub/GitLab allowlist 由 operator 在 `runtime.env` 中明确配置。jarvis-box 不从 Jarvis repo 推导或校验 fleet。
+每个 GitLab、GitHub 或 Jira 接入都需要：项目/仓库 allowlist、命令作者 allowlist、正式 Agent 的 provider-native auth、可访问的 callback public URL，以及一条真实 webhook + writeback 验证。
 
 ```dotenv
 GITLAB_HOST=gitlab.example.com
 GITLAB_PROJECTS=group/project
 REVIEW_GITLAB_PROJECTS=group/project
-GITLAB_WEBHOOK_SECRET=   # 留空 = 不校验来源，内网部署可接受
+GITLAB_WEBHOOK_SECRET=   # 留空：不校验来源；仅适合可接受的内网部署
 
 GITHUB_REPOSITORIES=owner/repository
 REVIEW_GITHUB_REPOSITORIES=owner/repository
-GITHUB_WEBHOOK_SECRET=   # 留空 = 拒绝所有入站事件，启用端点前必须填
+GITHUB_WEBHOOK_SECRET=   # 留空：拒绝所有 GitHub 入站事件
 ```
 
-## uv-im-connector
+来源密钥按协议分两类：
 
-uv-im-connector 与 jarvis-box 在 private Compose network 通信：
+| 入口 | secret 未配置时的行为 |
+| --- | --- |
+| GitLab `X-Gitlab-Token`；未带 `X-Hub-Signature` 的 Jira `X-Jira-Token` | 不校验并放行。GitLab/Jira 常部署于内网；需要校验时配置 `GITLAB_WEBHOOK_SECRET` 或 Jira secret。 |
+| GitHub HMAC；飞书项目 | 拒绝。飞书项目 endpoint 返回 `503 feishu_project_not_configured`。 |
+
+带 `X-Hub-Signature` 的 Jira 请求只做签名校验，不再使用明文 token。Jarvis Box 不会从客户 Jarvis repo 推导或验证 allowlist。
+
+## IM：通过 uv-im-connector
+
+使用受管 `uvim` profile 时，connector 与 Jarvis Box 在 private Compose network 中通信：
 
 ```text
 IM provider
-  → uv-im-connector (provider credential + normalization)
-  → jarvis-box ChatBridge (business allowlist + Task/Run)
-  → high-authority Agent
+  → uv-im-connector（provider credential 与事件规范化）
+  → jarvis-box ChatBridge（业务 allowlist 与 Task/Run）
+  → Runtime Agent
   → jarvis-box
   → uv-im-connector outbound API
 ```
 
-`runtime.env` 用 `JARVIS_CONNECTOR_PROFILE=uvim` 同时启用 connector service 与 runtime client；`connector.env` 持有 provider 原生 secrets；`runtime.env` 中相关配置为：
+在 `runtime.env` 设置：
 
 ```dotenv
 JARVIS_CONNECTOR_PROFILE=uvim
@@ -61,18 +67,18 @@ JARVIS_CHAT_ALLOWED_CONVERSATIONS=
 JARVIS_CHAT_REQUIRE_MENTION=true
 ```
 
-正式 generic verify 检查 `/health`、authenticated `/v1/meta` 和 service/protocol version；真实 canary conversation 由 onboarding 单独记录。
+`connector.env` 保存 provider 原生 secrets。常规 verify 会检查 `/health`、经认证的 `/v1/meta` 以及 service/protocol version；它不取代实际 canary conversation。
 
-## Trust boundaries
+共享 hub 使用 `uvim-external`，不启动本地 connector。每个 Box 的 URL 和独有 scoped client token 只保存在自己的私有 `runtime.env`，不复制 hub 凭据或状态。hub 必须按 token 隔离事件、回复、资源和身份关联；Box 只看到该调用方的 meta 与事件。配置和验证步骤见 [IM 接入](integrations/im.md#管理员-配置-jarvis-box-与-connector)。
 
-- jarvis-box Agent identity：代码/source/writeback 高权限；
-- uv-im-connector identity：IM provider apps 与 message/resources；
-- reverse proxy/tunnel identity：network exposure；
-- webhook secret：验证入口，不等于 writeback identity；
-- Docker socket：与 network ingress 无关，启用后等价宿主 root。
+## 审查信任边界并验收
 
-不要将 Host home、Agent SSH socket、connector env 或 Docker socket隐式挂进其他边界。
+- Jarvis Box Agent identity：代码、来源访问和 writeback 的高权限身份；
+- uv-im-connector identity：IM provider app 与消息/资源；
+- reverse proxy/tunnel identity：网络暴露；
+- webhook secret：只证明入口来源，不等同于 writeback identity；
+- Docker socket：与网络入口无关，启用即等价宿主 root。
 
-## 验收
+不要把 Host HOME、Agent SSH socket、connector env 或 Docker socket 隐式挂到另一条边界。
 
-网络可达不等于闭环完成。至少验证：签名入口在 secret 缺失或签名无效时拒绝、明文 token 入口在配了 secret 时错误 token 拒绝、越界 repo/user/conversation 拒绝、合法事件只建一个 Task、Runtime Agent 能原生发现所需 Jarvis skill、结果写回原始 thread/issue、secret 不出现在日志与 artifacts。
+网络可达不代表闭环完成。至少证明：缺 secret 或无效签名的签名入口被拒绝；已配置 secret 的明文 token 入口拒绝错误 token；越界 repo/user/conversation 被拒绝；合法事件只创建一个 Task；Agent 能发现所需 Jarvis skill；结果回到原 thread/issue；secret 没有进入日志或 artifacts。

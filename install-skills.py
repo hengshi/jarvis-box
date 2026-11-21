@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import stat
 import sys
@@ -35,8 +36,7 @@ def tree(path: Path) -> dict[str, str]:
     return result
 
 
-def discovery_root(value: str) -> Path:
-    candidate = Path(value).expanduser()
+def discovery_root(candidate: Path) -> Path:
     if not candidate.is_absolute():
         raise ValueError(f"skills root must be absolute: {candidate}")
     if candidate.is_symlink():
@@ -93,25 +93,57 @@ def main() -> int:
                         help="verified existing Agent discovery root; repeat for each Agent")
     parser.add_argument("--check", action="store_true", help="compare installed contents without writing")
     args = parser.parse_args()
+    stage = "validate-source-pack"
+    path = SOURCE
+    may_have_written = False
+    next_check = f"ls -ld -- {shlex.quote(str(SOURCE))}"
     try:
         expected = {name: tree(SOURCE / name) for name in SKILLS}
-        roots = list(dict.fromkeys(discovery_root(value) for value in args.skills_root))
+        roots = {}
+        stage = "validate-discovery-root"
+        for value in args.skills_root:
+            path = Path(value)
+            next_check = "verify the requested home directory and locate the absolute Agent discovery directory"
+            try:
+                path = path.expanduser()
+            except RuntimeError as error:
+                raise ValueError("skills root names an unavailable home directory; use the absolute Agent discovery path") from error
+            next_check = f"ls -ld -- {shlex.quote(str(path))}"
+            roots[discovery_root(path)] = None
         # Reject an invalid later root before changing any earlier root.
+        stage = "validate-destination-skills"
         for root in roots:
+            path = root
+            next_check = f"ls -la -- {shlex.quote(str(root))}"
             validate_destination(root)
         if args.check:
-            mismatches = [str(root / name) for root in roots for name in SKILLS
-                          if not (root / name).is_dir() or tree(root / name) != expected[name]]
+            stage = "compare-installed-skills"
+            mismatches = []
+            for root in roots:
+                path = root
+                next_check = f"ls -la -- {shlex.quote(str(root))}"
+                for name in SKILLS:
+                    destination = root / name
+                    if not destination.is_dir() or tree(destination) != expected[name]:
+                        mismatches.append(str(destination))
             print(json.dumps({"status": "different" if mismatches else "ok",
                               "different": mismatches}, ensure_ascii=False))
             return 1 if mismatches else 0
+        stage = "install-skills"
+        paths = " ".join(shlex.quote(str(root)) for root in roots)
+        next_check = f"ls -la -- {paths}"
         for root in roots:
+            path = root
+            may_have_written = True
             install(root)
         print(json.dumps({"status": "installed", "skills": SKILLS,
                           "skills_roots": [str(root) for root in roots]}, ensure_ascii=False))
         return 0
     except (OSError, ValueError) as error:
-        print(f"Jarvis Box skill installation failed: {error}", file=sys.stderr)
+        state = "some requested skills may already have changed" if may_have_written else "no skills were changed"
+        print(f"Jarvis Box skill installation failed at {stage} (path {str(path)!r}): {error}",
+              file=sys.stderr)
+        print(f"State: {state}.\nRead-only check: {next_check}", file=sys.stderr)
         return 1
 
 

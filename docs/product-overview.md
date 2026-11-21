@@ -1,29 +1,36 @@
 # 产品概览
 
-Jarvis 生态分开三个责任：
+Jarvis Box 是客户部署中负责接收工作、运行高权限 Runtime Agent、保存 Task/Run 与 workspace、把结果写回来源系统并提供状态观测的运行产品。它适合已经明确由谁授权、从哪里接收工作、结果写到哪里的场景。
 
-- create-jarvis 指导 Host Runtime Agent 建设客户拥有的 Jarvis repo、Runtime Foundation 和 repo-local skills；
-- Jarvis Runtime Foundation 把 Jarvis 能力维护到目标 Agent HOME 的原生 discovery roots；
-- jarvis-box 提供高权限 Runtime Agent、Task/Run、workspace、provider loop、writeback 和可观测状态。
+## 它与其他 Jarvis 组件的分工
 
-uv-im-connector 提供独立 IM provider 连接，固定版本 binary 随 jarvis-box image 交付但使用独立 credential/state boundary。
+| 组件 | 负责什么 |
+| --- | --- |
+| create-jarvis | 引导 Host Runtime Agent 建设客户拥有的 Jarvis repo、repo-local skills 和工作流。 |
+| Jarvis Runtime Foundation | 将 Jarvis 能力维护到目标 Agent HOME 的原生 discovery roots。 |
+| Jarvis Box | 执行 Task/Run、workspace、provider loop、writeback 和状态观测。 |
+| uv-im-connector | 独立连接 IM provider；它随 Jarvis Box image 交付固定版本 binary，但拥有独立的 credential 和 state boundary。 |
 
-jarvis-box 不是 construction installer，也不消费 Jarvis repo。它不 clone/pull/mount/validate/inject Jarvis；Agent 使用其原生 skill discovery。
+Jarvis Box 不是 construction installer，也不消费客户 Jarvis repo。它不会 clone、pull、mount、validate 或注入 Jarvis；Runtime Agent 按自身原生 skill discovery 使用已经安装的能力。
 
-## Provider loops
+## 可以接收什么工作
 
-| Source | Ingress | Writeback |
-|---|---|---|
-| GitLab | issue/MR/note webhook | comments, branch/MR, CI queries |
-| GitHub | issue/PR/comment webhook | issue/PR writeback |
-| Jira | issue webhook | comment and code-delivery bridge |
-| 飞书项目 | 工作项与评论 webhook | 原工作项评论及代码仓库关联 |
-| TAPD | 缺陷/需求/任务与评论 webhook | 原对象评论及代码仓库关联 |
-| 禅道 OSS 21 | 缺陷/用户故事/任务/用例与评论 webhook | 原对象评论及代码仓库关联 |
-| 云效 Projex | 保留事件 API 适配，平台原生自动触发尚未完成 | 原工作项评论及代码仓库关联；API 回放不证明自动派单 |
+| 来源 | 入口 | 结果去向 |
+| --- | --- | --- |
+| GitLab | issue、MR、note webhook | 原 issue/MR 评论、分支/MR 与 CI 查询 |
+| GitHub | issue、PR、comment webhook | 原 issue/PR 写回 |
+| Jira | issue webhook | 原 issue 评论与已关联代码仓库 |
+| 飞书项目 | 工作项与评论 webhook | 原工作项评论与已关联代码仓库 |
+| TAPD | 缺陷、需求、任务和评论 webhook | 原工作项评论与已关联代码仓库 |
+| 禅道 OSS 21 | Bug、用户故事、任务、用例和评论 webhook | 原工作项评论与已关联代码仓库 |
+| 云效 Projex | 保留事件 API 适配 | 原工作项评论与已关联代码仓库；平台原生自动触发尚未完成 |
 | 云效 Codeup | MR 或 commit 的 Note Hook 评论指令 | 对应 MR patchset 或原 commit 评论 |
-| IM | uv-im-connector events | connector message/resource API |
+| IM | uv-im-connector event | connector message/resource API |
 
-入口由 operator 配置的允许清单约束，来源认证遵循各平台合同：GitHub 签名入口缺密钥也拒绝，飞书项目缺配置不启用；GitLab/Jira 明文 token 入口保留其公开的无密钥兼容行为，Jira 带签名时只验签。其他平台使用各自必需的接入凭据，见[网络入口](network-ingress.md)及对应接入文档。Runtime Foundation/Jarvis 路由发生在 Agent 内部，而非通过 jarvis-box context resolver。
+入口始终受 operator 配置的允许清单约束。GitHub 的签名入口缺少密钥时拒绝；飞书项目缺少配置时不启用。GitLab 和 Jira 的明文 token 入口保留公开的无密钥兼容行为；Jira 若带签名，只校验签名。具体的公开网络与认证规则见 [网络入口](network-ingress.md) 和相应接入文档。
 
-新客户让 Host Runtime Agent 读取 create-jarvis 来构建 Jarvis。Docker onboarding 后，`/status` 在一个工作空间内按“累计产出与交付质量 → 当前工作 → 已完成工作”组织信息，右侧继续提供现有 Task/Run workbench。页面级 Provider 按实际支持的来源筛选工作项；GitLab / GitHub 以当前 `glab` / `gh` 登录账号作为各自 actor，独立展示账号创建以来的合并交付、未发现人工纠正、发现人工纠正和证据可信度，不需要额外配置 Jarvis username，也不跨 provider 聚合。其他工作项平台和消息连接当前不套用代码交付指标；这些指标也不是终端客户业务验收或货币 ROI 的 source of truth。历史起点的进度和恢复步骤见 [Delivery Metrics 历史起点](delivery-metrics.md)。
+## 上线后能看到什么
+
+`/status` 和 `/status/terminal` 都读取同一套 Task/Run 后端。空间页按累计产出与交付质量、当前工作、已完成工作组织信息；终端工作台适合按任务归属连续阅读 Run 并在同一会话继续。两页各自保存选择、草稿和阅读位置。
+
+GitLab 和 GitHub 的交付指标分别以当前 `glab`、`gh` 登录账号为 actor，显示账号创建以来的合并交付、人工纠正和证据可信度；不需要另配 Jarvis username，也不跨 provider 汇总。其他工作项平台与消息渠道目前不提供这些代码交付指标，它们也不是客户业务验收或货币 ROI 的事实来源。恢复历史分析请见 [Delivery Metrics 历史起点](delivery-metrics.md)。

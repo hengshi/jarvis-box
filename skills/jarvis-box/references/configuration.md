@@ -18,8 +18,8 @@ These fields belong to Jarvis Box's effective runtime env, not connector provide
 | Select notification transport | `JARVIS_NOTIFY_PROVIDER`, `JARVIS_NOTIFY_CONNECTOR` | Provider plus optional connector instance; resolve connector metadata when several exist. Do not use legacy `*_CHANNEL` variables |
 | Select completion recipients | `JARVIS_COMMAND_NOTIFY_RECIPIENT_MODE` | Inspect the matching release's supported values; default `trigger_author`. Do not guess recipient IDs or send a probe without an authorized target |
 | Restrict IM users/chats or require a mention | `JARVIS_CHAT_ALLOWED_USERS`, `JARVIS_CHAT_ALLOWED_CONVERSATIONS`, `JARVIS_CHAT_REQUIRE_MENTION` | Use provider/connector-scoped identities; do not widen access as a side effect of changing wording |
-| Enable the connector | `JARVIS_CONNECTOR_PROFILE` | Empty or `uvim`; retaining only a URL does not enable it |
-| Connect Jarvis Box to UVIM | `JARVIS_UV_IM_CONNECTOR_URL`, `JARVIS_UV_IM_CONNECTOR_TOKEN`, `JARVIS_UV_IM_CONNECTOR_NAME` | Jarvis-to-connector access. Native provider credentials remain in the connector's env |
+| Enable the connector | `JARVIS_CONNECTOR_PROFILE` | Empty disables IM; `uvim` manages a local companion; `uvim-external` uses an operator-managed hub. Retaining only a URL does not enable it |
+| Connect Jarvis Box to UVIM | `JARVIS_UV_IM_CONNECTOR_URL`, `JARVIS_UV_IM_CONNECTOR_TOKEN`, `JARVIS_UV_IM_CONNECTOR_NAME` | Jarvis-to-connector access. External mode requires a unique nonempty scoped client token and never consumes local provider credentials |
 
 Empty template values restore built-in defaults. The three `JARVIS_CHAT_*_REPLY_TEMPLATE` fields use Go formatting: preserve the required `%s` slots in order, and write a literal percent as `%%`. Extra/missing slots, stray `%`, or other format verbs fail startup. The completion title is different: `%s` would remain literal text there.
 
@@ -46,6 +46,8 @@ These are env-file values, not instructions to export shell variables as the dur
 | Goal | First supported surface / fields | Read next |
 | --- | --- | --- |
 | Change default Agent | `jarvis-box agent current`, `agent list`, `agent set <agent>` | `docs/runtime-agents.md`, `jarvis-box agent --help` |
+| Edit or disable appended provider prompts | `$JARVIS_RUNTIME_ROOT/config/prompts/*.md`; edits apply when the operation next loads the prompt, empty files disable that addition, upgrades preserve edits | `docs/configuration.md`, `config/prompts/`; CLI operations follow the user task and native account permissions |
+| Edit automatic MR/PR review instructions and angles | `config/prompts/mr-review.md`, `config/prompts/mr-review-angles.md`, and `config/prompts/mr-review-response.md`; each configured angle launches one reviewer in the next new review round. Maintenance resumes a single-session review in its existing session. | `docs/configuration.md#configprompts` |
 | Change models or an Agent's launch arguments | Agent-native configuration; selected Agent's command/prefix-argument fields in the matching env sample | `docs/runtime-agents.md`, Agent's own help; Agent name does not identify its billing provider |
 | Use a separate Agent for delivery analysis | `agent set --scope delivery-metrics <agent>` / `agent unset --scope delivery-metrics` | `docs/cli.md` |
 | Stop starting new delivery analyses | `JARVIS_DELIVERY_METRICS_ENABLED` | `docs/delivery-metrics.md`; existing Runs/Continue are separate |

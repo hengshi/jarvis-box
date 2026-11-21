@@ -1,0 +1,77 @@
+import { defineConfig } from 'vitepress'
+
+export default defineConfig({
+  lang: 'zh-CN',
+  title: 'Jarvis Box',
+  description: '把任务交给 Jarvis，在原来的工作系统与会话中得到结果。',
+  base: '/docs/',
+  themeConfig: {
+    nav: [
+      { text: '使用场景', link: '/guide/scenarios' },
+      { text: '开始使用', link: '/guide/getting-started' },
+      { text: '部署与运维', link: '/operations' },
+      { text: '参考', link: '/configuration' },
+    ],
+    sidebar: [
+      { text: '认识与上手', items: [
+        { text: '文档导览', link: '/README' },
+        { text: 'Jarvis Box 是什么', link: '/product-overview' },
+        { text: '使用场景', link: '/guide/scenarios' },
+        { text: '安装与首次使用', link: '/guide/getting-started' },
+        { text: '让 Agent 协助配置', link: '/agent-skills' },
+      ] },
+      { text: '日常使用', items: [
+        { text: '在 IM 中交办与继续', link: '/integrations/im' },
+        { text: '终端工作台与状态页', link: '/status-ui' },
+        { text: '工作项处理与回复', link: '/guide/provider-loop' },
+        { text: '定时任务', link: '/scheduled-jobs' },
+        { text: '交付统计与历史分析', link: '/delivery-metrics' },
+      ] },
+      { text: '接入工作系统', collapsed: true, items: [
+        { text: 'GitHub', link: '/integrations/github' },
+        { text: 'GitLab', link: '/integrations/gitlab' },
+        { text: 'Jira', link: '/integrations/jira' },
+        { text: 'TAPD', link: '/integrations/tapd' },
+        { text: '禅道', link: '/integrations/zentao' },
+        { text: '云效', link: '/integrations/yunxiao' },
+        { text: '飞书项目', link: '/integrations/feishu-project' },
+      ] },
+      { text: '部署与维护', collapsed: true, items: [
+        { text: '日常运维与排障', link: '/operations' },
+        { text: 'Docker 部署', link: '/deployment' },
+        { text: '网络与访问保护', link: '/network-ingress' },
+        { text: '安全边界', link: '/guide/security' },
+        { text: '多实例', link: '/multi-instance' },
+        { text: '终端性能与硬件选型', link: '/terminal-performance' },
+        { text: '定制 Docker 镜像', link: '/custom-docker-image' },
+      ] },
+      { text: '配置与技术参考', collapsed: true, items: [
+        { text: '配置项', link: '/configuration' },
+        { text: '命令行', link: '/cli' },
+        { text: 'Runtime Agent', link: '/runtime-agents' },
+        { text: '代码归属与提交身份', link: '/code-attribution' },
+        { text: 'Status API', link: '/status-api' },
+        { text: '架构', link: '/architecture' },
+        { text: '任务与运行规则', link: '/execution-model' },
+        { text: '持久化与恢复', link: '/storage-model' },
+        { text: '外部资源与清理', link: '/task-external-resource-lifecycle' },
+      ] },
+    ],
+    search: { provider: 'local', options: {
+      translations: {
+        button: { buttonText: '搜索文档', buttonAriaLabel: '搜索文档' },
+        modal: { noResultsText: '没有找到结果', resetButtonTitle: '清除搜索',
+          displayDetails: '显示详情', backButtonTitle: '返回',
+          footer: { selectText: '选择', navigateText: '切换', closeText: '关闭' } },
+      },
+    } },
+    outline: { label: '本页目录', level: [2, 3] },
+    docFooter: { prev: '上一页', next: '下一页' },
+    darkModeSwitchLabel: '外观',
+    lightModeSwitchTitle: '切换到浅色模式',
+    darkModeSwitchTitle: '切换到深色模式',
+    sidebarMenuLabel: '目录',
+    returnToTopLabel: '回到顶部',
+    footer: { message: 'Jarvis Box 产品文档', copyright: 'Hengshi' },
+  },
+})

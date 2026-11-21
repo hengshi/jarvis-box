@@ -1,25 +1,24 @@
 # TAPD 接入
 
-鉴权及 JSON 校验成功、投递可靠落盘后，Webhook 立即返回 `202 Accepted`，不等待业务读取、Git 操作或 Agent 启动。响应中的 `receipt_id` 只标识投递受理，不表示 Task 已创建；后台处理和重投规则见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+本页面向接入 TAPD 缺陷、需求和任务的管理员。Jarvis Box 可以把 webhook 映射为统一 work item，执行 post-check 或评论中的 `@jarvis` command，并把 Agent 的 `comment.md` 写回同一个 TAPD 工作项。
 
-Jarvis Box 可以接收 TAPD 工作项 webhook，把缺陷/需求/任务映射成统一的 work item，执行 post-check 或 `@jarvis` command，并把最终 `comment.md` 回写到同一个 TAPD 工作项。
+鉴权、JSON 校验和可靠落盘成功后，webhook 立即返回 `202 Accepted`。`receipt_id` 只证明受理，不证明 Task 已创建或已完成；恢复规则见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
 
-## 配置
+## 1. 配置身份和允许范围
 
-| 变量 | 必填 | 用途 |
+| 变量 | 是否需要 | 用途 |
 | --- | --- | --- |
-| `TAPD_WEBHOOK_SECRET` | webhook 必填 | 与 TAPD webhook body 中的 `secret`/`token` 或 header token 匹配的共享密钥。 |
-| `TAPD_CMD` | 否 | runtime agent 使用的官方 `tapd-cli`，默认 `tapd-cli`，需安装并可执行。 |
-| `TAPD_TOKEN` | webhook 必填（除非已配置 `TAPD_API_TOKEN`） | 官方 CLI 个人令牌；未设置时使用 `TAPD_API_TOKEN`。Basic Auth 不能替代 CLI 个人令牌。 |
-| `TAPD_API_TOKEN` | 二选一 | TAPD API bearer token。 |
-| `TAPD_API_USER` / `TAPD_API_PASSWORD` | 二选一 | TAPD API basic auth 账号和密码。 |
-| `TAPD_ALLOWED_WORKSPACES` | 否 | 逗号分隔的 workspace id；为空时允许全部 workspace。 |
-| `TAPD_API_BASE_URL` | 否 | 默认 `https://api.tapd.cn`。 |
-| `TAPD_BASE_URL` | 否 | 默认 `https://www.tapd.cn`，用于生成工作项页面链接。 |
-| `JARVIS_TAPD_COMMAND_ALLOWED_USERS` | 否 | 允许使用 mention command 的用户标识；为空时允许所有非 bot 用户。 |
-| `JARVIS_WORK_ITEM_REPOSITORIES` | 否 | provider-neutral work-item 到 GitLab/GitHub 仓库关联 JSON。 |
+| `TAPD_WEBHOOK_SECRET` | webhook 必填 | 与 webhook body/header 的 token 匹配。 |
+| `TAPD_CMD` | 可选 | Runtime Agent 的 `tapd-cli`，默认 `tapd-cli`。 |
+| `TAPD_TOKEN` | 必填，除非有 `TAPD_API_TOKEN` | Agent CLI 的个人令牌。Basic Auth 不能代替它。 |
+| `TAPD_API_TOKEN` | 与 Basic Auth 二选一 | 服务端 bearer token。 |
+| `TAPD_API_USER` / `TAPD_API_PASSWORD` | 与 API token 二选一 | 服务端 Basic Auth。 |
+| `TAPD_ALLOWED_WORKSPACES` | 可选 | 逗号分隔 workspace ID；留空允许所有。 |
+| `TAPD_API_BASE_URL` / `TAPD_BASE_URL` | 可选 | 默认分别为 `https://api.tapd.cn`、`https://www.tapd.cn`。 |
+| `JARVIS_TAPD_COMMAND_ALLOWED_USERS` | 可选 | command 作者 allowlist；留空允许非 bot 用户。 |
+| `JARVIS_WORK_ITEM_REPOSITORIES` | 可选 | 关联 GitLab/GitHub workspace 的 JSON。 |
 
-示例：
+例如：
 
 ```dotenv
 TAPD_WEBHOOK_SECRET=<random-secret>
@@ -30,43 +29,27 @@ TAPD_ALLOWED_WORKSPACES=12345678
 JARVIS_TAPD_COMMAND_ALLOWED_USERS=
 ```
 
-启用 webhook 时，必须同时具备服务端 API 身份和可供 CLI 使用的令牌。仅配置 Basic Auth 会在启动或保存配置时被拒绝。服务地址只接受不含用户名、密码、查询参数或片段的 HTTP(S) 地址。
+启用 webhook 必须同时具备服务端 API 身份与 CLI 可用令牌。仅配置 Basic Auth 会在启动或保存时被拒绝。服务地址只能是没有用户名、密码、query 或 fragment 的 HTTP(S) 地址。
 
-## Webhook
+## 2. 创建 webhook
 
-配置 TAPD webhook 请求地址：
+在 TAPD 中配置：
 
 - `https://<jarvis-box-host>/webhooks/tapd`
-- 兼容入口：`https://<jarvis-box-host>/tapd-webhook`
+- 兼容：`https://<jarvis-box-host>/tapd-webhook`
 
-Jarvis Box 接受 body token 和 header token 两类鉴权来源。body 字段支持 `secret`、`token`、`header.token`；header 支持 `X-TAPD-Token`、`X-Webhook-Token`。请求被持久化前会删除 body 中的 `secret`、`token`、`sign`、`signature` 字段。
+Jarvis Box 接受 body 中的 `secret`、`token`、`header.token`，以及 `X-TAPD-Token`、`X-Webhook-Token`。持久化前会删除 body 的 `secret`、`token`、`sign`、`signature` 字段。
 
-TAPD 配置页面的 URL 连通性检测发送仅含 `test` 字段的 JSON 对象或空数组 `[]`。这两种请求在不携带事件头、鉴权头时返回 HTTP 200，不进入事件处理、不创建任务；正式事件仍必须携带与 `TAPD_WEBHOOK_SECRET` 匹配的密钥。
+TAPD 的 URL 连通性测试可能发送仅有 `test` 的 JSON 或空数组 `[]`。这两种请求在没有 event/auth header 时返回 `200`，但不会创建 Task；真实事件仍必须带匹配 `TAPD_WEBHOOK_SECRET` 的密钥。
 
-工作项 identity 读取 `workspace_id` / `workspaceId`；创建事件读取 `id`，评论事件读取所属对象字段 `entity_id`。API 评论对象中的同一关联字段名为 `entry_id`。`event` / `event_type` 中包含 `create` 时启动 post-check，包含 `comment` 时按 `JARVIS_MENTION_NAMES` 识别 command，包含 `close` / `delete` 时终止同一外部 subject 下的活跃 Task。
+create 事件启动 post-check；comment event 从 HTML 可见正文识别 `JARVIS_MENTION_NAMES` command；close/delete 事件终止同一外部 subject 的活跃 Task。评论按评论 ID 去重，不能因投递 ID 改变重复执行；bot 的自身回复被忽略。
 
-工作项类型从 `entity_type`、工作项类型字段或 `bug::` / `story::` / `task::` 事件前缀识别，决定读取与评论回写的对象类型。未配置关联代码仓库时，以零工作区启动，不把 TAPD 项目 ID 当作代码仓库。
+## 3. 运行、读取和写回边界
 
-评论 webhook 的扁平字段中，`id` 是评论 ID，`entity_id` 是所属工作项 ID（API 评论对象对应 `entry_id`）；类型读取 `entry_type` 或 `story_comment::` / `bug_comment::` / `task_comment::` 事件前缀。正文读取 `description`，从 HTML 中提取可见文字后识别命令；属性、引用和代码块中的 mention 不触发任务。评论按评论 ID 排重，不因投递 ID 改变而重复执行；作者 `author` 用于识别并忽略机器人自身回复。
+TAPD adapter 支持缺陷/需求/任务创建、评论 command、服务端快照 `issue.json` / `notes.json`、最终评论写回与仓库关联。没有仓库关联时创建合法 zero-workspace Task，绝不把 TAPD project ID 猜成仓库。
 
-评论 API 的 `entry_type` 使用 TAPD 要求的 `bug`、`stories`、`tasks`，与工作项内部类型分别对应；结果评论的 `author` 为 `jarvis`。
+服务端负责准备快照和发布结果。Runtime Agent 通过官方 `tapd-cli` 按需读取实时工作项、全部分页评论、关联对象和附件；Jarvis Box 不自动下载全部附件。Docker image 已固定 TAPD CLI；Native 安装见 [TAPD 官方仓库](https://cnb.cool/tapd.cn/skills/tapd-cli)。运行时只给 TAPD Run 注入 `TAPD_CMD`、`TAPD_TOKEN`、`TAPD_API_ENDPOINT`、`TAPD_WORKSPACE_IDS`；服务端 Basic Auth 密码和 webhook secret 不会交给 Agent。
 
-## 能力边界
+Agent 可用 `attachment by-entity workspaceid=<项目ID> entry-id=<工作项ID>` 查询附件，使用 `attachment download` 取得短期链接下载到当前 Run，正文图片用 `attachment get-image`。读不到工具、令牌或权限时必须说明失败，不能解释为没有附件。Agent 不直接发布评论；其 CLI 身份的实际权限仍由令牌决定，prompt 的只读约束不是权限沙箱。
 
-TAPD adapter 支持：
-
-- 缺陷/需求/任务工作项创建事件触发 post-check；
-- 工作项评论中的 `@jarvis` command；
-- 服务端读取当前工作项和评论，写入 `issue.json` / `notes.json`；
-- 服务端回写最终评论；
-- 通过 `JARVIS_WORK_ITEM_REPOSITORIES` 关联 GitLab/GitHub workspace。
-
-服务端继续准备 `issue.json`、`notes.json`，并负责最终评论发布。runtime agent 通过官方 `tapd-cli` 按需读取实时工作项、完整分页评论、关联对象和附件；Jarvis Box 不自动下载全部附件。
-
-Docker runtime base 预装固定版本的 TAPD CLI，客户部署仅配置令牌；Native 模式安装 CLI 请参照 [TAPD 官方仓库](https://cnb.cool/tapd.cn/skills/tapd-cli)。个人令牌在 [个人设置](https://www.tapd.cn/personal_settings/index?tab=personal_token) 获取。Jarvis Box 仅向 TAPD Run 注入 `TAPD_CMD`、`TAPD_TOKEN`、`TAPD_API_ENDPOINT` 和 `TAPD_WORKSPACE_IDS`；服务端 Basic Auth 密码、webhook 密钥不交付给 Agent。
-
-Agent 用 `attachment by-entity workspaceid=<项目ID> entry-id=<工作项ID>` 查询附件，不指定 type 以保留评论附件；`attachment download` 返回短期下载链接，由 Agent 下载到当前 Run 目录并读取。正文图片使用 `attachment get-image`。缺少工具、令牌或权限时应明确报告，不能把读取失败解释成没有附件。Agent 不直接修改平台或发布评论。CLI 身份本身的权限由令牌决定；prompt 的只读约束不是权限沙箱。
-
-## 评论格式
-
-Agent 统一输出 Markdown。TAPD adapter 在回写时转换为 HTML，支持标题、加粗、列表、表格、代码块和链接；禁用原始 HTML 与危险链接，保留机器人回写标记。已有评论不会自动改写。
+Agent 输出 Markdown。adapter 回写时转换为 HTML，支持标题、加粗、列表、表格、代码块和链接；禁用原始 HTML 与危险链接，保留机器人回写标记，且不改写已有评论。

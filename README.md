@@ -8,7 +8,7 @@ Jarvis Box 是 Jarvis 的任务执行运行时。它接收 GitHub、GitLab、IM�
 
 客户下载入口：[下载与安装指引](https://download.hengshi.com/jarvis-box/index.html)。无法访问 GitHub 时，直接从衡石下载站获取发布包、校验文件和 Docker 镜像包；`install.sh`、部署脚本和完整文档均包含在发布包内，无需单独从 GitHub 获取脚本。
 
-新客户默认部署 1.x 最新稳定版；0.2.x 与 0.3.x 只维护 bug 和安全修复，不再增加新功能。已有部署选择维护版或升级时，遵循[维护政策](SECURITY.md#受支持的版本)与[升级步骤](CUSTOMER-OPERATIONS.md#native-1)。
+新客户默认部署主分支的最新稳定版，当前为 1.x；后续主版本仍沿同一主分支发布。0.2.x 与 0.3.x 已退役，不再提供修复或新版本。已有部署选择历史版本或升级时，遵循[维护政策](SECURITY.md#受支持的版本)与[升级步骤](CUSTOMER-OPERATIONS.md#native-1)。
 
 安装 Jarvis Box 运行时与建设 Company Jarvis 是两个独立步骤。下方 create-jarvis 方法需要可用的 GitHub 访问；Company Jarvis 的知识、workflow、Runtime Foundation 和 Agent 认证仍需分别准备。
 

@@ -1,94 +1,79 @@
 # 代码归属与 Git 提交身份
 
-Jarvis Box 可以部署在共享机器、共享容器或独立机器账号下。客户常见需求是：Jarvis 使用统一的服务身份读取 provider、写回评论或推送分支，但代码提交在 GitHub/GitLab 上归属到实际代码负责人，便于审计、工程统计和内部归属分析。
+本文面向共享 Jarvis Box 运行时的客户管理员和 Runtime Foundation 集成方。它解决“服务用统一账号工作，但新 commit 应归属实际代码负责人”的问题。它不授予 GitHub/GitLab 权限，也不改变 Jarvis Box 的 Task、Run 或 provider 写回审计。
 
-这个需求应建模为代码负责人/归属人配置，不是把 Jarvis 伪装成某个人。Jarvis Box 的 Task、Run、provider writeback 和 PR/MR 记录仍然保留 Jarvis 执行证据；Git commit identity 只表达新提交在代码仓库里的 author/committer 元数据。
+<a id="身份模型"></a>
 
-## 身份模型
+## 先区分四种身份
 
-| 身份 | 控制内容 | 常见来源 |
+| 身份 | 决定什么 | 例子 |
 | --- | --- | --- |
-| Provider / push 身份 | `gh`、`glab` 或 Git credential 用谁读取、评论、推送分支 | Jarvis 机器用户、GitHub App、GitLab bot 或客户授权账号 |
-| Runtime Agent 身份 | Codex、Claude 等 Agent 以哪个账号运行 | 客户持久 Agent HOME 和对应认证 |
-| Git commit identity | 新 commit 的 `Author` / `Committer` 名称和邮箱 | 当前仓库 `.git/config` 的 `user.name` / `user.email`，或单次 commit 环境变量 |
-| 代码负责人/归属人 | 组织希望把本次代码产出归属给谁 | 客户自有策略，例如仓库负责人、工作项 assignee、值班负责人或明确命令发起人 |
-| Jarvis 执行证据 | 谁触发、哪个 Task/Run 执行、最终写回什么结果 | Jarvis Box Task state、Artifact、Status 和 provider 评论 |
+| Provider / push 身份 | 读取、评论、push、merge 的权限 | `gh`、`glab`、Git credential、App 或 bot |
+| Runtime Agent 身份 | Agent CLI 如何认证和运行 | 持久 Agent HOME 中的 Codex、Claude 等登录 |
+| Git commit identity | 新 commit 的 `Author` 和 `Committer` 元数据 | 当前仓库 `.git/config` 的 `user.name`、`user.email` |
+| 代码负责人 | 客户要把这次代码产出归属给谁 | assignee、仓库负责人或明确的任务发起人 |
 
-`gh auth status` 或 `glab auth status` 不决定 Git commit author。Git 平台通常用 commit email 关联用户；如果要在 GitHub/GitLab UI 上显示为某个同事，`user.email` 必须是该同事在对应平台验证过的邮箱，或该平台支持的 noreply 邮箱。
+`gh auth status` 和 `glab auth status` 不决定 commit author。若要让 GitHub/GitLab UI 将 commit 显示为某位同事，所用 email 必须能由该平台关联到那位同事（例如已验证邮箱或支持的 noreply 邮箱）。
 
-## 推荐做法
+<a id="推荐做法"></a>
 
-在 workspace 准备阶段写当前仓库的 local Git config：
+## 推荐：在 workspace 写 local Git 配置
+
+准备完 checkout 后，为当前 workspace 写 local 配置：
 
 ```bash
 git -C "$workspace" config --local user.name "$owner_name"
 git -C "$workspace" config --local user.email "$owner_email"
 ```
 
-`--local` 会写入该 workspace 的 `.git/config`，只影响这个仓库后续新建的 commit。不要在共享 Jarvis 运行时里使用 `git config --global` 设置同事身份；global 配置会泄漏到同一机器上的其他 workspace 和任务。
+`--local` 只写当前仓库的 `.git/config`。不要在共享运行时用 `git config --global` 冒充同事：它会影响其他 Task 和 workspace。
 
-Jarvis Box 已提供 workspace-local 准备入口：`JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER`。它会在仓库 checkout 完成后、Agent 启动前调用；Agent 运行中通过 `jarvis-box workspace create` 动态新增仓库时，也会调用同一个入口。
+Jarvis Box 为此提供 `JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER`。它会在 checkout 后、Agent 启动前调用；Agent 在运行中使用 `jarvis-box workspace create` 新建仓库时，也会调用同一入口。将该变量写到实例实际生效的 canonical runtime env：`JARVIS_ENV_FILE` 指向的文件，默认为 `$JARVIS_RUNTIME_ROOT/envs/.env.jarvis-box`。
 
-调用格式：
+调用形式固定为：
 
 ```text
 <program> <repo> --configure-existing <workspace> [--base-branch <branch>]
 ```
 
-其中：
+其中 `<repo>` 是仓库名；`<workspace>` 是已存在的真实 workspace 路径。若 base branch 已解析，才会传递 `--base-branch`。有 project path 时，环境变量 `JARVIS_PROJECT` 保留原始值（如 `group/project`）。配置程序失败会阻止首次 Run 启动，或让动态 workspace 创建失败；不要在负责人未知时静默回退到机器账号。
 
-- `<repo>` 是仓库名，例如 `jarvis-box`；
-- `<workspace>` 是已经 clone 或创建好的真实 workspace 路径；
-- `--base-branch` 只在 Jarvis Box 已解析出 base branch 时出现；
-- `JARVIS_PROJECT` 会在存在 project path 时提供原始值，例如 `group/project`；
-- hook 失败会阻止首个 Run 启动，或让动态 `workspace create` 失败，避免 Agent 带着错误归属继续提交代码。
+Docker 中，程序必须是持久 Agent HOME 或客户明确挂载路径中、容器可执行的绝对路径。Native 中，它必须由运行 Jarvis Box 的 OS 用户执行。配置本身见[配置参考](configuration.md#workspace-准备程序)。
 
-## 示例 configurer
+<a id="示例-configurer"></a>
 
-下面示例使用客户维护的仓库归属策略。真实部署中可以把 `case` 替换成客户 Runtime Foundation 管理的配置文件或内部查询命令；关键是 owner 无法解析时 fail closed，不要默认落到 Jarvis 机器账号。
+## 一个可审查的配置程序
 
-```bash
+下面是最小示例。真实客户可以把 `case` 替换为自己的版本化归属策略或内部查询，但找不到负责人时应退出失败。
+
+```sh
 #!/bin/sh
 set -eu
 
-if [ "$#" -lt 3 ]; then
-  echo "usage: configure-workspace <repo> --configure-existing <workspace> [--base-branch <branch>]" >&2
-  exit 2
-fi
+usage='usage: configure-workspace <repo> --configure-existing <workspace> [--base-branch <branch>]'
+[ "$#" -ge 3 ] || { echo "$usage" >&2; exit 2; }
 
 repo="$1"
 shift
-
-if [ "${1:-}" != "--configure-existing" ] || [ -z "${2:-}" ]; then
-  echo "usage: configure-workspace <repo> --configure-existing <workspace> [--base-branch <branch>]" >&2
-  exit 2
-fi
-
+[ "${1:-}" = '--configure-existing' ] && [ -n "${2:-}" ] || {
+  echo "$usage" >&2; exit 2;
+}
 workspace="$2"
 shift 2
 
-base_branch=""
+base_branch=''
 while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --base-branch)
-      base_branch="${2:-}"
-      shift 2
-      ;;
-    *)
-      echo "unknown argument: $1" >&2
-      exit 2
-      ;;
-  esac
+  [ "$1" = '--base-branch' ] && [ "$#" -ge 2 ] || {
+    echo "$usage" >&2; exit 2;
+  }
+  base_branch="$2"
+  shift 2
 done
 
 case "$repo" in
-  jarvis-box)
-    owner_name="Alice Example"
-    owner_email="123456+alice-example@users.noreply.github.com"
-    ;;
   customer-portal)
-    owner_name="Bob Example"
-    owner_email="234567+bob-example@users.noreply.github.com"
+    owner_name='Alice Example'
+    owner_email='123456+alice-example@users.noreply.github.com'
     ;;
   *)
     echo "no code owner configured for repo=$repo project=${JARVIS_PROJECT:-}" >&2
@@ -98,37 +83,40 @@ esac
 
 git -C "$workspace" config --local user.name "$owner_name"
 git -C "$workspace" config --local user.email "$owner_email"
-
 printf 'configured git identity for repo=%s branch=%s\n' "$repo" "${base_branch:-unknown}"
 ```
 
-配置到当前实例实际生效的运行时环境文件：由 `JARVIS_ENV_FILE` 指定，未设置时使用 `$JARVIS_RUNTIME_ROOT/envs/.env.jarvis-box`。
+Set it with an absolute path:
 
-```bash
-JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER=<absolute-path-to-configure-workspace>
+```dotenv
+JARVIS_WORKSPACE_DEPENDENCY_CONFIGURER=/absolute/path/to/configure-workspace
 ```
 
-每个部署都必须提供自己的可执行绝对路径。Native 部署中该路径属于运行 Jarvis Box 的 OS 用户。Docker 部署中该路径必须存在于容器内的持久 Agent HOME 或客户显式挂载路径中。
+Do not store tokens, SSH keys, Keychain paths or a Host HOME path in this program or its configuration.
 
-## Author 与 Committer
+<a id="author-与-committer"></a>
 
-普通 `git config --local user.name/user.email` 会让后续普通 `git commit` 的 `Author` 和 `Committer` 都使用同一个身份。这适合“本次代码产出归属到负责人”的统计模型。
+## Author and Committer may differ
 
-如果客户需要表达“代码负责人是 Alice，但提交动作由 Jarvis 机器账号代执行”，应在客户 workflow 或 commit wrapper 中单独控制：
+The local Git configuration above makes ordinary `git commit` use the same identity for author and committer. That is usually the clearest model for ownership reporting.
+
+If the customer deliberately needs “Alice authored it; Jarvis Bot performed the commit,” their workflow must set both pairs immediately for that commit:
 
 ```bash
 GIT_AUTHOR_NAME="$owner_name" \
 GIT_AUTHOR_EMAIL="$owner_email" \
-GIT_COMMITTER_NAME="Jarvis Bot" \
-GIT_COMMITTER_EMAIL="jarvis-bot@example.com" \
+GIT_COMMITTER_NAME='Jarvis Bot' \
+GIT_COMMITTER_EMAIL='jarvis-bot@example.com' \
 git commit -m "$message"
 ```
 
-这不是 Jarvis Box 默认行为；需要客户 Runtime Foundation 或 repo-local workflow 明确采用。
+This is customer workflow behavior, not a Jarvis Box default.
 
-## 验证
+<a id="验证"></a>
 
-在测试 workspace 中确认 local 配置来源和新 commit 元数据：
+## Verify and troubleshoot
+
+In a test workspace, inspect the source of the active setting and the newest commit:
 
 ```bash
 git -C "$workspace" config --show-origin --get user.name
@@ -136,17 +124,10 @@ git -C "$workspace" config --show-origin --get user.email
 git -C "$workspace" show --no-patch --format='Author: %an <%ae>%nCommitter: %cn <%ce>' HEAD
 ```
 
-如果发现 PR/MR 上的新 commit 显示成 Jarvis 机器账号，优先检查：
+If a PR/MR still shows the machine account, check the local config, whether the configurer ran after checkout, whether the email is platform-recognized, and whether a repo script or environment variable overrode Git config. Existing commits require amend or rebase to change metadata.
 
-- workspace 的 `.git/config` 是否有 `user.name` / `user.email`；
-- configurer 是否真的在该仓库 checkout 后运行；
-- owner email 是否是 GitHub/GitLab 认可并可关联到用户的邮箱；
-- 是否在 commit 前才修改配置；已存在 commit 需要 amend 或 rebase 才会改变元数据；
-- 是否有 repo-local 脚本、commit wrapper 或环境变量覆盖了 Git config。
+<a id="边界"></a>
 
 ## 边界
 
-- Git commit identity 不是 provider 权限。它不能授予读取、评论、push 或 merge 权限。
-- Jarvis Box 不内置客户的人事、绩效或代码归属规则；归属策略由客户配置和 Runtime Foundation 拥有。
-- 代码归属配置不应写入 secret、个人 token、SSH key、Keychain 路径或 Host HOME。
-- 如果归属人无法确定，应让 workspace 准备失败，而不是默默用机器账号提交。
+Commit identity remains metadata: it cannot grant provider read, comment, push or merge access. Jarvis Box also does not invent customer personnel or ownership policy; that decision belongs to the customer Runtime Foundation or repository policy.

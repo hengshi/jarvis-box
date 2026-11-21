@@ -1,23 +1,20 @@
 # 构建客户派生 Docker 镜像
 
-Docker 部署需要的系统编译器、头文件或共享库不在 Jarvis Box 基础镜像中时，以当前 Jarvis Box 正式镜像为基础构建客户派生镜像。不要在运行中的容器里执行 `apt install`：容器默认以非 root 用户运行，而且容器重建后系统层修改会消失。
+本文面向 Docker 部署的客户管理员。客户仓库需要基础镜像中没有的编译器、头文件或系统共享库时，从当前 Jarvis Box 正式镜像构建一个客户镜像。若只需不依赖系统库的单个可执行文件，优先放到持久 `/home/jarvis/.local/bin`；不要为了它派生镜像。
 
-只需要单个可执行文件且不依赖系统库时，仍优先安装到持久化的 `/home/jarvis/.local/bin`。派生镜像用于必须由 `apt` 管理的系统包。
+不要在运行中的容器执行 `apt install`：运行时是非 root，重建容器后改动也会丢失。派生镜像不是放 token、SSH key、Agent 登录或客户 Jarvis 源码的位置。
 
-## 1. 准备
+<a id="1-准备"></a>
 
-准备以下内容：
+## 准备条件
 
-- 目标 Jarvis Box 版本的 release bundle 和已校验的 `production-image.json`；
-- 对正式 Jarvis Box 基础镜像的拉取权限；
-- 对客户私有镜像仓库的推送和部署主机拉取权限；
-- 部署主机对应的平台：`linux/amd64` 或 `linux/arm64`。
+准备目标版本的 release bundle、已校验的 `production-image.json`、基础 image 的拉取权限、客户 registry 的推送与部署主机拉取权限，以及目标平台（`linux/amd64` 或 `linux/arm64`）。从 `production-image.json` 复制 `image_ref`；它是构建基础镜像的唯一输入。不要用浮动 tag 替代正式 digest。
 
-从 `production-image.json` 复制 `image_ref`。该 digest 地址是派生镜像唯一允许使用的基础镜像，不要改用浮动 tag。
+<a id="2-创建-dockerfile"></a>
 
-## 2. 创建 Dockerfile
+## Dockerfile
 
-在一个客户自己版本管理的空目录中创建 `Dockerfile`：
+在客户自己版本管理的目录中创建 Dockerfile：
 
 ```dockerfile
 # syntax=docker/dockerfile:1
@@ -30,27 +27,29 @@ LABEL org.opencontainers.image.base.name="${JARVIS_BASE_IMAGE}"
 
 USER root
 
-# 将示例包替换为客户代码仓库实际需要的包。
+# Replace these example packages with packages your repositories actually need.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       cmake \
       ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# 保留 Jarvis Box 镜像的非 root 默认身份。
+# Return to the Jarvis Box non-root runtime identity.
 USER 10001:10001
 ```
 
-同一个 `RUN` 中完成 `apt-get update` 和安装。需要固定工具版本时使用 `package=version`，并确保客户 APT mirror 长期保留该版本。不要把 APT、registry 或源码仓库凭据写入 Dockerfile、build argument 或镜像层；私有 APT 源使用客户构建平台的 BuildKit secret。
+Keep `apt-get update` and install in one layer. If a package version must be fixed, use `package=version` and retain that version in the customer APT mirror. Private APT credentials belong in the build platform's BuildKit secret, never in Dockerfile text, build args or image layers.
 
-## 3. 构建、推送并取得 digest
+<a id="3-构建推送并取得-digest"></a>
+
+## 构建、推送并记录 digest
 
 ```bash
-base_image='<production-image.json 中的 image_ref>'
+base_image='<image_ref from production-image.json>'
 target_repository='registry.example.com/customer/jarvis-box'
-jarvis_version='<Jarvis Box 版本 X.Y.Z>'
+jarvis_version='<Jarvis Box version X.Y.Z>'
 target_tag="${target_repository}:${jarvis_version}-tools-1"
-platform='linux/amd64' # ARM 服务器改为 linux/arm64
+platform='linux/amd64' # use linux/arm64 on ARM hosts
 
 docker login ghcr.io
 docker login registry.example.com
@@ -68,19 +67,19 @@ derived_image="${target_repository}@${digest}"
 printf '%s\n' "$derived_image"
 ```
 
-同一派生镜像需要同时支持 AMD64 和 ARM64 时，把 `platform` 改为 `linux/amd64,linux/arm64`。任一平台缺少所需 APT 包时，构建应失败，不要发布只有部分平台成功的同名 tag。
+For one image that supports both platforms, use `linux/amd64,linux/arm64`. A required package missing on either platform must fail the build; do not publish a partially supported tag. Record the final `repository@sha256:...` value—the tag is only a build and release label.
 
-部署始终使用最后打印的 `repository@sha256:...`，不要使用可被覆盖的 tag。
+<a id="4-部署和验证"></a>
 
-## 4. 部署和验证
+## 部署并验证
 
-把 `<deployment-home>/deployment.env` 中的 `JARVIS_IMAGE` 改为派生镜像 digest：
+Set the derived digest in that instance's `<deployment-home>/deployment.env`:
 
 ```dotenv
 JARVIS_IMAGE=registry.example.com/customer/jarvis-box@sha256:<digest>
 ```
 
-使用与基础镜像同版本 release bundle 中的部署脚本：
+Use the deployment script from the same release bundle as the base image:
 
 ```bash
 release_dir=/absolute/path/to/extracted-release
@@ -97,28 +96,15 @@ ops="$release_dir/scripts/deploy-production.sh"
 '
 ```
 
-`verify` 必须确认实际运行镜像与 `JARVIS_IMAGE` 的 digest 一致。最后一条命令验证客户工具在 Jarvis Box 正式非 root 运行身份下可发现并可执行；替换为客户实际安装的命令和最小编译检查。
+`verify` confirms that the running image agrees with `JARVIS_IMAGE`. The final command executes as the production non-root runtime identity; replace it with the actual tool and smallest meaningful build check for the customer workload.
 
-## 5. 升级和回滚
+<a id="5-升级和回滚"></a>
+<a id="6-可靠性检查"></a>
 
-升级 Jarvis Box 时：
+## 升级、回滚与上线检查
 
-1. 下载并校验目标版本的 release bundle 和 `production-image.json`；
-2. 用目标版本的 `image_ref` 重新构建派生镜像；
-3. 推送新 tag，记录新的派生镜像 digest；
-4. 把 `deployment.env` 的 `JARVIS_IMAGE` 改为新 digest；
-5. 使用目标版本 bundle 的 `deploy` 和 `verify`。
+For every Jarvis Box upgrade, obtain and verify the target release bundle, rebuild from its new `image_ref`, publish and record a new derived digest, set that digest, then run `deploy` and `verify`. Do not run a newer Jarvis Box version on an old derived base.
 
-不要让旧派生镜像继续承载新版本 Jarvis Box，也不要在原 tag 上覆盖镜像后继续使用旧 digest。
+To roll back, restore the release bundle and derived digest that were built together, preserve the deployment home, then run the same deploy/verify/tool check. Image rollback and persistent-data recovery have additional safeguards; follow[运维入口](operations.md#升级) rather than swapping a running container image by hand.
 
-回滚时恢复对应旧版本的 release bundle 和派生镜像 digest，再执行同一套 `deploy`、`verify` 和客户工具检查。部署前记录当前派生镜像 digest；完整 deployment home 保持不变。
-
-## 6. 可靠性检查
-
-- Dockerfile 和 APT 源配置由客户版本管理并接受代码审查；
-- 基础镜像和部署镜像都使用 digest，tag 只用于构建和发布时辨识；
-- 镜像最后保留 `USER 10001:10001`，运行时不依赖 root；
-- 客户镜像进入正式环境前执行漏洞扫描和客户自己的供应链审批；
-- 不在镜像中保存 Token、SSH key、Agent 凭据或 Company Jarvis 源码；
-- 每次 Jarvis Box 升级重新构建、验证并记录派生镜像 digest；
-- 安装共享库或编译器后，运行一条真实的最小编译命令，不只检查文件是否存在。
+Before production, review the Dockerfile and APT source, scan the image according to customer policy, keep image references digest-pinned, retain `USER 10001:10001`, and run a real minimal compilation or load check. The deployment user needs Docker/build and registry permissions; the running Jarvis container does not need root or a Docker socket merely to use these system packages.

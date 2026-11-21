@@ -1,167 +1,241 @@
-# CLI reference
+# CLI 参考
 
-## Runtime Agent
+<a id="cli-reference"></a>
+
+本文是 Jarvis Box 已安装实例的命令参考。日常服务维护从[运维入口](operations.md)开始；Task/Run 状态、允许的操作和恢复语义以[执行模型](execution-model.md)为准。下面将“operator 在 shell 中使用的命令”和“仅当前受管 Agent Run 可调用的协议”分开说明。
+
+## 先确认操作的是哪一个实例
 
 ```bash
-jarvis-box agent doctor
-jarvis-box agent smoke
-jarvis-box agent current
-jarvis-box agent list
+jarvis-box status --smart
+jarvis-box status
+jarvis-box doctor
 ```
 
-`doctor` 验证可执行文件/配置；`smoke` 执行真实 Agent 调用。Jarvis 发现由 Jarvis Runtime Foundation 拥有，通过 Agent 自身验证，而非 `jarvis-box jarvis validate` 命令。
+`status --smart` 输出 effective `runtime_root`、`env_file`、`runs_dir`、`state_dir`、`log_dir` 和 `workspace_root`。脚本和集成必须使用输出的有效路径，不能从 `$HOME`、当前目录或默认端口猜 Task/Workspace 根。
 
-`agent list --check` 与 `agent smoke <agent>` 共用 smoke 探测。退出 0 且有回复时，干净成功显示 `smoke-ok` / `smoke ok`；stderr 非空则显示 `smoke-warning` / `smoke warning`，仍退出 0。这只表示 Agent 已回复，不代表 Agent HOME 健康。退出 0 但清洗后没有可见回复也属于失败；`agent smoke` 退出 1，列表显示 `smoke-failed`。
+Docker 多实例应始终通过该实例的 release 脚本和 deployment home 操作；Native 中设置 `JARVIS_ENV_FILE` 或 `JARVIS_RUNTIME_ROOT` 只能选择路径，不等于选择 systemd unit 或 launchd label。详情见[多实例部署](multi-instance.md)。
 
-smoke 诊断先移除终端控制字符并遮蔽常见凭据字段、认证头、URL 用户信息和私钥，再取首个非空行，最多输出 512 字节（含截断标记）。成功告警另附操作建议。遇到权限告警时，检查实际运行的 OS 用户以及 Agent HOME 的所有者和权限，由操作者人工修正后重跑 `jarvis-box agent smoke <agent>`；探测不会自动更改文件所有权或权限。
+命令失败时，查看 stderr 中的失败阶段、底层错误和该命令提供的只读检查。通过本机 API 执行操作的命令还会保留 HTTP 状态和错误响应。操作可能已受理时，先按原 Task、Run、Webhook 或维护收据核对结果，再决定是否重试。自动化按各命令定义的退出码和机器回执判断结果。比如 `ci wait` 退出 `2` 时表示流水线需要人工操作，应查看它报告的流水线中的手动任务或审批。
 
-## Runtime tools
+<a id="runtime-agent"></a>
+<a id="runtime-tools"></a>
+
+## Agent 与工具
 
 ```bash
+jarvis-box agent list
+jarvis-box agent list --check
+jarvis-box agent current
+jarvis-box agent doctor
+jarvis-box agent smoke [<agent>]
+jarvis-box agent set [--scope delivery-metrics] <agent>
+jarvis-box agent unset --scope delivery-metrics
+
 jarvis-box tools path
-jarvis-box tools status
-jarvis-box tools status --json
+jarvis-box tools status [--json]
 jarvis-box tools update
 jarvis-box tools reset
 ```
 
-Native 的 `path` 返回当前用户的工具目录，默认 `$HOME/.local/bin`，可由 `JARVIS_USER_TOOL_BIN` 指定绝对目录。`status` 检查本机工具；`--json` 返回 `jarvis-box-runtime-tools/v1` 清单，包含 `deployment_mode=native`、`update_supported=false`，以及各工具的路径、可用性、生效版本和 `source=host`。缺少可选工具只记录为不可用；已找到的工具版本探测失败、超时或无输出时返回非零退出码，JSON 清单仍可读取。Native 工具通过其原安装器或包管理器更新，`update` 和 `reset` 返回非零退出码及操作指引。
+`doctor` 检查 Agent executable 与配置；`smoke` 做一次真实 Agent 调用。`agent list --check` 使用同一 smoke 探测：有可见答复且退出 `0` 显示 `smoke-ok`，stderr 非空时显示 `smoke-warning` 但仍成功；空答复、命令失败或无法执行均是 `smoke-failed`。这只证明 Agent 有答复，不证明 Agent HOME 健康。输出会删控制字符并遮蔽常见凭据，只保留首个非空行（最多 512 bytes）；它不自动修改 Agent HOME 的 owner 或权限。
 
-Docker 首次安装、启动、容器重建和升级不自动下载或更新官方工具，直接使用镜像内基线或已有的有效持久化 overlay。只有显式执行 `jarvis-box tools update` 才会下载并原子更新工具，失败时保留原有效工具；`reset` 回到镜像基线。Docker updater 缺失或执行失败时返回非零退出码。
+`agent set` 影响后续 Start；已有 Task 必须用 `tasks continue ... --agent ...` 明确切换。Runtime Agent 目录、协议与 scope 说明见[Runtime Agent](runtime-agents.md)。
 
-客户自装的独立用户级工具放到 `${JARVIS_USER_TOOL_BIN:-$HOME/.local/bin}`；显式值必须是绝对目录，Jarvis 会把它加入每个 Agent 进程的 `PATH`，同时保留用户默认的 `.local/bin`。Docker 默认目录为 `/home/jarvis/.local/bin`，随 deployment home 持久化，容器重建后仍保留。需要 `apt` 管理的编译器、头文件或系统共享库通过[客户派生 Docker 镜像](custom-docker-image.md)提供。
+Native 的 `tools path` 默认是当前用户的 `$HOME/.local/bin`，或绝对 `JARVIS_USER_TOOL_BIN`。Native 的 `tools update/reset` 会失败并提示使用原安装器或包管理器。Docker 只有明确执行 `tools update` 才下载和原子更新受管工具；失败时保留最后有效版本，`reset` 回到 image 基线。客户自装的用户级工具放入 `JARVIS_USER_TOOL_BIN`，需要 `apt` 的系统依赖使用[客户派生 Docker 镜像](custom-docker-image.md)。
 
-## Server and Task/Run
+Native 的 `tools status` 读取已安装工具的版本输出：成功命令优先使用标准输出，标准输出为空时使用标准错误输出。命令失败、超时或两个输出流均为空时保留工具错误，并返回非零退出码。
+
+<a id="server-and-taskrun"></a>
+
+## 查看、启动和接续 Task
 
 ```bash
 jarvis-box serve
 jarvis-box tasks list
 jarvis-box tasks list --all --limit 50
 jarvis-box tasks json --monitor-status ci-wait
-jarvis-box tasks start <source-task-id> --reason "start from an existing Task"
-jarvis-box tasks start --prompt "handoff to the managed runtime"
-jarvis-box tasks start --prompt "send customer report" --lane custom-user-task --job-id customer-daily-report --reason scheduled-customer-daily-report
-jarvis-box tasks continue <task-id> --agent codex --message "continue with these instructions"
+jarvis-box tasks json --all --compact --limit 50
+jarvis-box tasks show <task-id>
+jarvis-box tasks start <source-task-id> --reason 'start from an existing Task'
+jarvis-box tasks start --prompt 'write customer report'
+jarvis-box tasks start --prompt 'write daily report' \
+  --lane custom-user-task --job-id customer-daily-report \
+  --reason scheduled-customer-daily-report --notify-target direct:<id>
 jarvis-box tasks continue <task-id>
-jarvis-box status
-jarvis-box logs
-jarvis-box doctor
+jarvis-box tasks continue <task-id> --agent codex --message 'continue with these instructions'
+jarvis-box tasks verify
 jarvis-box monitor
+jarvis-box logs
+jarvis-box status
+jarvis-box doctor
 ```
 
-Compose 配置 state/log/workspace 路径和 Agent 可执行文件，各来源按自身接入配置独立启用。jarvis-box 不将 Jarvis root skill 注入 Run。
-`jarvis-box status` 始终输出 effective `runs_dir` 和 `workspace_root`；前者由 `JARVIS_RUN_DIR`（默认 `${JARVIS_STATE_DIR}/runs`）决定，后者由 `JARVIS_WORKSPACE_ROOT`（默认 `${JARVIS_RUNTIME_ROOT}/workspace`）决定。集成方必须读取这两个 effective 值，不得根据默认目录反推 Task 或 Workspace 根。
-`status` 的 `tasks` 与 `runs` 分别统计正式登记的 Task 和 Run；`monitor` 的运行数量使用同一读取口径。收据、锁和普通目录不计为运行。`latest` 与 `monitor` 的最新运行按正式 Run 创建时间选择，产物读取精确 Run 目录，不使用 Task 根目录的旧结果。正式投影不可用时显示不可用，不根据目录猜测数量。
+`tasks list` 和 `tasks json` 默认使用维护预检的生命周期阻断判定筛选 Task。`--all` 才读取历史；`--compact` 只压缩 JSON，仍可和 `--status`、`--monitor-status`、`--lane` 和 `--limit` 组合。详情使用 `tasks show`，不要从 monitor 文本推断责任或状态。
 
-`jarvis-box status --smart` 同时输出 `runtime_root` 和 `env_file`。同一台机器运行多个实例时，优先使用 Docker deployment home。Native 维护 shell 可以通过 `JARVIS_ENV_FILE` 或 `JARVIS_RUNTIME_ROOT` 选定 runtime path，再读取 `status --smart` 确认 `runtime_root`、`env_file` 和 `workspace_root`；这不等于选择了 systemd unit。Native lifecycle 命令只适合单实例或已明确验证 service identity 的维护窗口。完整规则见 [多实例部署](multi-instance.md)。
+`status` 始终返回 effective `runs_dir` 和 `workspace_root`；默认分别为 `${JARVIS_STATE_DIR}/runs` 和 `${JARVIS_RUNTIME_ROOT}/workspace`。`status`/`monitor` 只统计正式登记的 Task 和 Run，不把收据、锁或普通目录当成运行；最新运行按正式创建时间选择，产物读取精确 Run 目录。`tasks show` 只投影安全的 event-subscription 聚合，不能读取或伪造 sender、reply credential、webhook body、token、私有 journal，也不能从本机 CLI 重发订阅。
 
-`jarvis-box tasks start --prompt <text>` 是外部交互式 shell 和 Runtime Foundation job 共用的原子 admission。它只能在调用进程没有 `JARVIS_TASK_ID`、`JARVIS_TASK_DIR`、`JARVIS_RUN_ID`、`JARVIS_WORKSPACE_ROOT` 时使用；CLI 从 canonical runtime env 检查 loopback service health，然后用一次 Start 请求交付 prompt。服务端分配 Task identity、登记 intake、创建首 Run 并启动 Agent；调用方不创建 Task、不读取 `task_dir`，也不写 `prompt.txt`。成功 JSON 返回真实 `task_id`、`task_dir`、`run_id`、`run_dir` 和 effective `workspace_root`。
+`tasks verify` 只读检查任务库。若能输出诊断报告，即使 `ok=false` 退出码仍为 0；脚本必须同时读取报告的 `ok` 与 `issues`。命令不会修复或删除坏项。
 
-服务仅因磁盘余量不足而降级时，CLI 仍提交原始请求，由服务端保存为机器负责恢复的等待任务。此时返回 `waiting=true`、`wait_reason=storage-wait` 和真实 Task 身份，尚无 Run；空间满足该任务受理时的门槛后自动执行。其他健康故障或不可达仍返回错误。
 
-`tasks list` 和 `tasks json` 默认只显示当前会阻断 lifecycle 操作的 Task，例如 active/running、waiting/storage-wait/duplicate-wait、ci-wait、finalizing 和 recovery-required。默认 `tasks json` 输出 operator 快速定位字段：`task_id`、`lane`、`status`、`monitor_status`、`current_run_id`、已知 `pid` 和 source reference。查看历史或调试时显式使用 `--all`，并可叠加 `--status`、`--monitor-status`、`--lane` 和 `--limit`。
+### 从外部 shell 启动 prompt Task
 
-`tasks verify` 逐项检查任务库。成功输出诊断报告时退出码为 0；库内存在坏项时，报告的 `ok=false`，`issues` 列出具体 Task、问题和处理建议，不能只用退出码判断完整性。命令本身无法完成读取或输出时返回非零。检查不会修改坏项；修复前保留其原始内容。
+`tasks start --prompt` 是外部 shell 和 Runtime Foundation job 的原子入口。调用进程可以加载 canonical runtime env，包括实例级 `JARVIS_WORKSPACE_ROOT`；工作区根目录不代表 Task 身份。调用环境中存在非空的 `JARVIS_TASK_ID`、`JARVIS_TASK_DIR` 或 `JARVIS_RUN_ID` 时，命令会拒绝提交并指出具体变量，应从宿主调度器或外部 shell 发起。CLI 向 canonical runtime env 中的 loopback 服务提交一次 Start；服务分配 Task/Run 身份、登记输入并启动 Agent。调用者不得创建 Task 目录、读取 `task_dir` 或写 `prompt.txt`。
 
-`tasks continue` 遵循服务端返回的 Task 操作策略。继续 Agent 时必须同时提供 `--agent` 和 `--message`；恢复丢失的运行或重试回写时不传这两个参数。恢复会根据已保存的恢复信息创建后续 Run，回写重试只处理原 Run 的失败回写，不重新运行 Agent。CLI 自动携带对应 Run 和当前 Task 版本；状态变化导致请求过期时，服务端会拒绝该请求。
+成功 JSON 返回真实 `task_id`、`task_dir`、`run_id`、`run_dir` 和 effective `workspace_root`。磁盘空间不足时，服务可以接受请求并返回 `waiting=true`、`wait_reason=storage-wait` 和真实 Task identity。Run 登记前发现空间不足时没有 Run；在启动进程前发现余量不足时已登记的 Run ID 会保留。空间恢复后自动执行原请求。其他服务健康问题仍是错误。
 
-Delivery Metrics 历史起点由 Status 服务管理枚举和节奏，实际分析是普通 `delivery-metrics` lane Task。正在执行或等待中的 Delivery Metrics Task 会出现在默认 `tasks list` 和 `monitor` 中；历史 Task 用 `tasks list --all --lane delivery-metrics` 查看。统计结果仍通过 `/status` 或 `/status/api/value?provider=gitlab|github` 查看。恢复中断分析见 [Delivery Metrics 历史起点](delivery-metrics.md)。
+`--lane` 只适用于 prompt Start。默认 lane 是 `jarvis-command`；允许的额外 lane 是 `delivery-metrics` 和 `custom-user-task`。`custom-user-task` 是 providerless 用户任务，`--job-id` 仅能和它一起使用；同一 active job ID 的新 Start 返回 conflict，已完成 job 要补跑时显式创建新的 prompt Task。`--notify-target direct:<id>|group:<id>` 仅把成功 Run 的最终答复交给现有 IM 通道；它不替其他业务动作选择收件人。
 
-在 `tasks start --prompt` 中，`--lane` 仅用于 prompt Start。默认 lane 是 `jarvis-command`；`delivery-metrics` 是普通 lane，可由 Status 服务或 operator 通过同一 Start 入口创建。`custom-user-task` 是 operator 创建或宿主定时触发的 providerless prompt job lane；lane 表示运行时行为类，`--job-id` 表示用户任务身份，例如 `customer-daily-report`。任意自定义 lane 会被拒绝，`--job-id` 只允许与 `custom-user-task` 一起使用。同一 `job_id` 已有 active/running Task 时，新的 Start 返回可解释的 conflict，不创建第二个 Task。已完成的 `custom-user-task` 不能从 detail 上直接 Start 重跑；补跑必须显式发起新的 prompt Start，避免重复发送日报、周报或客户报告。`custom-user-task` 不注入 provider writeback contract；IM、webhook 或 GitLab 投递证据由 agent task 自己在结果中记录。`memory-consolidation`、`daily-reflection` 和 `cognitive-evolution` 等 scheduled lane 只接受服务端 loopback internal route，不存在调用方 authority flag。
+### Continue
 
-## 升级前的历史 Run
+`tasks continue` 提交新输入或恢复原 Task。运行中会先停止当前 Run；若处于启动、准备、收尾、替换或清理阶段，返回 `waiting=true, wait_reason=instruction-accepted` 表示输入已保存并会衔接，无需重发。恢复丢失 Run 或重试写回时不要传 `--agent` / `--message`。服务会核对当前 Task version，状态变更后过期请求会被拒绝。
 
-已登记的 0.2 Task 属于支持的升级格式。运行时校验 Task 根的不可变登记、Run ID/sequence、同任务的精确 `run_created` 事件和创建时间后，将其已结束 Run 读入唯一的 canonical aggregate；下一次 TaskService 事务统一发布为 v2。即使此前事务已把 Task 根发布为 v2 而遗留旧 Run 文件，也适用同一校验。原 Task、Run、会话与工作区归属保留，不要求重新建任务。读取不会改写文件。
+Delivery Metrics 也是普通 lane Task：活动项出现在默认列表，历史项用 `tasks list --all --lane delivery-metrics` 查看。其 Status 结果、Continue/Stop 和恢复步骤见[Delivery Metrics 历史起点](delivery-metrics.md)。
 
-已发布的嵌套任务目录在迁移后仍保留原位置和 Task ID；格式转换不会要求重命名目录。旧工作区登记缺少登记版本时，由兼容读取和安装迁移补齐，后续清理由同一 Task 生命周期处理。
+<a id="webhook-已收到但任务没有启动"></a>
 
-其他旧版本 Run 缺少完整的不可变登记时，不能直接作为当前 Run 继续执行。
-需要浏览这些记录时，先确认 Task 已结束，并核对旧 `run-state.json` 与
-`task-events.jsonl` 中的 Run ID、sequence，再显式列出需要保留的 Run：
+## Webhook 已接收却未启动
 
 ```bash
-jarvis-box migrate historical-runs --task task-example --runs r_example1:1,r_example2:2 --approval-id history-review-1 > approval.json
-jarvis-box migrate historical-runs --apply approval.json
-jarvis-box tasks json --all
+jarvis-box webhooks list
+jarvis-box webhooks show <receipt-id>
+jarvis-box webhooks retry <receipt-id>
 ```
 
-第一步只验证并输出草稿，不修改 Task。执行第二步前检查草稿中的完整 Task 身份、
-目录和 Run 清单；不要手工修改草稿字段，选择有误时重新生成。两个命令均可通过
-`--runs-dir <dir>` 显式选择同一个存储根。草稿包含本地路径，应按本机维护资料保存。
+`list` 与 `show` 只读；`retry` 恢复原始已认证请求。它先查询原 Task/Run，已创建即复用，不以超时或错误猜测“没有创建”，也不删除去重记录。
 
-应用通过现有 TaskService 事务登记只读历史，重复应用同一份 approval 不会重复登记。
-活动 Task、身份不匹配或不满足历史证据要求的输入会被拒绝。登记后的 Run 可在
-Status 中切换浏览，但不能继续、取消或成为当前 Run；安装和服务启动不会自动执行此批准。
+| 结果 | 操作 |
+| --- | --- |
+| 有 `task_id` | `tasks show <task_id>`；不要重建。 |
+| `pending` / `dispatching` | 查看 `message`，稍后再查询。 |
+| `pending-comment` | 修复 `detail` 中的错误后对原 receipt 执行 `retry`；只恢复这条评论。 |
+| `failed` | 按 `detail` 修复认证、网络、授权或存储，再运行 `doctor` 后 retry。 |
+| `admission_outcome_unknown` | 对原 receipt 执行 `retry`，让服务查询并补结原 Task；不编辑任何账本。 |
+| 明确未启动且自动恢复已用尽 | 修复具体依赖后 retry；它只授权原 receipt 的一个新尝试。 |
+| 原始请求未保留 | 在来源平台重发同一已认证事件，再对该 receipt retry。 |
+| 升级导入的历史去重记录 | 历史输入不自动重跑；如确需新工作，在原工作项提交新的 `@jarvis` 指令。 |
+| `retry` 返回 202 | 只是恢复已提交；继续执行响应中的 `next_command`。 |
+| `webhook_runtime_mismatch` 或 receipt 不存在 | `status --smart` 确认实例/任务库，再查该实例的 `webhooks list`。 |
+| 记录无法读取 | 保留文件，按 `doctor` 的路径、权限和存储错误修复；不要删除记录制造未受理假象。 |
+
+受理格式 `version` 是 Jarvis 持久数据格式，Task `revision` 是并发保护；两者都不是 Provider 用户需要配置的版本号。旧记录缺少当前协议证明时不会自动重放；`show` 会给出可用恢复命令。诊断输出不显示请求 body、认证头或 token。
+
+<a id="补录已核验的-run-启动历史"></a>
+
+## 受控补录 Run 启动历史
+
+这是受授权 operator 的账本维护，不创建、Continue、Cancel 或重跑 Task/Run。完整背景和 Docker 传递边界见[运维入口](operations.md#受控补录-run-启动历史)。
+
+```bash
+python3 scripts/collect-run-start-history.py --origin LABEL \
+  [--ledger FILE] [--archive FILE SHA256] --output FILE
+
+jarvis-box metrics backfill --origin LABEL --sources FILE \
+  --expect-sources-sha256 SHA --coverage-from RFC3339 \
+  --attest-complete --plan FILE
+jarvis-box metrics backfill --apply FILE --expect-sha256 SHA
+```
+
+Collector 从 release 根目录执行；Native 安装后位于 `${JARVIS_STATE_DIR}/app/scripts/collect-run-start-history.py`。它成功输出 manifest 精确字节的 `sha256`；把这项可信采集输出与 manifest 分开保存。archive/member 摘要或临时对改变后的 manifest 重新算的 SHA 都不能替代它。
+
+生成计划需要 `--origin`、UTC `--coverage-from`、`--attest-complete` 和 `--plan`；`--sources` 和 `--expect-sources-sha256` 必须同时出现。`--attest-complete` 是 operator 对所选保存来源从该时刻起连续完整的裁定，最早记录、文件日期、来源标签或摘要不能推导它。计划只读、不写账本；先审阅事实数、覆盖起点和计划 SHA-256。
+
+Apply 只能接收精确计划和已审阅 SHA。它重验封存在计划中的输入、目标和账本前缀，不重新打开 archive/source。目标、环境或账本前缀改变时重新计划；中断只能用原计划重试。历史材料、manifest 与计划应保留在私有受控位置，绝不手改 `work-ledger.jsonl` 或计划文件来绕开拒绝。
 
 ## License
 
 ```bash
 jarvis-box license status
-jarvis-box license activate
+jarvis-box license activate [CODE|--code CODE]
 jarvis-box license refresh
 jarvis-box license deactivate --yes
 jarvis-box license request --out request.json
 jarvis-box license import license.json
 ```
 
-授权服务地址编译在二进制里，不是配置项（见[配置参考](configuration.md#runtimeenv)）。这些命令在授权 Pending、Expired、Revoked、Invalid 时都能用——它们正是从这些状态里出来的手段，所以没有任何「先有有效授权才继续」的前置检查。
+授权地址编译在发布二进制中，不能通过 runtime env 改写。所有命令都可在 Pending、Expired、Revoked、Invalid 状态下执行。
 
-`request` 与 `import` 是不通外网的机器走的两个动作：本机出请求文件交给服务商、把服务商签回来的授权文件导入，两步都不发网络请求。离线授权的有效期由签发时写死（最长一年），到期或换机器同样由服务商重签一份。离线机器不需要配任何授权地址。完整流程见[离线授权](https://github.com/hengshi/jarvis-box/blob/main/CUSTOMER-OPERATIONS.md#9-离线授权不通外网的机器)。
+`status` 不联网、不创建状态目录或设备私钥，且无论激活状态都以退出码 0 报告事实。在线激活默认安全读取终端输入；命令行 `CODE` 可能留在 shell history 或进程列表。离线机器用 `request` 生成请求、由服务商签发后 `import`，两个动作都不联网。`deactivate --yes` 写本地停用标记并通知服务端，恢复须重新激活或导入更新签发时间的授权文件。
 
-`status` 不联网，只读本机状态，并且不创建状态目录、设备私钥或锁文件：以另一个用户（典型是 `sudo`）运行不会把状态目录里的文件改成那个用户的，服务用户随后拿到的是正常的「未激活」而不是 `EACCES`。未激活时如实报告「激活 否（本机还没有验签通过的决定）」并以退出码 `0` 结束——退出码不跟随授权状态，`status` 的职责是报告事实，不是替脚本下判断。
+`refresh` 用于立即检查授权。服务运行时，CLI 通过所选实例的公开接口沿用服务的签到身份；服务停服时，持有同一运行目录锁后独立检查，结束即释放。服务不可达、端口或目录归属不符时明确失败，不另起签到进程；先修正实例配置或恢复服务再重试。在线授权联系正式签到服务，离线授权只检查本地签名。后台也会定期检查；此命令不启动、停止或切换服务，不会绕过许可拒绝。
 
-在线激活时，直接执行 `jarvis-box license activate`。命令显示 `激活码: ` 后，输入或粘贴激活码，按回车提交。输入不回显，按 Ctrl+C 取消；结束或取消后恢复终端。激活成功后显示本机授权状态。
-
-Docker 使用相同的交互。通过 release bundle 的部署入口执行，会使用该实例的正式部署文件和环境：
+Docker 通过 deployment script 在实例中交互运行：
 
 ```bash
-scripts/deploy-production.sh /srv/jarvis-box compose exec jarvis-box jarvis-box license activate
+scripts/deploy-production.sh /absolute/deployment-home \
+  compose exec jarvis-box jarvis-box license activate
 ```
 
-已进入容器 shell 时，直接执行 `jarvis-box license activate` 即可。直接从 Host 执行 `docker exec` 时，必须带 `-it`，将 `CONTAINER` 替换为实际容器名：
+已在 container shell 时直接运行；直接 `docker exec` 需要 `-it`。管道输入用 `-i`（或 `docker compose exec -T`）且不显示交互提示。
 
-```bash
-docker exec -it CONTAINER jarvis-box license activate
-```
+## 仅当前 Agent Run 可调用的接口
 
-自动化可用管道或文件重定向传入激活码，此时直接读标准输入，不显示交互提示：
+下面的命令不是 operator shell API。服务向当前 active、受管 Run 注入 capability；不能通过手工设置 Task/Run/recipient/credential 参数获得权限。
 
-```bash
-printf '%s' "$CODE" | jarvis-box license activate
-```
+### Workspace 和外部资源
 
-也可使用 `activate CODE` 或 `activate --code CODE`，两种写法不能同时使用。显式参数优先于标准输入；命令行参数可能留在 shell 历史或进程列表里。所有输入方式使用同一套激活码校验，命令输出不回显激活码。从管道传激活码或导入授权文件时，`docker exec` 带 `-i`，`docker compose exec` 带 `-T`；交互输入使用带 TTY 的命令。
-
-macOS Native 安装后，直接运行授权命令会使用 `${JARVIS_RUNTIME_ROOT}/state/license`，默认是 `~/.jarvis-box/state/license`。服务、授权命令与诊断使用相同的状态目录解析规则，显式的 `JARVIS_STATE_DIR` 或 `JARVIS_LICENSE_STATE_DIR` 仍可覆盖默认值。
-
-`refresh` 立即发起一次签到，换取新的签名决定。后台签到循环是常驻的，所以这是排障手段而不是日常操作：签到失败由 stderr 和状态页报告，不需要手工触发。
-
-`deactivate` 在本地落停用标记并通知服务端，`--yes` 跳过一次性确认。旧授权文件不能撤销停用；恢复需要重新激活，或导入服务商重新签发的文件，文件签名中的签发时间必须晚于本机已经接受过的所有决定。通知服务端失败时，命令会重新读取本机状态再给结论：本地标记已落盘就是已经停用，未落盘才可以重试。
-
-授权状态在 `jarvis-box license status` 和状态页的授权面板里是同一张字段表，`jarvis-box status` 另外输出一段 `key=value` 摘要供脚本读取。三处都不发网络请求。
-
-## Task workspace
-
-```bash
-jarvis-box workspace create --id <stable-id> --project <group/repo> --base-branch <branch>
-jarvis-box workspace create --id <stable-id> --remote <git-url> --base-branch <branch>
-```
-
-在 active Run 内可用只读入口查看权威 registry：
+<a id="task-workspace"></a>
 
 ```bash
 jarvis-box workspace list
+jarvis-box workspace create --id <stable-id> --project <group/repo> [--base-branch <branch>]
+jarvis-box workspace create --id <stable-id> --remote <git-url> [--base-branch <branch>]
+jarvis-box workspace resource register \
+  --kind docker-compose-project --workspace-id <workspace-id> --project <compose-project>
 ```
 
-该命令输出一个 JSON object，包含当前 `task_id`、`run_id` 和按登记顺序排列的
-`task-state.workspaces[]`。它校验当前 Run ownership，不扫描目录，也不从 `cwd`、
-`run-context.json` 或文件系统猜测 Workspace。
+`workspace list` 返回当前 Task 的权威 registry，不扫描目录。创建命令先原子登记再创建路径；初始 Task 没有 workspace 时，第一个必须用保留 ID `primary`。`--project` 只用于能由 `GITLAB_HOST` 解析的仓库；GitHub 或其他仓库使用权威 `--remote`。省略两者时才有意创建空 workspace。命令输出的路径才是可用 workspace 路径。
 
-该创建命令仅在 active 受管 Task 中可用。它在创建 workspace 之前原子地登记服务端分配的路径。zero-workspace Task 的第一个 Workspace 必须使用保留 id `primary`；非空 registry 的后续 Workspace 使用普通 stable id。带 `--project` 的 repository 必须能通过已配置的 `GITLAB_HOST` 解析；GitHub 或其他 provider-neutral 仓库必须显式使用 `--remote`。repository source 会在 registry mutation 前验证，成功后目录必须是真实 Git worktree；无法解析的 `--project` 不会登记或发布空目录。只有同时省略 `--project` 和 `--remote` 才表示有意创建空的非 repository Workspace。
+要创建生命周期可能超过 Run 的 Docker Compose project，先成功执行 resource register，才创建外部资源。当前只支持 `docker-compose-project`，并且 project 名会校验为安全标识。登记、清理与失败保留规则见[Task 外部资源生命周期](task-external-resource-lifecycle.md)。
 
-省略 `--base-branch` 且没有 Provider checkout ref 时，jarvis-box 从 remote symbolic `HEAD` 选择默认分支，执行非浅的单分支、no-tags clone。可用 repo-cache 会作为对象来源：Jarvis Box 先刷新 bare mirror，再通过非 local 的单分支 clone 从 cache 创建 Workspace，并把 `origin` 恢复为权威 remote；cache 不可用时才回退权威 remote。该 Workspace 不包含 tag ref、其他分支 ref 或其他分支独有历史。显式 branch/ref 使用声明的 checkout 合同。显式 base branch 在远端不存在时，新建与 Continue 重建均回退 remote 默认分支，并告知 Agent 请求分支、实际分支和原因。固定 review ref/commit 缺失仍拒绝执行。
+### 群历史、用户问题与受控发布
 
-## Release helpers
+<a id="im-群历史回查"></a>
+
+```bash
+jarvis-box im context search --from RFC3339 --sender <stable-id> --keyword <word>
+jarvis-box im context materialize --handle <opaque-handle>
+jarvis-box task question --file question.json
+jarvis-box task stage-publication --file manifest.json
+```
+
+群历史仅限当前已准入的原群/原话题、触发消息之前的资料。查询结果可能是 native 完整历史或 connector 保留的已收消息；空结果和 `scan_limited` 都不能证明没有历史。媒体只有专属 opaque handle 时才能 materialize；不能传 URL、下载 key 或路径。完整筛选、游标、时限和错误处理见[IM 接入](integrations/im.md#按需回查群历史)。
+
+<a id="agent-请求原用户补充信息"></a>
+
+`task question` 每 Run 只可封存一个有界问题 JSON，prompt/help 各最多 2 KiB、最多八个选项，文件最多 32 KiB。`staged` 只说明已保存；只有 Run 正常成功并确认送达后 Task 才等待原请求者答复。
+
+<a id="agent-原生内容发布"></a>
+
+`stage-publication` 同样只封存受原用户绑定授权的 artifact manifest（最多 32 KiB、16 个已有 Run artifact）；它不等于已经写入 Provider。服务在 Run 成功收尾时按精确 artifact SHA、目标 binding、marker 和 ordinal 执行，未知结果不会盲目重发。
+
+### GitHub Actions 订阅
+
+<a id="agent-github-actions-订阅"></a>
+
+```bash
+jarvis-box task subscription --file subscription.json
+```
+
+此协议只接受当前 Run 已得到的精确 GitHub Actions execution tuple（authority、repository ID、workflow ID、run ID、attempt、run number、head SHA），不接受分支、PR、URL 或 `latest` 推断。请求可登记 1–8 条唯一规则，时长 60 秒到 30 天；`registered` 只表示登记成功，不代表已经通知或继续。用户侧查看/撤销仍由原会话的控制文本处理。
+
+<a id="升级前的历史-run"></a>
+
+## 历史 Run 与 Docker release helper
+
+支持的 0.2 Task/Run 格式会按已登记身份读入当前 aggregate，不要求重建 Task。缺乏完整不可变登记的更旧 Run 只能在 Task 已结束后用显式审批登记为只读历史：
+
+```bash
+jarvis-box migrate historical-runs --task task-example \
+  --runs r_example1:1,r_example2:2 --approval-id history-review-1 > approval.json
+jarvis-box migrate historical-runs --apply approval.json
+```
+
+先审阅草稿中 Task 身份、目录与 Run 清单；不要手改草稿。登记后 Run 仅供浏览，不能 Continue、Cancel 或成为 current Run。
+
+<a id="release-helpers"></a>
+
+Docker release helper 的常用入口为：
 
 ```bash
 scripts/deploy-production.sh <deployment-home> start
@@ -172,8 +246,4 @@ scripts/deploy-production.sh <deployment-home> --force deploy
 scripts/deploy-production.sh <deployment-home> runtime-job <inner-command> [args...]
 ```
 
-`deploy`、`start` 和会停止/重建服务的 `compose` 子命令会在 Docker service mutation 前执行 active-task preflight。存在未完成或需要恢复的 Task 时，命令会先退出；`--force` 只用于客户已确认放弃当前 Run 的场景，并要求设置 `JARVIS_DOCKER_UPGRADE_FORCE_STRATEGY`，脚本会先在 deployment home 下记录受影响 Run 和策略。
-
-`runtime-job` 是 Jarvis 自有 Scheduler Adapter 的通用 Docker transport。它不识别、安装或验证内部命令。
-
-Native 的 `start/stop/restart` 是正式服务运维入口，`setup gitlab` 是 GitLab 专有接入配置入口；迁移命令按各自公开的安装或审批合同执行。
+`deploy`、`start` 和会停止或重建服务的 `compose` 子命令都执行维护预检。对 `deploy` 和 `start` 使用 `--force` 时，脚本用同一维护收据暂停并自动恢复原运行。直接对 `compose` 使用 `--force` 会明确停止运行，脚本用 `JARVIS_DOCKER_UPGRADE_FORCE_STRATEGY` 记录这项操作和受影响的 Run。`runtime-job` 只是客户 Scheduler Adapter 的 Docker transport，不识别或验证客户内部命令。

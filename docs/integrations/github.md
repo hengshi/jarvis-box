@@ -1,39 +1,26 @@
 # GitHub 接入
 
-鉴权及 JSON 校验成功、投递可靠落盘后，Webhook 立即返回 `202 Accepted`，不等待业务读取、Git 操作或 Agent 启动。响应中的 `receipt_id` 只标识投递受理，不表示 Task 已创建；后台处理和重投规则见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+接入后，你可以在 GitHub Issue 或 PR 评论中向 Jarvis 发出指令，让它评审 PR、处理后续反馈，并把结果回复到原处。你也可以在已经接入的 IM 会话中订阅一次 GitHub Actions 运行结果。
 
-GitHub provider loop 用于把 GitHub issue comment 和 pull request 事件接入 Jarvis Box。
+本文面向配置 GitHub 集成的部署维护人员。日常聊天操作见 [IM 使用说明](im.md)；任务身份与恢复规则见[执行模型](../execution-model.md)。
 
-## 当前支持
+## 接入前准备
 
-| 事件 | 行为 |
-| --- | --- |
-| `issue_comment` | 评论包含 command mention，例如 `/jarvis`、`@jarvis` 或 `@jarvis-box` 时进入 command lane；没有 mention 且 subject 是 PR 时进入 follow-up lane；普通 issue 评论不触发 follow-up |
-| `pull_request` | `opened`、`reopened`、`synchronize`、`ready_for_review` 进入 PR review lane；`closed` 先按 `merged` 归一为 Task `close/merge` 终态；开启 `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` 后，已合并且符合仓库、目标分支与 bugfix 证据条件的 PR 会进入 repo-local `self-skills-improve` lane |
-| `pull_request_review` | `submitted` 且 review state 为 `changes_requested` 或 `commented`、正文非空时进入 follow-up lane |
-| `pull_request_review_comment` | 新建的 PR inline review comment 进入 follow-up lane |
-| `issues` | `opened` 在开启 `JARVIS_ISSUE_POST_CHECK_ENABLED` 后进入 post-check；其他非终态 update 不会重跑；`closed` 会终态化创建时绑定到该 issue 的 Task |
+准备允许 Jarvis 处理的仓库、可供 GitHub 访问的 HTTPS 地址，以及以下权限：
 
-PR draft、未在 allowlist 内的仓库、重复 delivery、Jarvis marker、bot 自己的评论、空 review 和 `approved` review 会被跳过。`issue_comment` 先匹配 command，命中 mention 时不会重复进入 follow-up。
+- 配置人员能管理仓库 Webhook，用于设置回调地址、事件和共享密钥。
+- Jarvis 运行时使用的 GitHub 账号能读取目标 Issue/PR 和评论，并发表评论。
+- 需要修改代码时，运行账号还能读取和推送 PR 的来源分支。fork PR 的来源分支位于 fork 仓库中。
+- 需要订阅 Actions 结果时，同一运行账号还能读取 **Actions 运行记录和仓库 Webhook 配置**。
 
-GitHub 与 GitLab 共用 provider-neutral `FollowupDispatcher` ingress；provider adapter 只负责 webhook 归一化，队列只保存待消费评论和 subject，不保存 Task/Run 生命周期。状态 identity 包含 provider、repository/project 和 PR/MR number，因此两个代码托管平台不会共用去重状态。GitHub fork PR 仍以 target repository + PR number 作为目标，同时从 GitHub webhook 的 PR 数据取得 head repository clone URL 与 source branch，独立 checkout source workspace；运行身份没有 fork source branch 的读取或推送权限时，follow-up 会显式失败，不会静默改写 target repository。
+Webhook 密钥核验 GitHub 发来的事件；`gh` 登录凭据用于读取仓库和回复评论，两者不能互相替代。推荐使用专门的 GitHub machine user 或 GitHub App installation token，按需要授予仓库权限。
 
-GitHub issue/PR URL 在 Task 创建 claim 中登记为规范化 `task-state.subject`。`issues.closed` 和 `pull_request.closed` 只按该登记精确匹配已有 Task，然后走统一的进程终止和 `workspaces[]` 清理；不从 branch、Artifact 或目录名推断。Terminal delivery 在任何终态副作用前先持久化 Task 登记序号 cutoff 和不可变实例快照，retry 只重放该快照，不会清理 delivery 之后启动的任务或同路径的新 Task 实例。
+## 配置仓库范围和触发方式
 
-## 配置运行时 env
+把配置写入 `JARVIS_ENV_FILE` 指向的环境文件，不要修改 sample：
 
-启用 GitHub 时，配置实际接入的仓库范围和触发名：
-
-- repo allowlist：哪些 GitHub 仓库允许进入 Jarvis。
-- review repo allowlist：哪些 GitHub 仓库允许 PR review lane；启用 `self-skills-improve` 时，同一范围也约束 GitHub merged PR self-improve admission。
-- shared mention names：哪些文本触发 command lane，例如 `JARVIS_MENTION_NAMES=jarvis,jarvis-box`。
-- command user allowlist 是可选收窄设置；新部署留空，允许范围内所有非机器人作者触发命令。
-
-留空允许名单时，公开仓库中能发表评论的任何非机器人用户也可以触发命令；HMAC 验证、机器人排除和精确 subject 绑定保持生效。客户明确选择收窄范围时才填写 login 或 immutable numeric user id，不把成员清单作为接入前置条件。
-
-把真实配置写入 `JARVIS_ENV_FILE` 指向的运行时 env 文件，不要覆盖 sample：
-
-```bash
+```dotenv
+JARVIS_PUBLIC_URL=https://jarvis.example.com
 GITHUB_REPOSITORIES=owner/repository
 REVIEW_GITHUB_REPOSITORIES=owner/repository
 JARVIS_GITHUB_WEBHOOK_ENABLED=true
@@ -43,25 +30,39 @@ JARVIS_GITHUB_COMMAND_ALLOWED_USERS=
 GH_CMD=gh
 ```
 
-`REVIEW_GITHUB_REPOSITORIES` 未设置时复用 `GITHUB_REPOSITORIES`。它不能包含不在 `GITHUB_REPOSITORIES` 里的仓库。`JARVIS_SELF_SKILLS_IMPROVE_ENABLED=true` 时，GitHub merged PR 的 repo-local `self-skills-improve` admission 复用该 review 仓库范围，不需要额外的 GitHub self-improve 仓库变量；GitLab MR 子集仍由 `JARVIS_SELF_IMPROVE_GITLAB_PROJECTS` 控制。
-`JARVIS_GITHUB_WEBHOOK_ENABLED` 默认为 `true`。若 GitHub 仓库只作为飞书项目或 Jira 工作项的受控 Workspace 目标，设置为 `false`；此时 GitHub webhook endpoint 返回 `404`，也不要求配置 `GITHUB_WEBHOOK_SECRET`，但仓库仍必须位于 `GITHUB_REPOSITORIES` allowlist 中。
-`JARVIS_MENTION_NAMES` 是 ChatBridge、GitLab command lane 和 GitHub command lane 共享触发名。每个名字在 GitLab/GitHub 中同时支持 `@name` 和 `/name`；未设置时默认为 `jarvis,jarvis-box`。
-`JARVIS_GITHUB_COMMAND_ALLOWED_USERS` 留空时不限制 GitHub issue/PR comment command lane 的非机器人触发人。客户选择限制时支持 login 和 numeric user id。GitLab note command lane 的可选触发人限制由 `JARVIS_GITLAB_COMMAND_ALLOWED_USERS` 单独配置。
+将 `owner/repository` 换成实际仓库，`<shared-secret>` 换成自行生成的密钥。
 
-## 配置 GitHub webhook
+| 配置 | 用途 |
+| --- | --- |
+| `JARVIS_PUBLIC_URL` | 这套 Jarvis Box 对外提供的 HTTPS 基础地址，必须与 Webhook 回调地址一致 |
+| `GITHUB_REPOSITORIES` | 允许接入的仓库；范围外的事件不启动工作 |
+| `REVIEW_GITHUB_REPOSITORIES` | 允许自动评审 PR 的仓库；不设置时沿用上述范围，不能包含范围外的仓库 |
+| `JARVIS_GITHUB_WEBHOOK_ENABLED` | 是否接收 GitHub Webhook，默认 `true` |
+| `GITHUB_WEBHOOK_SECRET` | 接收事件时验证签名，启用 Webhook 必须配置 |
+| `JARVIS_MENTION_NAMES` | 指令触发名，默认 `jarvis,jarvis-box`；每个名字同时支持 `@名字` 和 `/名字` |
+| `JARVIS_GITHUB_COMMAND_ALLOWED_USERS` | 可选的发起人限制；留空允许接入仓库内所有非机器人作者，填写时支持 login 或数字用户 ID |
+| `GH_CMD` | Jarvis 使用的 `gh` 命令 |
 
-在每个仓库的 webhook 设置中添加：
+公开仓库允许任何人发表评论时，允许名单留空也会允许这些非机器人用户发起指令。需要收窄范围时再填写名单，不必为普通接入逐个登记成员。
+
+触发名与 IM、GitLab 共享；GitLab 的发起人限制由 `JARVIS_GITLAB_COMMAND_ALLOWED_USERS` 单独配置。开启 `JARVIS_SELF_SKILLS_IMPROVE_ENABLED` 后，符合条件的已合并 PR 也使用评审仓库范围进行技能回填，无需另设 GitHub 仓库变量。
+
+如果 GitHub 仓库仅用于其他工作项的代码工作区，不需要接收 GitHub 事件，可设置 `JARVIS_GITHUB_WEBHOOK_ENABLED=false`。此时 Webhook 返回 `404`，无需配置共享密钥，但仓库仍须在 `GITHUB_REPOSITORIES` 内。
+
+## 配置 GitHub Webhook
+
+在仓库的 Webhook 设置中填写：
 
 | 字段 | 值 |
 | --- | --- |
-| Payload URL | `https://<jarvis-public-url>/webhooks/github` |
+| Payload URL | `${JARVIS_PUBLIC_URL}/github-webhook` |
 | Content type | `application/json` |
-| Secret | `GITHUB_WEBHOOK_SECRET` |
-| Events | `issue_comment`、`pull_request`、`pull_request_review`、`pull_request_review_comment`、`issues` |
+| Secret | 与 `GITHUB_WEBHOOK_SECRET` 相同 |
+| Events | `issue_comment`、`pull_request`、`pull_request_review`、`pull_request_review_comment`、`issues`；需要订阅 Actions 时再包含 `workflow_run` |
 
-兼容路径 `/github-webhook` 也可用，但新部署推荐 `/webhooks/github`。
+`JARVIS_PUBLIC_URL` 应是完整的 HTTPS 地址，例如 `https://jarvis.example.com`。普通 GitHub 事件也兼容 `/webhooks/github`；Actions 订阅要求仓库中有启用的 `workflow_run` Webhook，且地址精确匹配 `${JARVIS_PUBLIC_URL}/github-webhook`。按表中的地址统一配置即可。公网端口和反向代理的设置见[网络入口](../network-ingress.md)。
 
-有仓库 webhook 管理权限时，可用 `gh api` 创建 webhook：
+有仓库 Webhook 管理权限时，可以用 `gh` 创建。下面示例同时启用 Actions 事件；只需要普通工作项处理时，省略 `workflow_run` 那一行。执行前，在当前终端将 `JARVIS_PUBLIC_URL` 和 `GITHUB_WEBHOOK_SECRET` 设置为环境文件中的相同值：
 
 ```bash
 gh api "repos/OWNER/REPO/hooks" \
@@ -73,17 +74,22 @@ gh api "repos/OWNER/REPO/hooks" \
   -f 'events[]=pull_request_review' \
   -f 'events[]=pull_request_review_comment' \
   -f 'events[]=issues' \
-  -f "config[url]=$JARVIS_PUBLIC_URL/webhooks/github" \
-  -f config[content_type]=json \
+  -f 'events[]=workflow_run' \
+  -f "config[url]=$JARVIS_PUBLIC_URL/github-webhook" \
+  -f 'config[content_type]=json' \
   -f "config[secret]=$GITHUB_WEBHOOK_SECRET"
 ```
 
-如果仓库已有 Jarvis webhook，先查出 hook id，再用 `PATCH` 更新 URL、secret 和事件列表：
+`OWNER/REPO` 要替换为实际仓库。已有 Webhook 时，先查询 ID，避免重复创建：
 
 ```bash
 gh api "repos/OWNER/REPO/hooks" \
   --jq '.[] | [.id, .active, .config.url, (.events | join(","))] | @tsv'
+```
 
+将查到的 `HOOK_ID` 填入下面命令，更新已有 Webhook。事件列表同样包含可选的 `workflow_run`：
+
+```bash
 gh api "repos/OWNER/REPO/hooks/HOOK_ID" \
   -X PATCH \
   -F active=true \
@@ -92,96 +98,87 @@ gh api "repos/OWNER/REPO/hooks/HOOK_ID" \
   -f 'events[]=pull_request_review' \
   -f 'events[]=pull_request_review_comment' \
   -f 'events[]=issues' \
-  -f "config[url]=$JARVIS_PUBLIC_URL/webhooks/github" \
-  -f config[content_type]=json \
+  -f 'events[]=workflow_run' \
+  -f "config[url]=$JARVIS_PUBLIC_URL/github-webhook" \
+  -f 'config[content_type]=json' \
   -f "config[secret]=$GITHUB_WEBHOOK_SECRET"
 ```
 
-`https://<jarvis-public-url>/webhooks/github` 里的端口和 path 是两层概念：公网或云安全组开放的是 TCP 端口，通常是 443；`/webhooks/github` 是该端口上的 HTTP path。生产推荐用反向代理只把 webhook path 转发到 jarvis-box，而不是把 jarvis-box 的 8787 端口整体裸露到公网。入口配置示例见 [network-ingress.md](../network-ingress.md)。
+## 配置 Jarvis 使用的 GitHub 账号
 
-## 配置 gh 写回
-
-Native 部署直接使用安装发起用户现有的 `gh` 认证：
+Native 部署使用安装发起用户现有的 `gh` 认证。首次由该用户登录后，检查账号是否正确：
 
 ```bash
 gh auth login
 gh auth status
 ```
 
-Docker 部署由 `deploy-production.sh ... start` 自动导入当前宿主机身份；多账号宿主机用 `JARVIS_GITHUB_USER` 选择 machine user。Token 写入私有 `auth/github.token`，不写 `runtime.env`，也不挂载宿主机 HOME/Keychain。
+Docker 部署通过 `deploy-production.sh ... start` 导入当前宿主机身份；宿主机有多个账号时，用 `JARVIS_GITHUB_USER` 指定账号。凭据保存在私有的 `auth/github.token` 中，不写入 `runtime.env`，也不挂载宿主机 HOME 或 Keychain。完整步骤见[运维说明](../operations.md)。
 
-token 至少需要目标仓库的 issue/PR 读取和评论权限；要执行 follow-up 修改，还需要读取并推送 PR head repository 的 source branch（fork PR 即 fork 仓库分支）。GitHub issue `opened` 的 post-check 会用 `gh api` 预取 issue 和分页评论。GitHub command/post-check lane 由 Agent 产出 GitHub-ready Markdown，再由 Jarvis Box 的 `ProviderActionExecutor` 使用 `gh issue comment` 或 `gh pr comment` 写回；Agent 不接收 provider mutation 命令。Direct command 的 `comment-post-action.txt`、post-check workflow 的 `workflow-actions.json` 和 exact Run typed effect receipt 共同提供相应层级的脱敏证据，不互相复制。PR review 保留 review delivery owner，并按每次 Run / head diff append-only 新建评论，避免改写旧 review 的 timeline；follow-up 状态评论按 marker 查找并 POST/PATCH 同一条评论，但只能由 exact Run typed effect 执行。两者与 command/post-check 共用全局回写开关和服务端 identity。
+Jarvis 会在订阅登记和处理 Actions 结果时检查运行读取权限及 Webhook 配置，不会替你创建或修改 Webhook。缺少条件时会说明订阅没有登记，不能把这当成已经开始等待。
 
-### 最终写回时 subject 已不存在
+## GitHub 中如何触发工作
 
-Issue、PR、command 和 review 的最终评论如果返回 HTTP 404，Jarvis Box 会用同一个 `gh` 身份查询目标 repository。仓库仍可访问时，writeback artifact 记录 `subject-not-found / provider-subject-not-found`，TaskService 先把 Task 置为 `cancelled`，再清理全部登记 Workspace 和 typed external resource；Agent 已成功完成的 Run 保持 `succeeded`。清理失败或延迟保留取消终态及独立的处置义务，由同一处置流程重试，不重新执行 Agent 或评论写回。
+| 操作或事件 | Jarvis 的行为 |
+| --- | --- |
+| 在 Issue/PR 评论中写 `/jarvis`、`@jarvis` 或已配置的触发名 | 按评论要求处理并在原 Issue/PR 回复。同一发起人在该事项中的后续指令[继续原任务](../execution-model.md#从同一事项继续评论指令) |
+| PR 打开、重新打开、提交更新或从草稿转为可评审 | 在允许自动评审的仓库中启动 PR 评审 |
+| 提交非空的 `changes_requested` 或 `commented` 评审，或新建行内评审评论 | 处理后续反馈 |
+| 在 PR 中新增不含指令的普通评论 | 作为后续反馈处理；普通 Issue 评论不触发此类处理 |
+| Issue 创建 | 开启 `JARVIS_ISSUE_POST_CHECK_ENABLED` 时进行初步检查；普通编辑或标签变更不会反复启动 |
+| Issue/PR 关闭或 PR 合并 | 结束与该工作项绑定的工作，并清理其登记的工作区和外部资源 |
 
-PR review 不按 marker 更新旧 bot comment。新建 review comment 返回 404，且目标仓库检查成功时，Task 才进入 subject-not-found 终态。目标仓库检查失败、鉴权错误和配置错误仍是普通写回失败，Status 会保留 `needs-attention` 供排查。
+草稿 PR 不触发自动评审。机器人自身评论、重复投递、空评审和 `approved` 评审不会触发后续处理；指令评论不会同时触发一次普通反馈处理。
 
-生产推荐使用专门的 GitHub machine user 或 GitHub App installation token，而不是个人高权限账号。写回身份必须拥有目标 repo 的 issue/PR 读取与评论权限；webhook secret 不能替代 `gh` 写回 token。
+PR 评审针对事件受理时的提交和分支，评论读取失败会阻止准备，不会假装没有历史反馈。每个[配置的评审角度](../configuration.md#configprompts)由一个独立的 Agent 进程检查同一提交，汇总后追加一条新评论。后续反馈处理会更新同一条状态评论。fork PR 的读取或推送权限不足时会明确失败，不会转而修改目标仓库分支。
 
-## 验证
+### 回复时 Issue 或 PR 已被删除
 
-按顺序做四层验证：
+回复返回 `404` 时，Jarvis 会用同一个运行账号检查仓库。仓库可访问而工作项已不存在时，该任务取消并清理已登记资源；已经成功完成的执行结果保留。清理失败只重试清理，不重新运行 Agent 或重复发表评论。
 
-1. 本机 HMAC smoke：按 [network-ingress.md](../network-ingress.md) 验证 `POST http://127.0.0.1:8787/webhooks/github`，有效签名返回 200，错误签名返回 401。
-2. 公网入口 smoke：从生产机器外部访问 `https://<jarvis-public-url>/webhooks/github`，确认 HTTPS、反向代理和 jarvis-box 串通，并确认 `/server/api/*` 与公网 `:8787` 不可访问。
-3. GitHub delivery smoke：在 GitHub webhook 页面发送 ping，或用 `gh api "repos/OWNER/REPO/hooks/HOOK_ID/pings" -X POST` 触发 ping，再查看最新 delivery。ping 事件应返回 2xx，jarvis-box body 通常包含 `github_event_not_supported`，且不会启动 agent。
-4. 真实 issue post-check 闭环：创建 allowlist 仓库的测试 issue，确认 `issues/opened` 启动且只启动一个 `post-check` Task，普通 edited/labeled 事件不会重跑，最终评论写回原 issue。
-5. 真实 command 闭环：在接入仓库的测试 issue 或 PR 中，由不同非机器人用户评论 `/jarvis summarize this PR` 或配置的 mention 名称。允许名单留空时均应触发任务；打开 `/status` 确认出现 `source=github` work item，并核对原 issue/PR 中的 Jarvis 评论。
-6. 真实 follow-up 闭环：在 allowlist 仓库的测试 PR 中创建 changes-requested review、普通 review 正文或 inline review comment；若使用 fork PR，先确认 Jarvis 运行身份可推送该 head repository source branch。确认 `/status` 出现 `lane=followup`，PR 中只有一条带 `jarvis-box-followup-status` marker 的状态评论，任务完成后该评论从“执行中”更新为“已完成”。
+仓库本身不可访问、账号权限不足或配置有误时，保留待处理状态和失败原因，供维护人员排查。
 
-检查 artifact 时，不应出现 `GITHUB_WEBHOOK_SECRET`、`GH_TOKEN`、`GITHUB_TOKEN` 或 raw provider token。若真实闭环没有启动 agent，优先检查：
+## 在 IM 中订阅一次 Actions 运行结果
 
-- `JARVIS_GITHUB_COMMAND_ALLOWED_USERS` 是否被意外填成非空限制；留空不要求提供用户 ID。
-- `GITHUB_REPOSITORIES` 是否包含 `owner/repo`。
-- webhook 是否选择了 `issue_comment` 事件。
-- follow-up 测试是否同时选择了 `pull_request_review` 和 `pull_request_review_comment`；fork PR 还要检查运行身份对 head repository source branch 的推送权限。
-- GitHub delivery 是否是重复 delivery。
-- Native 的 `gh auth status` 是否在安装发起用户下通过，或 Docker `auth-import` 是否成功。
+适合“这个 CI 结束后提醒我，失败则继续排查”的情况。订阅针对一个工作流运行，不把整个 PR 的所有检查、分支或“最新一次”当成同一个运行。
 
-自动化 E2E 使用真实 `jarvis-box serve` 进程和真实本地监听端口覆盖 GitHub webhook ingress：
+### 先验证一次运行结束事件
 
-```bash
-npm run e2e -- e2e/github-webhook.spec.ts
+完成 Webhook 和账号配置后，在这个仓库执行一次 Actions 工作流并等待结束。到 GitHub Webhook 的近期投递记录中确认 `workflow_run`、`action=completed` 事件已经发给这套 Jarvis Box，响应为 `200` 且正文包含 `accepted: true`；这表示 Jarvis 已验签、读取并核对同一次运行后受理了事件。不能仅凭 HTTP 成功状态判断验证通过。
+
+只有这条真实事件与读取验证通过，才可以登记订阅。创建 Webhook、列出配置或 ping 连通性检查均不能代替它。修改回调地址或签名配置后，需要重新完成这一步。
+
+### 登记、查看和取消
+
+验证通过后，在原 IM 会话中发送：
+
+```text
+@jarvis 订阅 当前
+@jarvis 订阅 https://github.com/OWNER/REPO/actions/runs/RUN_ID 下一次 2h
+@jarvis 这个 CI 结束提醒我，失败继续排查
+@jarvis 查看订阅
+@jarvis 取消订阅 <查询结果中的订阅编号>
 ```
 
-## 能力边界
+把示例链接换成真实的 Actions 运行详情页地址，去掉 `?` 或 `#` 后缀；地址须属于已接入的 GitHub host。指定一次重新运行时，可使用 `/actions/runs/RUN_ID/attempts/ATTEMPT`，Jarvis 不会自动换成另一次尝试。`当前` 只适用于这项工作已关联唯一运行的情况；有多个运行时，回复会给出可选择的链接。
 
-GitHub 同时是 repository host 和 work-item provider。issue 提供 create/command/lifecycle/comment writeback，PR 另外提供 review/follow-up。follow-up 状态评论只能由 exact Run typed effect 交付，不能由 ingress dispatcher 或 `followups/*.json` 直接写回。GitHub issue 当前没有 Jarvis Box 内建的 label/status mutation adapter；workflow 请求 provider 不具备的 action 会在调用 `gh` 前 fail closed。
+订阅登记两项一次性处理：结束结论不是 `failure` 时提醒原会话；结论为 `failure` 时，在原任务仍允许继续的前提下继续排查，结果也回到原会话。任务已取消、权限失效或不再允许继续时，只记录受阻原因，不另建任务。运行结束却没有可用结论时，记录结果暂不可用，不自动续跑。
 
+默认期限为 24 小时，可指定 1 分钟至 30 天。默认处理所选运行：尚未结束就等待，已经结束则处理一次；明确写“下一次”才等待同一工作流、同一提交的新运行或重新尝试。登记回执会列出运行链接、处理方式、接收会话、期限和订阅编号。
 
+重复登记不延长期限，也不重新打开已结束的订阅。取消只停止未来动作，已撤销或到期的订阅不会自动恢复。重启后会恢复等待，重复完成事件不会再次处理。提醒是否送达无法确认时保留未知结果，不盲目补发；可在原会话查询订阅状态。存储和去重细节见[持久化与恢复](../storage-model.md)。
 
-## nginx配置参考
+## 验证和排查
 
-```bash
-upstream jarvis.xxx.com {
-    server xx.xx.xx.xx:443;
-}
+按下面顺序核对接入结果：
 
-server {
-    listen 80;
-    listen [::]:80;
-    server_name jarvis.xxxx.com;
+1. **账号**：在 Jarvis 实际使用的 Native 用户或 Docker 环境检查 `gh auth status`，确认仓库可读、Issue/PR 可评论。不要只检查另一台电脑或另一个用户的登录状态。
+2. **入口**：按[网络入口](../network-ingress.md)验证 HTTPS 和转发配置。签名有效的新任务事件受理后返回 `202`；已处理的重复投递可返回 `200`，签名错误返回 `401`。Actions 结束事件的成功回执为 `200` 和 `accepted: true`。受理回执不表示工作已经完成。
+3. **投递**：在 GitHub Webhook 页面触发 ping 并查看 delivery。ping 只检查连通性，不启动 Agent，响应可包含 `github_event_not_supported`。
+4. **指令和回复**：在接入的测试仓库中评论 `/jarvis summarize this PR`。到 [Terminal 工作台](../status-ui.md#终端工作台)核对新工作，并确认结果回到同一 Issue/PR。
+5. **自动处理**：按已启用能力创建测试 Issue、更新非草稿 PR 或提交评审反馈，检查工作和原处回复。fork PR 还要验证来源分支推送权限。
+6. **Actions 提醒**：用已配置 `workflow_run` 的仓库和精确运行链接登记订阅；先确认收到登记回执，再核对原会话提醒或允许的继续处理。重复事件不应产生重复提醒或重复执行。
 
-    location / {
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header X-Forwarded-Host 'jarvis.xxx.com';
-            #proxy_set_header Host 'rc.hengshi.org';
-            #proxy_set_header X-Request-Domain '$scheme://rcorg.xxxx.com';
-            proxy_pass https://jarvis.xxxx.com;
-    }
+没有触发时，优先检查仓库范围、事件选择、触发名和可选的发起人限制。没有回复时，检查运行账号对原 Issue/PR 的评论权限；没有 Actions 提醒时，再检查运行读取权限、Webhook 地址，以及订阅是否已到期或撤销。
 
-    listen 443 ssl http2; # managed by Certbot
-    ssl_certificate /etc/fullchain.pem; # managed by Certbot
-    ssl_certificate_key /etc/privkey.pem; # managed by Certbot
-    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
-
-
-    if ($scheme != "https") {
-        return 301 https://$host$request_uri;
-    }
-}
-```
+不要把 `GITHUB_WEBHOOK_SECRET`、`GH_TOKEN`、`GITHUB_TOKEN` 或其他原始凭据粘贴到公开评论和日志。GitHub Issue 当前不支持由 Jarvis 内建操作自动修改标签或状态。配置的完整列表见[配置参考](../configuration.md)。

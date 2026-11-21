@@ -15,8 +15,9 @@ Jarvis 使用多个独立仓库，因为构建方法、运行时实现和客户�
 ## 单向发布流
 
 ```text
-私有 GitHub 规范源码与 Actions
-  → 构建并验证不可变 release bundle
+私有 GitHub 规范源码
+  → 独立构建与资格验证环境产出不可变 release bundle
+  → Actions 校验来源与制品，不重新构建
   → 推送私有 GHCR production image
   → 写入 production-image.json
   → 创建私有 GitHub Release（含可选独立 Docker update.sh）
@@ -29,7 +30,7 @@ Jarvis 使用多个独立仓库，因为构建方法、运行时实现和客户�
 
 ## 版本规则
 
-新部署默认选择 1.x 最新稳定版，0.2.x、0.3.x 仅接收 bug 与安全修复。当前安装器与更新入口通过 `channels/v1/latest.json` 发现稳定版本；有私有 GitHub 权限时，Native 也可从已发布 release 列表选择最高稳定 1.0+ 版本。旧客户端使用的 GitHub Latest 与根 `latest.json` 保留在旧版本线，新版本发布不修改它们。
+只维护 main 一个主分支；新部署默认选择其最新稳定版，当前为 1.x，后续主版本仍沿同一主分支发布。0.2.x、0.3.x 已退役，不再接收修复或发布新版本。当前安装器与更新入口通过 `channels/v1/latest.json` 发现稳定版本；有私有 GitHub 权限时，Native 也可从已发布 release 列表选择最高稳定 1.0+ 版本。GitHub Latest 指向 main 最新正式版，预发布、维护版和较旧版本不推进它；根 `latest.json` 保留旧版本线。旧 0.2 CLI 不再支持无参更新，跨线须使用已校验的目标 bundle 安装器。
 
 公开下载入口 `index.html` 通过 `channels/v1/latest.json.download_guide.url` 打开对应版本的说明页；`download_guide.sha256` 记录页面摘要。该字段对尚未提供网页说明的历史版本是可选的。版本说明页与固定入口先就绪，新通道才推进；说明页按版本保持不可变，安装包与原有 `SHA256SUMS` 的规范来源不变。
 

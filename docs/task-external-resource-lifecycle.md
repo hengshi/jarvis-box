@@ -1,19 +1,22 @@
 # Task 外部资源生命周期
 
-## 目的
+本文面向编写 Runtime Foundation、workflow 或 Agent 集成的人。若一个 Task 创建的资源可能在 Agent 进程退出后继续存在，必须先把它登记为 Task-owned typed resource；Jarvis Box 只清理已登记的资源，绝不从目录、仓库名、marker 或命令习惯猜测所有权。
 
-Task 可以创建超出其 agent 进程寿命的资源。jarvis-box 必须处置其拥有的资源，而不能从客户仓库名、文件、目录或命令约定猜测。
+日常 operator 不需要手改 registry 或清理状态。Workspace 保留、Task 终态和手工/定时清理的总规则见[存储模型](storage-model.md)。
 
-## 权限
+<a id="目的"></a>
+<a id="权限"></a>
 
-| 关注点 | 权限来源 |
+## 唯一的清理权限
+
+| 事实 | 权威来源 |
 | --- | --- |
-| Task 和当前 Run identity | `task-state.json` |
+| Task 与 current Run identity | `task-state.json` aggregate |
 | Workspace 所有权 | append-only `workspaces[]` |
-| 外部清理义务 | typed `external_resources[]` |
-| 清理重试状态 | Task state |
+| 非进程外部资源的清理义务 | typed `external_resources[]` |
+| 清理重试与完成事实 | Task state |
 
-`external_resources[]` 是非进程外部资源的唯一权限来源。它包含数据，绝不是 shell 命令。初始支持的 kind 为 `docker-compose-project`：
+`external_resources[]` 保存数据，不保存 shell 命令。当前仅支持 `docker-compose-project`：
 
 ```json
 {
@@ -26,11 +29,13 @@ Task 可以创建超出其 agent 进程寿命的资源。jarvis-box 必须处置
 }
 ```
 
-Task 初始时 registry 有意为空。当前 schema 不带版本标记：0.2 的 `external_resource_registry_version = 1` 在 0.3 重写时没有跟着落下来，读侧也就没有「版本不认识就拒绝」这个分支——今天的拒绝认内容不认版本：kind 不在支持集、`id` 与 kind+project 不相等、project 标识不安全、workspace 未登记、`registered_by_run_id` 不是本 Task 的真实 Run，任何一条都拒。这条版本兼容现在必须保持关闭：registry schema 发生任何不兼容变更之前，写侧的版本标记与读侧的版本拒绝必须同时落地，否则对面写下的条目会被静默误读，而不是被拒绝。
+`project` 必须是小写安全标识，`id` 必须精确等于 `docker-compose-project:<project>`，workspace 必须已登记，`registered_by_run_id` 必须是同一 Task 的真实 Run。任何不支持 kind、冲突 identity、不安全 project、未知 workspace 或失效 Run 都会被拒绝。当前 schema 不使用 registry version；若将来不兼容变更，写侧 version 与读侧 fail-closed 检查必须一起发布，不能静默误读旧条目。
 
-## 登记边界
+<a id="登记边界"></a>
 
-active Run 在依赖资源之前通过 jarvis-box 类型化资源面登记资源。登记时验证：
+## 在创建资源前登记
+
+仅 active、受管 Run 可执行：
 
 ```bash
 jarvis-box workspace resource register \
@@ -39,44 +44,37 @@ jarvis-box workspace resource register \
   --project project_ab12cd
 ```
 
-- 当前 Task 和 Run identity；
-- 引用的已登记 Workspace；
-- 支持的 resource kind 和安全的 project 标识；
-- 结果 registry 条目的幂等性。
+命令验证当前 Task/Run ownership、已登记 workspace、kind/project 格式与 registry 幂等性。成功返回才表示清理义务已持久化；在此之前不得创建 Compose project。Run 失去 ownership、Task 已终态或输入不合法时命令 fail closed，且不得创建资源。
 
-命令只允许当前拥有 Task 的 Run 调用。调用成功表示清理义务已经持久化；外部资源只能在成功返回后创建。Run 已失去 ownership、Task 已终态、Workspace 未登记或 registry 条目不受支持时，命令 fail closed，且不得创建资源。
+Jarvis Box 不会从 `.dev-data`、Compose file、repository/workspace 名、活动容器或 Docker working-directory label 推断登记。客户 Runtime Foundation 也不应绕过这个 registry 直接写清理状态。
 
-jarvis-box 不从 `.dev-data`、Compose file、仓库名、workspace 名、运行中容器或 Docker working-directory 标签推断登记。客户 Runtime Foundation 任务不读取或写入此 registry。
+<a id="清理决策表"></a>
+<a id="顺序与恢复"></a>
 
-## 清理决策表
+## 清理顺序与可观察结果
 
-| Task 状态 | Docker 动作 | Workspace 结果 |
+清理前 Jarvis Box 依次证明：没有 current Run owner、没有仍存活的已登记进程身份、没有 terminalization intent；随后取得 Task 与 Workspace cleanup lease。对每个显式 resource，先处理外部资源，再处置其 workspace，最后保存证据并移除已解决条目。
+
+| 情况 | Docker 动作 | Workspace 结果 |
 | --- | --- | --- |
-| 无已登记外部资源 | 无 | 通过常规 idle 检查后处置已登记 Workspace |
-| 已登记 Compose project | 仅查询/移除具有该精确 project 标签的资源 | 仅在验证精确缺失后处置 |
-| 已登记资源但 Docker 不可用 | 无 | 保留义务和 Workspace；退避重试 |
-| 无效 registry | 无 | fail closed 并暴露修复证据 |
+| 没有已登记资源 | 不调用 Docker | 通过常规 idle 检查后可处置已登记 workspace |
+| 已登记 Compose project | 只按精确 `com.docker.compose.project=<project>` label 查询/移除 containers 与 networks | 只在精确缺失已验证后处置 |
+| Docker 不可用 | 不删除 registry | 保留义务与 workspace，并持久化退避重试 |
+| registry 无效 | 不调用 Docker | fail closed 并暴露修复证据 |
 
-清理绝不从无过滤的宿主全局 Docker 扫描开始。
+清理不会从未过滤的宿主全局 Docker scan 开始，也不会按工作目录、同名进程或单一 PID 扩大范围。失败是需要保留的义务，不改写 Provider 结果，也不进入热 terminalization 循环；手工与定时清理使用同一所有权证明和 finalizer。
 
-## 顺序与恢复
+<a id="不变量"></a>
 
-1. 解析受管 Run 进程组和同 Run 后代进程。
-2. 证明没有当前 Run owner、存活的已登记进程身份或 terminalization intent。
-3. 取得 Task 和 Workspace cleanup lease。
-4. 逐一完成每个显式登记的外部资源。
-5. 处置已登记 Workspace。
-6. 移除已解决的资源条目并持久化清理证据。
+## 完成与不变量
 
-Workspace 或资源失败是保留的义务，附带持久化指数退避。它不改写 provider 结果，也不进入热 terminalization 循环。手工和定时清理使用相同的所有权证明和 finalizer。
+`workspace_disposal_completed=true` 只在每个已登记 workspace 和 external resource 都处置完成后写入。`tasks clean` 只消费这个完成凭证来退役 Task artifact；它不重新扫描或重新解释资源。
 
-`workspace_disposal_completed=true` 仅在每一个已登记 Workspace 和外部资源都被处置后写入。`tasks clean` 消费该凭证来退役 Task artifact；它不重新发现资源或重新解释清理状态。
+必须始终保持：
 
-## 不变量
-
-1. 客户名称、marker 文件和目录形状永不创建所有权。
-2. 空类型化 registry 不触发任何 Docker 调用。
-3. 已登记 project 仅通过精确类型化 identity 被完成。
-4. Docker 故障同时保留资源记录和其 Workspace。
-5. Runtime Foundation 清理和宿主 scheduler 绝不检查 jarvis-box Task、Workspace 或外部资源状态。
-6. jarvis-box 绝不要求客户工具清理 Task 拥有的资源。
+1. 客户名称、marker 文件与目录形状不创建资源所有权。
+2. 空 registry 不触发 Docker 调用。
+3. 已登记 project 仅按其精确、类型化 identity 清理。
+4. Docker 故障同时保留 resource record 与关联 workspace。
+5. Runtime Foundation 清理和宿主 scheduler 不读取或清理 Jarvis Box Task/Workspace/external-resource 状态。
+6. Jarvis Box 不要求客户工具代为清理 Task-owned resource。

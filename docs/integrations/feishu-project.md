@@ -1,102 +1,72 @@
 # 飞书项目接入
 
-鉴权及 JSON 校验成功、投递可靠落盘后，Webhook 立即返回 `202 Accepted`，不等待业务读取、Git 操作或 Agent 启动。响应中的 `receipt_id` 只标识投递受理，不表示 Task 已创建；后台处理和重投规则见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+本页面向将飞书项目工作项接入 Jarvis Box 的管理员。系统接收飞书项目 webhook，执行 post-check 或显式 mention command，再把 Agent 的 `comment.md` 写回对应工作项。先选择读写 backend，再在飞书项目自动化中配置事件。
 
-Jarvis Box 接收飞书项目 webhook，执行 post-check 或显式 mention command，再把最终 `comment.md` 发布到对应工作项。command mention 由 `JARVIS_MENTION_NAMES` 配置。后端可以是飞书项目 plugin OpenAPI，也可以是官方 Meegle CLI。默认 Meegle backend 的 post-check 与 command lane 都由 runtime agent 使用已认证 CLI 读取实时正文、完整评论历史、附件和关联工作项；plugin 是特殊路径，由 Jarvis Box 预取实时输入且不向 agent 暴露 plugin credential。
+鉴权、JSON 校验和可靠落盘后，webhook 立即返回 `202 Accepted`。`receipt_id` 仅表示受理，不等待读取、Git 操作或 Agent 启动；后台恢复见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
 
-## 配置
+## 选择 backend
 
-| 变量 | 必填 | 用途 |
-| --- | --- | --- |
-| `FEISHU_PROJECT_WEBHOOK_SECRET` | 是 | 与当前 webhook envelope 的 `header.token` 匹配的共享 token。 |
-| `FEISHU_PROJECT_BACKEND` | 否 | `plugin` 或 `meegle-cli`；留空时默认 `meegle-cli`。plugin 必须显式指定。 |
-| `FEISHU_PROJECT_ALLOWED_SPACES` | 否 | 逗号分隔的 project key；为空时允许全部 project。 |
-| `FEISHU_PROJECT_SIMPLE_NAMES` | plugin 使用稳定 project key 时必填 | JSON object，把 webhook 的稳定 project key 映射到页面 URL 使用的空间 `simple_name`；Meegle CLI backend 会通过 `project search` 自动解析并缓存。 |
-| `JARVIS_MENTION_NAMES` | 否 | 逗号分隔的 command mention 名称；飞书项目仅使用这里配置的名称，未设置时默认为 `jarvis,jarvis-box`。 |
-| `JARVIS_FEISHU_PROJECT_COMMAND_ALLOWED_USERS` | 否 | 允许使用 mention command 的用户标识；为空时允许所有非 bot 用户。 |
-| `JARVIS_WORK_ITEM_REPOSITORIES` | 否 | provider-neutral work-item 到 GitLab/GitHub 仓库关联 JSON；同一空间可关联零个、一个或多个仓库。 |
+默认是 `meegle-cli`；已有 Meegle CLI 和服务身份时优先选它。它让 Runtime Agent 用已认证 CLI 读取实时正文、完整评论、附件和关联工作项。`plugin` 是例外路径：Jarvis Box 用 plugin OpenAPI 预取输入，plugin credential 不进入 Agent。
 
-### 使用 Meegle CLI（无 plugin）
+| 变量 | 说明 |
+| --- | --- |
+| `FEISHU_PROJECT_WEBHOOK_SECRET` | 必填；必须与 webhook envelope `header.token` 相同。 |
+| `FEISHU_PROJECT_BACKEND` | `meegle-cli`（默认）或 `plugin`；使用 plugin 时必须显式设置。 |
+| `FEISHU_PROJECT_ALLOWED_SPACES` | 可选，逗号分隔 project key；留空允许所有。 |
+| `FEISHU_PROJECT_SIMPLE_NAMES` | plugin 使用稳定 project key 时必填；将其映射为页面 URL 的 `simple_name`。 |
+| `JARVIS_MENTION_NAMES` | command 触发名；未设默认 `jarvis,jarvis-box`。 |
+| `JARVIS_FEISHU_PROJECT_COMMAND_ALLOWED_USERS` | command 作者 allowlist；留空允许非 bot 用户。 |
+| `JARVIS_WORK_ITEM_REPOSITORIES` | 可选，空间到 GitLab/GitHub workspace 关联 JSON。 |
 
-现场已有 Meegle CLI 时使用以下配置：
+### 默认 Meegle CLI backend
 
 ```dotenv
-FEISHU_PROJECT_WEBHOOK_SECRET=<webhook 中 header.token 的值>
+FEISHU_PROJECT_WEBHOOK_SECRET=<webhook header.token>
 FEISHU_PROJECT_MEEGLE_CMD=/usr/local/bin/meegle
 FEISHU_PROJECT_ALLOWED_SPACES=space-a,space-b
 
-# 推荐：给 Jarvis Box 服务账号注入独立 token
+# 推荐使用独立短期 token；也可以配置已有 profile。
 MEEGLE_HOST=project.feishu.cn
 MEEGLE_USER_ACCESS_TOKEN=<user-access-token>
+# FEISHU_PROJECT_MEEGLE_PROFILE=jarvis
 ```
 
-也可以复用 Jarvis Box 服务账号已经登录的 Meegle profile：
-
-```dotenv
-FEISHU_PROJECT_WEBHOOK_SECRET=<webhook 中 header.token 的值>
-FEISHU_PROJECT_MEEGLE_CMD=/usr/local/bin/meegle
-FEISHU_PROJECT_MEEGLE_PROFILE=jarvis
-```
-
-backend 留空时默认使用 `meegle-cli`，也可以显式写 `FEISHU_PROJECT_BACKEND=meegle-cli`。`FEISHU_PROJECT_MEEGLE_CMD` 默认是 `meegle`。Native/systemd 部署建议填写绝对路径；profile 模式要求运行 `jarvis-box serve` 的系统账号及其启动的 Feishu Project agent 能访问该 profile/keychain。共享机器优先使用专门的短期 `MEEGLE_USER_ACCESS_TOKEN`，不要复用个人 profile。
-
-Meegle backend 在收到稳定 project key 后，通过同一服务端身份执行 `project search`，取得并缓存空间 `simple_name`。工作项展示链接统一为 `https://project.feishu.cn/<simple_name>/<work_item_type>/detail/<work_item_id>`；API 读取和写回仍继续使用稳定 project key，两种标识不会混用。
-
-启动前可用相同账号验证：
+backend 留空或设为 `meegle-cli`。`FEISHU_PROJECT_MEEGLE_CMD` 默认 `meegle`；Native/systemd 推荐绝对路径。profile 模式要求运行 `jarvis-box serve` 的系统账号及其启动的飞书项目 Agent 能访问该 profile/keychain。共享机器优先使用独立短期 token，不复用个人 profile。启动前可用相同身份运行：
 
 ```bash
 /usr/local/bin/meegle auth status --format json
 ```
 
-`jarvis-box serve` 启动时会对 Meegle CLI 的实际身份执行快速认证预检；身份可以来自显式 `FEISHU_PROJECT_MEEGLE_PROFILE`、`MEEGLE_USER_ACCESS_TOKEN`，也可以来自运行账号持久化 HOME 中的默认 Meegle token store。命令不存在、身份未认证、token 无效或服务无法快速证明可用时，服务会跳过 Meegle provider API setup 并继续启动；Feishu Project webhook 仍会被接收和审计，但 Meegle 读写后端在身份修复前不可用。运行时调用以下官方命令：
+Jarvis Box 会快速预检 CLI 身份；命令不存在、未认证、token 无效或无法证明可用时，服务继续启动并审计 webhook，但在身份修复前 Meegle 读写不可用。它使用 `meegle workitem get`、`comment list --auto-paginate`、`relation list`、`attachment +download` 与 `comment add`。收到稳定 project key 后，服务会用同一身份解析并缓存页面链接所需的 `simple_name`；API 读写仍使用稳定 key。Agent 只在匹配的飞书项目 Run 中得到 Meegle CLI 能力，必须刷新实时输入；这些 credential 不会注入 GitLab、GitHub、Jira、plugin 或其他 provider 的 Run。最终评论仍由服务端写入，内容经权限为 `0600` 的临时 JSON 文件传递，不拼接到 shell 命令中。
 
-- `meegle workitem get` 读取工作项和所需的全部字段；
-- `meegle comment list --auto-paginate` 读取全部评论；
-- `meegle relation list` 分页读取关联关系，并继续读取分析所需的关联工作项；
-- `meegle attachment +download` 下载分析所需的工作项或评论附件；
-- `meegle comment add` 回写最终评论。
-
-评论写回内容通过权限为 `0600` 的临时 JSON 文件传入，不拼 shell 命令。`meegle-cli` post-check/command agent，以及它们通过 Workflow Runtime Contract 为同一飞书工作项启动的嵌套 customer workflow agent，只在匹配的 Feishu Project Run 中接收 `FEISHU_PROJECT_MEEGLE_CMD`、profile/host 和 token，并被明确限制为读取工作项、全量评论、附件和关联工作项。最终评论和其他 provider mutation 仍由 Jarvis Box 服务端执行。上述 Meegle 环境不会注入 GitLab、GitHub、Jira、plugin backend 或其他 provider 的 Agent Run，也不会把 credential 值写入 prompt。
-
-### 使用飞书项目 plugin
+### Plugin backend
 
 ```dotenv
-FEISHU_PROJECT_WEBHOOK_SECRET=<webhook 中 header.token 的值>
+FEISHU_PROJECT_WEBHOOK_SECRET=<webhook header.token>
 FEISHU_PROJECT_BACKEND=plugin
 FEISHU_PROJECT_PLUGIN_ID=<plugin-id>
 FEISHU_PROJECT_PLUGIN_SECRET=<plugin-secret>
 FEISHU_PROJECT_USER_KEY=<user-key>
 FEISHU_PROJECT_SIMPLE_NAMES={"<stable-project-key>":"<simple_name>"}
-# 可选；默认 https://project.feishu.cn
+# 可选，默认 https://project.feishu.cn
 FEISHU_PROJECT_API_BASE_URL=
 ```
 
-plugin 模式必须显式配置 `FEISHU_PROJECT_BACKEND=plugin`，并完整提供 webhook secret、plugin ID、plugin secret 和 user key。当前 webhook 若提供稳定 project key，还必须用 `FEISHU_PROJECT_SIMPLE_NAMES` 配置对应 `simple_name`；缺失映射时该事件会 fail closed，不会生成一个不可访问的链接。只填写 plugin credential 而不指定 backend 会拒绝启动，避免误用默认的 Meegle CLI 后端。
+plugin 必须完整配置所有上述 credential。只填 plugin credential 而未设 `FEISHU_PROJECT_BACKEND=plugin` 会拒绝启动；stable project key 缺 `simple_name` 映射时事件 fail closed，避免生成不可访问链接。
 
-## Webhook
+## 配置飞书项目自动化 webhook
 
-Meegle CLI 不负责监听事件。事件入口使用飞书项目自带的自动化 Webhook，不需要创建飞书项目 plugin：
+Meegle CLI 不监听事件。每个需要的触发器按下面步骤配置内置 **Webhook**（不是需要自建 plugin 的自定义自动化操作）：
 
-1. 在目标飞书项目空间中创建自动化规则，选择需要接入 Jarvis Box 的触发器，例如创建工作项、评论工作项、完成、终止或删除工作项；
-2. 在自动化规则的执行动作中添加内置的 **Webhook**；不要选择需要开发 plugin 的自定义自动化操作；
-3. 请求地址填写 `https://<jarvis-box-host>/webhooks/feishu-project`；Jarvis Box 必须能被飞书项目服务通过 HTTPS 访问；
-4. Webhook token 填写一个独立的随机值，并把相同值配置为 Jarvis Box 的 `FEISHU_PROJECT_WEBHOOK_SECRET`；
-5. 启用规则并发送测试事件，确认 Jarvis Box 日志中请求已被接收。
+1. 在目标空间创建自动化规则，选择创建、评论、完成、终止或删除等触发器；
+2. 添加内置 **Webhook** 动作；
+3. 地址填写 `https://<jarvis-box-host>/webhooks/feishu-project`；飞书项目必须能经 HTTPS 访问；
+4. 填一个独立随机 token，并将相同值设置为 `FEISHU_PROJECT_WEBHOOK_SECRET`；
+5. 启用规则并发送测试事件，在 Jarvis Box 日志确认接收。
 
-需要处理多种事件时，应在飞书项目自动化中为相应触发器配置 Webhook。plugin 只用于 `FEISHU_PROJECT_BACKEND=plugin` 的 OpenAPI 读写后端，或客户自行开发自定义自动化操作；使用默认 Meegle CLI 后端时不需要 plugin ID、plugin secret 或 user key。
+等价 endpoint 是 `/feishu-project-webhook`。`WorkitemCreateEvent` 启动 post-check；带配置 mention 的 `WorkitemCommentEvent` 启动 command（bot 自身评论与不在 allowlist 的作者不会启动）；`WorkitemAbortedEvent`、`WorkitemFinishEvent`、`WorkitemDeleteEvent` 终止同一外部工作项 Task 并执行 cleanup。UUID 原子 claim 保证幂等，payload/ledger 持久化前会删除 token。CLI 初始读取在后台执行，避免自动化等待它超时；Agent 启动后仍须刷新实时输入。旧 flat `EventCreate-*` payload 与 `X-Plug-In-Token` 仅保留兼容。
 
-create/post-check 的 Meegle CLI 初始工作项与评论预取在后台执行；Jarvis Box 完成鉴权、body 校验和接收状态落账后立即返回 `202 Accepted`，避免飞书项目自动化等待 CLI 时触发 6 秒超时。预取生成的 `issue.json`、`notes.json` 只是触发时快照；post-check agent 启动后还必须通过 Meegle CLI 刷新完整实时输入。command lane 同样异步启动并由 command agent 实时读取。所有事件（包括终止和清理事件）的后台处理使用服务拥有的独立 context，不会因 webhook 客户端断开而取消，最终结果或失败会继续写入事件流、work ledger 和 Run Artifact。
-
-以下两个 endpoint 等价：
-
-- `https://<jarvis-box-host>/feishu-project-webhook`
-- `https://<jarvis-box-host>/webhooks/feishu-project`
-
-当前飞书项目 envelope 使用 `header.event_type`、`header.token` 和 `header.uuid`，工作项 identity 来自 `payload.id`、`payload.project_key` 与 `payload.work_item_type_key`。`WorkitemCreateEvent` 启动 post-check，带有 `JARVIS_MENTION_NAMES` 所配置 mention 的 `WorkitemCommentEvent` 启动 command Run，`WorkitemAbortedEvent`、`WorkitemFinishEvent` 与 `WorkitemDeleteEvent` 终止同一外部工作项下的 Task 并走统一 cleanup。Jarvis Box 用 UUID 原子 claim 保证幂等，并在持久化 payload 或 ledger 前删除 token。
-
-配置的 mention 只是 command 触发名，不是飞书专用 workflow。comment adapter 会先忽略 Jarvis 自身/bot 评论，再按 allowlist 和 comment UUID 去重，命中后与 GitLab/GitHub/Jira 一样进入 `jarvis-command` lane。
-
-仓库关联使用空间 key 作为 source scope：
+可用空间 key 关联仓库：
 
 ```dotenv
 GITLAB_PROJECTS=group/backend
@@ -105,25 +75,10 @@ JARVIS_GITHUB_WEBHOOK_ENABLED=false
 JARVIS_WORK_ITEM_REPOSITORIES={"feishu-project":{"space-a":[{"provider":"gitlab","project":"group/backend"},{"provider":"github","project":"acme/frontend"}]}}
 ```
 
-上例的 GitHub 仓库仅作为飞书工作项的受控 Workspace 目标，因此显式关闭 GitHub webhook intake；不需要配置 GitHub webhook secret，也不会接收 GitHub 通知。
+上例的 GitHub 仅作 workspace，关闭 GitHub webhook 后不需要 GitHub webhook secret。没有关联仍是合法 zero-workspace Task，系统不会猜测仓库。
 
-创建事件和 command 都会获得全部已关联 workspace；未配置关联时仍是合法的 zero-workspace Task，不会默认猜测 GitLab 或 GitHub 仓库。
+## 读取和写回边界
 
-旧的 flat `EventCreate-*` payload 和 `X-Plug-In-Token` header 仅作为兼容入口保留。
+Meegle create/post-check 与 command Agent 必须从 CLI 读取当前工作项、全部评论、需要的附件和关联；触发时 `issue.json`/`notes.json` 仅是快照。Plugin 路径由 Jarvis Box 预取：预取失败时不启动 Agent。嵌套 customer workflow 只有在同一飞书 subject 且为 Meegle backend 时继承 Meegle CLI；plugin 或非飞书 subject 不注入该能力。
 
-## 读写边界
-
-不同 lane/backend 的输入 owner 明确分开：
-
-| Lane / backend | 实时输入 owner | Agent 输入 | credential owner |
-| --- | --- | --- | --- |
-| create/post-check，默认 Meegle | runtime agent | 触发时快照、Meegle CLI 与工作项 identity；Agent 必须刷新全部字段、全量评论、所需附件、关系及关联工作项 | 仅该 Feishu post-check Agent Run |
-| create/post-check，plugin | Jarvis Box | 服务端生成的 `issue.json`、`notes.json`；Agent 不直接调用 plugin API | Jarvis Box，plugin secret 不进入 Agent |
-| command，默认 Meegle | runtime agent | 工作项 URL、命令、Meegle CLI 与工作项 identity；Agent 必须实时读取全部字段、全量评论、所需附件、关系及关联工作项 | 仅该 Feishu command Agent Run |
-| command，plugin | Jarvis Box | 服务端实时预取的 `issue.json`、`notes.json` 路径；预取失败时不启动 Agent | Jarvis Box，plugin secret 不进入 Agent |
-| 嵌套 customer workflow，默认 Meegle | runtime agent | 从父 Run 继承同一飞书工作项 identity 与 Meegle CLI 能力；Agent 必须按 customer workflow contract 读取所需实时输入 | 仅同一 Feishu subject 的嵌套 workflow Agent Run |
-| 嵌套 customer workflow，plugin 或非飞书 subject | Jarvis Box | 不注入 Meegle CLI 能力；使用该 backend/provider 已有的输入合同 | Jarvis Box；Meegle credential 不进入 Agent |
-
-所有路径都由 Agent 显式生成 `comment.md`，再由 Jarvis Box 校验并通过配置的后端写回；Agent 的终端回复和 stdout/stderr 只进入日志，不能覆盖 provider-facing `comment.md`。Agent 不直接发布、编辑或声明原工作项响应已经写回。plugin 模式不会让 Agent 调用 plugin API。Meegle post-check/command 获得与 `glab`/`gh`/`jira` 同类的 CLI 能力；read contract 规定执行前必须获取的实时输入，原 subject 的最终响应仍由 Jarvis Box 发布。
-
-这里的 response owner 是行为与审计合同，不是把正式 runtime agent 变成低权限进程沙箱。与 `glab`、`gh` 和 `jira` 的 provider-native auth 一样，默认 Meegle post-check/command agent 及其同 subject 嵌套 workflow agent 属于 high-authority Agent，CLI 身份可能同时拥有 provider mutation 能力；prompt 的“read operations only”和 `JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 都不会撤销 Agent 原生 CLI 身份。若部署要求把不受信 Agent 强制限制为只读，必须为所有适用 provider 统一提供独立只读身份或受限 wrapper/proxy；当前模型不对 Meegle 单独伪装这种保证。
+所有路径由 Agent 显式生成 `comment.md`，Jarvis Box 校验后按所选 backend 发布。Agent 的 stdout/stderr 和终端回复不会覆盖 provider-facing 文件，Agent 不直接发布或声称已经写回。该 response owner 是行为与审计合同，不把高权限 Runtime Agent 伪装成权限沙箱：Meegle CLI 身份仍可能有 mutation 权限；prompt 的只读要求和 `JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 都不撤销原生身份。需要强制只读时，为所有适用 provider 配置独立只读身份或受限 wrapper/proxy。
