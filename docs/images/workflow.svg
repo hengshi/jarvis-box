@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="280" viewBox="0 0 1000 280" role="img" aria-labelledby="title desc">
+<title id="title">从要求到持续完成</title>
+<desc id="desc">在聊天或工作项提出要求，Jarvis 执行，结果回到原处；补充要求后继续同一任务。</desc>
+<rect width="1000" height="280" rx="16" fill="#f5f7fb"/>
+<g font-family="system-ui, sans-serif" text-anchor="middle">
+<g fill="#fff" stroke="#c8d3e8"><rect x="30" y="48" width="280" height="128" rx="12"/><rect x="360" y="48" width="280" height="128" rx="12"/><rect x="690" y="48" width="280" height="128" rx="12"/></g>
+<g fill="#20314e" font-size="24" font-weight="600"><text x="170" y="96">提出要求</text><text x="500" y="96">Jarvis 执行</text><text x="830" y="96">结果回到原处</text></g>
+<g fill="#4b5c76" font-size="18"><text x="170" y="134">聊天 · 工单 · 工作台</text><text x="500" y="134">工作记录与产出可查</text><text x="830" y="134">阅读回复 · 查看文件</text></g>
+<g fill="none" stroke="#3159b8" stroke-width="3"><path d="M318 112h32m-8-7 8 7-8 7M648 112h32m-8-7 8 7-8 7"/><path d="M830 186v46H170v-44m-7 8 7-8 7 8"/></g>
+<rect x="350" y="214" width="300" height="34" fill="#f5f7fb"/><text x="500" y="238" font-size="18" fill="#3159b8">补充要求，继续同一项工作</text>
+</g></svg>

@@ -1,115 +1,119 @@
 # 正式 Docker 部署合同
 
-## 前置条件
+本文面向把 Jarvis Box 作为 Docker Compose deployment 运行的客户管理员。它定义部署需要的权限、持久化边界和验证结果；具体日常操作和升级见[运维入口](operations.md)。Native 与 Docker 是并列部署模式，迁移期间不要让两套服务同时消费同一 Provider 身份或 webhook。
 
-- 已从私有 `hengshi-jarvis/jarvis-box` GitHub Release 下载并校验 release bundle；GitHub Release 不可用时可从公开 S3 mirror `https://download.hengshi.com/jarvis-box` 下载同名文件，但仍必须使用同一份 `SHA256SUMS` 校验；
-- `JARVIS_IMAGE` 指向本次 release 的正式制品：registry 可达时用 OCI digest 或 `ghcr.io/hengshi-jarvis/jarvis-box:v<version>`，离线镜像包用 `docker load` 后得到的 `hengshi/jarvis-box:v<version>`；
-- 客户批准正式 Agent/provider 权限和可选 Docker socket；
+<a id="前置条件"></a>
 
-Company 知识、定制 workflow 和 Runtime Foundation 可在运行时部署后构建、验证并接入，缺失它们不阻塞普通任务。
+## 部署前确认
 
-Jarvis 构建由 Host Runtime Agent + create-jarvis 完成，不依赖 jarvis-box。
+- 从正式 release 取得并校验 release bundle 和 `SHA256SUMS`。私有 GitHub Release 不可用时，可从 `https://download.hengshi.com/jarvis-box` 获取同名文件，但仍要校验同一份 SHA256SUMS。
+- 准备本 release 的正式 `JARVIS_IMAGE`：可访问 registry 时使用 `production-image.json` 中的 digest；离线时先 `docker load` 对应 `.docker.tar.gz` 并使用 `hengshi/jarvis-box:vX.Y.Z`。
+- 部署用户能使用 Docker，拥有目标 deployment home，并已获得所需 Agent/provider 身份与可选 Docker socket 的批准。
+- Linux Host 已启用 `cron` 且部署用户可用 `crontab`；macOS 使用该用户的 launchd。这些只看护宿主更新执行器，不会在容器中安装第二个 scheduler。
 
-基础镜像无法满足客户代码仓库的系统编译依赖时，使用[客户派生 Docker 镜像](custom-docker-image.md)。派生镜像必须以当前 release 的正式 digest 为基础、推送到客户私有 registry，并把派生镜像 digest 写入 `JARVIS_IMAGE`；不要在运行中的容器里执行 `apt install`。
+普通 Task 不依赖客户知识包、定制 workflow 或 Runtime Foundation。它们准备好且验证后可单独接入。基础 image 缺少客户代码所需系统依赖时，先构建[客户派生 Docker 镜像](custom-docker-image.md)，并把派生镜像 digest 写入 `JARVIS_IMAGE`。
 
-## Deployment home
+<a id="deployment-home"></a>
+
+## Deployment home 是实例边界
 
 ```text
 <deployment-home>/
-├── deployment.env
-├── runtime.env
-├── auth/              # 自动导入的私有身份快照，0700/0600
-└── connector.env      # 仅启用 uvim 时需要；禁用时 helper 可创建空文件
+├── deployment.env       # Compose/operator settings
+├── runtime.env          # canonical Jarvis runtime configuration
+├── auth/                # imported portable credentials, private (0700/0600)
+├── connector.env        # managed uvim only; may remain empty when disabled or external
+└── data/                # Agent HOME, state, workspaces, logs and other persistent data
 ```
 
-这里不保存或挂载 Jarvis repo，不存在 `jarvis-context.json`、`deployment-lock.json` 或替代 manifest。
-同一宿主机部署多个 Jarvis Box 时推荐使用 Docker。每个实例必须使用独立 deployment home、Compose project name、端口和 provider webhook URL。不要共享 `data/`、`auth/` 或 runtime env file。操作细则见 [多实例部署](multi-instance.md)。
+不要将 Jarvis repo、checkout、`jarvis-context.json`、deployment lock 或 readiness state 写入这里。每个实例必须有独立 deployment home、Compose project name、端口、Provider webhook URL、runtime env、`auth/` 和 `data/`。不要共享 state、workspace、Agent HOME、connector state 或 dependency cache。多实例规则见[多实例部署](multi-instance.md)。
 
-## Start and identity
+<a id="start-and-identity"></a>
 
-首次部署在 `runtime.env` 启用 `JARVIS_ISSUE_POST_CHECK_ENABLED=true` 与 `JARVIS_PROVIDER_WRITEBACK_ENABLED=true`，用户与会话允许名单留空。仅显式选择本地结果测试时关闭回写；该测试不能证明原处回复可用。Docker 身份只有下面两条受支持路径，二选一即可。
+## 身份与认证
 
-**Path A：自动导入宿主机当前用户身份（推荐）。** `start` 会先以当前宿主机用户执行 `auth-import`，把选定的 `gh/glab` 与可移植 Agent 身份导入私有 `auth/`，再启动容器。
+Docker 支持两条路径，二选一；两条都不挂载 Host HOME、Keychain、SSH agent 或完整 credential store。
+
+### A. 导入当前 Host 用户的可移植身份
+
+这是推荐路径。`start` 默认先运行 `auth-import`，将选定的 `gh`/`glab` token、Codex `auth.json`、Claude `.credentials.json` 或显式 headless key 放入私有 `auth/`，再写入持久 `/home/jarvis`：
 
 ```bash
 scripts/deploy-production.sh /absolute/deployment-home start
 scripts/deploy-production.sh /absolute/deployment-home shell
 ```
 
-宿主机已有多个 GitHub 账号时，在 `deployment.env` 设置 `JARVIS_GITHUB_USER` 明确选择 machine user。无法导出的系统 Keychain 身份可在宿主机交互终端执行一次 `auth-import`；无交互环境使用 `JARVIS_GITHUB_TOKEN`、`JARVIS_GITLAB_TOKEN`、`JARVIS_CODEX_API_KEY` 或 `JARVIS_ANTHROPIC_API_KEY`。这些变量只供导入命令读取，不写入 `runtime.env`。
+Host 上有多个 GitHub 身份时，在 `deployment.env` 中设置 `JARVIS_GITHUB_USER`。无法导出的 Keychain 身份可在 Host 的交互终端执行一次 `auth-import`。非交互导入可由 `JARVIS_GITHUB_TOKEN`、`JARVIS_GITLAB_TOKEN`、`JARVIS_CODEX_API_KEY` 或 `JARVIS_ANTHROPIC_API_KEY` 仅供导入命令读取；不要把它们写进 `runtime.env`。
 
-**Path B：只在容器 Agent HOME 中登录。** 在 `deployment.env` 设置 `JARVIS_AUTH_IMPORT=skip`，启动后进入持久 Agent HOME 完成需要的 `gh auth login`、`glab auth login`、`codex login` 或 `claude` 登录，再重建服务并执行 `verify`。容器重建不会清除该身份；删除 deployment home 下的 `data/agent-home` 才会清除。
+### B. 只在持久容器 Agent HOME 中登录
+
+在 `deployment.env` 设 `JARVIS_AUTH_IMPORT=skip`，启动后进入容器的持久 Agent HOME，登录实际需要的 CLI，再重建和验证：
 
 ```bash
 scripts/deploy-production.sh /absolute/deployment-home start
 scripts/deploy-production.sh /absolute/deployment-home shell
-# 在 shell 内只登录实际启用的 provider / Agent，然后 exit
+# In the shell, complete only the required gh/glab/codex/claude login, then exit.
 scripts/deploy-production.sh /absolute/deployment-home compose up -d --force-recreate jarvis-box
 scripts/deploy-production.sh /absolute/deployment-home verify
 ```
 
-两条路径都不要复制或挂载 Host HOME、Keychain、SSH agent 或整个 credential store，也不要把执行 Token 写入 `runtime.env`。
+容器重建会保留此身份；删除 `<deployment-home>/data/agent-home` 才会清除它。Native 没有隔离层：安装器使用安装发起人的现有 OS 用户和 HOME，不创建 `jarvis` 或 `jarvis-box` 用户。
 
-Native 部署没有隔离边界：安装器使用发起安装的现有 OS 用户（sudo 时为 `SUDO_USER`）作为 systemd/launchd `User` 和 HOME，因此直接复用该用户已有的 `gh/glab/codex/claude` 认证。安装器只验证用户存在，绝不创建 `jarvis` 或 `jarvis-box` 用户。
+<a id="generic-verification"></a>
 
-## Jarvis Runtime Foundation
+## 首次配置、启动和验证
 
-此步骤在 Company 知识和 Runtime Foundation 准备好后执行，不是初次使用 Jarvis Box 的前置条件。jarvis-box 不负责 Jarvis bootstrap。Host Runtime Agent 使用客户 Jarvis repo 的指令，通过通用 helper 在正式环境内执行：
+在 `runtime.env` 填写真实 Provider scope、webhook secret、Agent 选择以及必要的 connector 设置。新部署样例启用 `JARVIS_ISSUE_POST_CHECK_ENABLED=true` 和 `JARVIS_PROVIDER_WRITEBACK_ENABLED=true`；用户/会话 allowlist 可留空，但项目、仓库和其他 source scope 不能用空值假定全部允许。完整变量解释见[配置参考](configuration.md)。
+
+启动并验证：
 
 ```bash
-scripts/deploy-production.sh /absolute/deployment-home runtime-job \
+ops=/absolute/path/to/extracted-release/scripts/deploy-production.sh
+home=/absolute/path/to/deployment-home
+
+"$ops" "$home" start
+"$ops" "$home" verify
+```
+
+`verify` 应确认：运行镜像与 digest pin 一致；服务以安装用户对应的非 root 身份运行；通用 `skill-creator` 可发现而 create-jarvis 未进入运行时；Agent doctor/smoke 可用；runtime profile 与 connector 一致；可选 connector 和 Docker socket 正常；以及重建容器后 Agent HOME 与 Task/Run state 仍保留。
+
+`verify` 不读取客户 Jarvis repo、验证客户 workflow/ref，或写 readiness lock。通过后，仍应从每个已接通 Provider/IM 入口完成一项实际工作，确认 Agent 结果、原工作项/会话收到的回复、审计记录和 workspace 清理。
+
+<a id="jarvis-runtime-foundation"></a>
+<a id="connector-and-docker-socket"></a>
+
+## Connector、Runtime Foundation 与 Docker socket
+
+`JARVIS_CONNECTOR_PROFILE` 只写在 `runtime.env`。设置为 `uvim` 后，release 使用同一 image 启动本实例的 connector service；connector 使用独立 env、state 和平台凭据。Native 的 `uvim` 也使用 release 自带的 binary，在当前用户下安装 companion service；主服务与 connector 是独立进程和状态目录，由同一 release 管理。
+
+设置为 `uvim-external` 则连接管理员维护的共享 hub。URL 与本实例独有的非空 scoped client token 写入私有 `runtime.env`；本部署不读取 hub 的平台凭据，不创建本地 connector，也不管理共享 hub。`verify` 核对 hub 健康、经认证的 meta 以及本 deployment 没有受管 connector，不把 hub 版本当作 Box 内置组件版本。调用方隔离要求见 [IM 接入](integrations/im.md#管理员-配置-jarvis-box-与-connector)。
+
+默认不挂 Docker socket。仅在客户明确同意 runtime 获得宿主 root 等价 Docker 能力时设置 `JARVIS_ENABLE_DOCKER_SOCKET=1`。
+
+客户 Runtime Foundation 不是首次启动前置条件。准备好后，Host Runtime Agent 通过通用 transport 在正式环境执行客户自己的命令：
+
+```bash
+"$ops" "$home" runtime-job \
   <jarvis-bootstrap-command> <approved-remote> <approved-ref> \
   <disable-in-container-scheduler-option>
-
-scripts/deploy-production.sh /absolute/deployment-home runtime-job <quick-sync-command>
-scripts/deploy-production.sh /absolute/deployment-home runtime-job <runtime-foundation-doctor>
+"$ops" "$home" runtime-job <quick-sync-command>
+"$ops" "$home" runtime-job <runtime-foundation-doctor>
 ```
 
-Bootstrap、recovery sync 和宿主调度的全量 sync 必须使用客户 Jarvis 的显式 skip-scheduler 选项。Docker 部署以 host Scheduler Adapter 为权威；若客户 Runtime Foundation 无法禁用容器内 scheduler，Foundation 接入必须 fail closed。
+客户 bootstrap、recovery sync 和宿主 scheduler 的全量 sync 必须显式关闭容器内 scheduler；无法关闭时 Foundation 接入必须停止。临时 bootstrap material 删除后，稳定命令、缓存、状态、日志和 discovery roots 必须仍在持久 Agent HOME。Jarvis Box 不解释这些命令，也不读取客户 repo。
 
-Bootstrap 的临时 material 删除后，stable commands、cache、state/log 与 Agent discovery roots 必须仍在持久 Agent HOME 中可用。真实 Agent discovery probe 属于 Jarvis onboarding，不属于 jarvis-box generic probe。
+<a id="upgrade-and-rollback"></a>
 
-Jarvis-owned host Scheduler Adapter 也调用 `runtime-job`。内部 sync、memory-consolidation、daily-reflection 和 cognitive-evolution command 不调用 Docker。
+## 升级与回滚边界
 
-接入 Company 知识时验证 Runtime Foundation doctor 和真实 Agent discovery。它们验证新增的知识增强，不限制原有任务入口、任务类型或回写；没有适用且已验证的 Company workflow 时，Agent 按当前输入、实时证据和原生工具执行。
+Jarvis Box 升级替换 image 并重跑 `verify`；客户 Jarvis revision 由其 Runtime Foundation 的 remote/cache/sync/discovery 流程更新，二者独立。升级、`start` 或会停止/重建服务的 Compose 动作都会 preflight Task state。有生命周期阻断项或无法证明当前状态时，在停服前退出。
 
-## Generic verification
+`--force deploy` 和 `--force start` 通过原容器的 TaskService 暂停可续接的运行，并在目标容器就绪后自动恢复。参数位置与详细流程见[运维入口](operations.md#使用宿主机自助升级入口)。
 
-```bash
-scripts/deploy-production.sh /absolute/deployment-home verify
-```
+不要绕过 `deploy-production.sh` 直接 `docker compose down`、重建容器或删除 `<deployment-home>/data/runtime-hostname`。该文件保存稳定机器身份，旧部署接管时也会保留旧 container hostname，以便依赖 hostname 的加密凭据仍可读取。回滚不是只换旧 image digest：恢复匹配旧 release 的完整 deployment-home 备份（包括 `auth/`、connector state、runtime hostname 与其他 data），再使用同一 release 的 `deploy` 和 `verify`。完整步骤见[运维入口](operations.md#升级)。
 
-验证项：
+<a id="docker-非-root-部署契约"></a>
 
-1. running image 与 digest pin 一致；
-2. 安装用户对应的非 root 执行身份和随镜像提供的工具链；
-3. generic `skill-creator` 可发现，create-jarvis 未进入 runtime；
-4. Agent doctor 和 smoke；
-5. runtime profile 与 connector service 一致；
-6. 可选 connector protocol/version/capability；
-7. 可选 Docker socket；
-8. container recreation 后 Agent HOME 与 Task/Run state 仍存在。
+## 非 root 所有权合同
 
-它不读取 Jarvis repo、校验客户 workflow/repo refs或写 readiness lock。
-
-generic verification 通过后，从每个已接通的 Provider 或 IM 入口执行实际任务，确认 Agent 结果、原工单或会话收到的回复、审计和 workspace 清理。知识构建与其他尚未接通的入口分别继续。
-
-## Connector and Docker socket
-
-`JARVIS_CONNECTOR_PROFILE=uvim` 只写在 `runtime.env`。同一个 `JARVIS_IMAGE` 启动 connector service，但 connector 使用独立 env/state/credential boundary。
-
-Native 部署不要求客户另行下载或维护 connector。release archive 同时携带 `jarvis-box` 与 `uv-im-connector`，installer 以当前 OS 用户安装 companion systemd/launchd service；provider secret 只放在 `${JARVIS_RUNTIME_ROOT}/envs/.env.uv-im-connector`。主服务与 connector 分属不同进程和状态目录，但由同一 Jarvis Box 版本和 installer 共同管理。
-
-默认不挂 Docker socket。只有客户明确批准 host-root-equivalent capability 时在 `deployment.env` 设置 `JARVIS_ENABLE_DOCKER_SOCKET=1`。
-
-## Upgrade and rollback
-
-jarvis-box 升级只替换 digest-pinned image 并重跑 generic verify；持久 volumes 保留。Jarvis 更新由其 remote → cache → sync → discovery roots 处理，不要求改变 image。回滚 image 与回滚 Jarvis revision 是两个独立操作。
-
-Native 与 Docker 是并列部署面；迁移时不得让两套服务同时消费同一 provider identity 或 webhook。
-
-Docker 升级、`start` 和会停止或重建服务的 `compose` 子命令会先读取同一 deployment home 的 Task state。存在 active、waiting、finalizing、CI-wait 或 recovery-required Task 时，脚本会在 `docker compose down`、`stop` 或 `up --force-recreate` 前退出并打印阻断 Run。只有客户明确决定放弃当前运行时，才使用 `--force`；force 要求当前 jarvis-box 容器仍在运行，并要求 `JARVIS_DOCKER_UPGRADE_FORCE_STRATEGY` 记录取消/恢复策略。脚本会先把策略和受影响 Run 写入 `<deployment-home>/data/upgrade-preflight/`，再在容器 PID namespace 内停止受影响 Run。无法枚举 Task state、缺少 force 策略或运行容器不可达时默认 fail closed。
-
-## Docker 非 root 部署契约
-
-正式 Docker 路径只有一个所有权模型：现有安装用户直接运行 `scripts/deploy-production.sh`，脚本拒绝 root、拒绝与当前 UID/GID 不一致的配置，并预创建 `$JARVIS_DEPLOYMENT_HOME/data/*`。Compose 使用同一 UID/GID 运行 Jarvis Box 与 connector，并挂载这些已预创建的目录。产品不创建专用 `jarvis` 用户，也不使用或迁移 Docker named volume。
+正式 Docker 路径由现有安装用户运行 `scripts/deploy-production.sh`。脚本拒绝 root 与 UID/GID 不一致配置，并预创建 `$JARVIS_DEPLOYMENT_HOME/data/*`；Compose 用同一 UID/GID 运行 Jarvis Box 和 connector。产品不创建专用 `jarvis` 用户、不使用 Docker named volume，也不会接管宿主 Docker daemon、DNS 或网络配置。

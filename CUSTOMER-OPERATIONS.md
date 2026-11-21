@@ -36,8 +36,7 @@ https://github.com/hengshi-jarvis/create-jarvis
 
 ## 3. 下载并校验 release
 
-新部署默认选择 1.x 最新稳定版，不包含 alpha、beta 或 rc 预发布。0.2.x 与 0.3.x
-只发布显式选择的 bug 和安全修复版本，不再增加新功能，也不替换默认稳定版入口。
+新部署默认选择主分支的最新稳定版，当前为 1.x，不包含 alpha、beta 或 rc 预发布。后续主版本仍从同一主分支发布；0.2.x 与 0.3.x 已退役，不再提供修复或新版本，已有下载资产与历史升级说明继续保留。
 试用预发布时，下载同一版本的制品；Native 安装须显式指定版本，例如 Linux 上
 `sudo env JARVIS_VERSION=1.1.0-alpha.1 bash install.sh`，macOS 上去掉 `sudo`；只有已经发布的预发布版本才可安装。
 Docker 使用该预发布制品的 `production-image.json` 中的 digest-pinned `image_ref`。
@@ -195,7 +194,7 @@ ops="$release_dir/scripts/deploy-production.sh"
 install -d -m 0700 "$deployment_home"
 install -m 0600 "$release_dir/deploy/production/deployment.env.example" "$deployment_home/deployment.env"
 install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deployment_home/runtime.env"
-# 仅启用 IM connector 时复制并填写：
+# 仅使用 managed `uvim` connector 时复制并填写：
 # install -m 0600 "$release_dir/deploy/production/connector.env.example" "$deployment_home/connector.env"
 ```
 
@@ -206,7 +205,7 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 "$ops" "$deployment_home" verify
 ```
 
-升级时保留原 deployment home，先校验并加载新版本镜像包，再更新 `deployment.env` 的 `JARVIS_IMAGE` 为新版本标签；GHCR 路径则使用新版本 `production-image.json` 中的 `image_ref`，然后使用新 bundle 的同一部署命令。脚本会在停服或重建前拒绝 active、waiting、finalizing、CI-wait 或 recovery-required Task，并保留客户配置和 `data/` 持久目录。
+升级时保留原 deployment home，先校验并加载新版本镜像包，再更新 `deployment.env` 的 `JARVIS_IMAGE` 为新版本标签；GHCR 路径则使用新版本 `production-image.json` 中的 `image_ref`，然后使用新 bundle 的同一部署命令。默认部署会在停服前检查 TaskService 的维护阻断项，并保留客户配置和 `data/` 持久目录。阻断项可在原实例使用 `jarvis-box tasks list` 查看。
 
 客户代码仓库需要基础镜像未包含的编译器、头文件或系统共享库时，先按[客户派生 Docker 镜像](docs/custom-docker-image.md)从当前 release 的正式 digest 构建并推送客户镜像，再把派生镜像 digest 写入 `JARVIS_IMAGE`。不要在运行中的容器里执行 `apt install`。
 
@@ -218,7 +217,7 @@ install -m 0600 "$release_dir/deploy/production/runtime.env.example" "$deploymen
 ├── runtime.env
 ├── auth/              # 仅 Host 身份导入路径使用，目录 0700、文件 0600
 ├── data/              # Agent HOME、state、workspace、cache、logs 等持久目录
-└── connector.env      # 仅启用 IM connector 时存在
+└── connector.env      # 仅 managed uvim 使用；external profile 可保留空文件
 ```
 
 首次启动或升级时，部署工具将 `runtime.env` 原样放入专用的 `data/runtime-env/runtime.env`，并保留根目录 `runtime.env` 为兼容链接。后续编辑真实文件或使用保留符号链接的配置工具；不要用另一个文件替换该链接。容器通过专用目录挂载读取同一份配置，配置保存及版本迁移可以原子更新文件；Host 身份和 connector 配置仍独立隔离。备份包含链接及其真实文件。
@@ -333,14 +332,14 @@ Foundation 接入完成记录必须写明实际 Runtime Foundation root，以及
 
 ## 7. IM connector
 
-IM 是可选能力。只在需要企业微信、飞书或钉钉等入口时设置 `JARVIS_CONNECTOR_PROFILE=uvim`，并按 release 中的 example 填写私有 `connector.env`。
+IM 是可选能力。`JARVIS_CONNECTOR_PROFILE=uvim` 为每个部署启动 managed connector，并按 release 中的 example 填写私有 `connector.env`。也可选择 `uvim-external`，把共享 UVIM hub URL 及每个 Box 独有、非空的 scoped client token 写入私有 `runtime.env`；external profile 不启动或管理本地 connector，也不读取 `connector.env`。
 
 Native 安装包已内置并由 installer 管理 `uv-im-connector` companion service，不需要客户单独下载二进制。把 provider secret 写入 `${JARVIS_RUNTIME_ROOT}/envs/.env.uv-im-connector`；不要写入主 `.env.jarvis-box`。
 
 - provider-native secret 只属于 connector；
-- Jarvis Box 只持有 connector URL 和 shared verification token；
+- Jarvis Box 只持有 connector URL 和 verification token；external token 必须是 hub 为该 Box 单独配置的 scoped client token；
 - connector 不共享 Agent HOME、Git identity、Docker socket 或 Jarvis Box state；
-- 禁用 connector profile 时，同时移除对应 connector service；
+- 设为空或切换到 `uvim-external` 时，移除/停用 managed connector service；不从 deployment home 操作共享 hub；
 - 上线验收必须从真实 IM 平台发送消息并确认收到真实回复；本地模拟请求不能代替 provider 认证。
 
 ## 8. 日常操作
@@ -509,7 +508,7 @@ jarvis-box status
 
 从 0.x 升级到 1.0 需要显式设置 `JARVIS_ALLOW_MAJOR_UPGRADE=1`。0.3.x 已支持目标安装器交接，可在确认没有活动任务后运行 `JARVIS_ALLOW_MAJOR_UPGRADE=1 jarvis-box update --version 1.0.0`。
 
-0.2.x 只能通过已下载、按 `SHA256SUMS` 校验并解压的目标 1.0 bundle 跨线升级。旧客户端的 GitHub Latest 与根 `latest.json` 保留在旧版本线，不会因发布 1.0 自动跨线；新安装和 1.0 客户端使用独立的 `channels/v1/latest.json`。不要用旧 0.2 CLI 显式跨线 `update`：它会先停服务，再执行旧安装器，不能完成目标安装器交接。使用下列路径，并同时固定目标版本、原 archive 和 checksum 文件：
+0.2.x 只能通过已下载、按 `SHA256SUMS` 校验并解压的目标 1.0 bundle 跨线升级。GitHub Latest 已跟随 main 最新正式版，不再为旧 0.2 更新器保留；根 `latest.json` 仍留在旧线。不要运行旧 0.2 CLI 的无参更新。新安装和 1.0+ 客户端使用独立的 `channels/v1/latest.json`。不要用旧 0.2 CLI 显式跨线 `update`：它会先停服务，再执行旧安装器，不能完成目标安装器交接。使用下列路径，并同时固定目标版本、原 archive 和 checksum 文件：
 
 ```bash
 version=1.0.0
@@ -530,6 +529,8 @@ macOS 上去掉 `sudo`，由现有安装用户执行；Linux 使用 `sudo`。不
 ### Docker
 
 #### 宿主机自助升级
+
+Native 与 Docker 均支持系统设置中的“自动检查并下载更新”，默认开启，只有成功在线授权签到后才检查；离线授权不联网。下载不会重启，Status 提示就绪后由用户确认“更新并重启”，本次中断的任务更新后自动接续。同主版本可直接升级最新稳定版，旧缓存由更新执行器替换和清理。详细状态、宿主执行器及故障边界见 [升级](docs/operations.md#升级)。
 
 Docker 安装不会在宿主机安装 `jarvis-box` 命令。包含此能力的 release 会在每个 deployment home 写入独立的 `update.sh`，升级时只需运行：
 
@@ -580,7 +581,7 @@ PY
 )
 ```
 
-脚本只支持官方标准 Compose 和官方 Jarvis Box image；客户派生 image、自定义 Compose 或其他布局继续走下方手工流程。原有 Compose 文件和 profile 选择必须保留并能通过目标 release 的合同校验，脚本拒绝 downgrade，并解析当前实例和目标版本，在停服前下载、校验并加载所有需要的 release 与 Docker 制品；active、waiting、finalizing、CI-wait 或 recovery-required Task 会阻止停服。它只接管指定的已有标准 deployment home，不会调用 Native 安装器或创建新实例。升级成功后继续使用 `<deployment-home>/update.sh`；旧镜像、bundle 和完整备份会保留。目标部署已经开始后若失败，不会只替换镜像进行自动回滚，应按输出的备份和人工恢复指引处理。
+脚本只支持官方标准 Compose 和官方 Jarvis Box image；客户派生 image、自定义 Compose 或其他布局继续走下方手工流程。原有 Compose 文件和 profile 选择必须保留并能通过目标 release 的合同校验，脚本拒绝 downgrade，并解析当前实例和目标版本，在停服前下载、校验并加载所有需要的 release 与 Docker 制品。默认升级遇到维护阻断项会在停服前退出；使用 `--force` 则按维护收据暂停可续接的任务并自动恢复。它只接管指定的已有标准 deployment home，不会调用 Native 安装器或创建新实例。升级成功后继续使用 `<deployment-home>/update.sh`；旧镜像、bundle 和完整备份会保留。目标部署已经开始后若失败，不会只替换镜像进行自动回滚，应按输出的备份和人工恢复指引处理。
 
 执行同一个安装命令；不要直接运行 `docker compose down`、`stop` 或 `up --force-recreate`：
 
@@ -589,15 +590,15 @@ PY
 "$ops" "$home" verify
 ```
 
-先校验并加载目标版本镜像包，将对应标签写入 `deployment.env` 的 `JARVIS_IMAGE`；GHCR 路径则填写目标版本 `production-image.json` 中的 `image_ref`，再使用目标版本 bundle 的部署脚本。脚本会保留 deployment config 和 `data/`、使用指定镜像、重建服务并验证；最后重跑一条真实业务链路。发现 active、waiting、finalizing、CI-wait 或 recovery-required Task，无法读取 Task state，或配置属于其他 deployment home 时，部署脚本会在任何停服/重建前拒绝升级并打印阻断 Run。
+先校验并加载目标版本镜像包，将对应标签写入 `deployment.env` 的 `JARVIS_IMAGE`；GHCR 路径则填写目标版本 `production-image.json` 中的 `image_ref`，再使用目标版本 bundle 的部署脚本。脚本会保留 deployment config 和 `data/`、使用指定镜像、重建服务并验证；最后重跑一条真实业务链路。存在维护阻断项、无法读取 Task 状态或配置属于其他 deployment home 时，部署脚本在停服前退出。
 
-只有客户明确决定放弃当前运行时，才使用：
+需要暂停并自动恢复活动任务时，执行以下命令。
 
 ```bash
 "$ops" "$home" --force deploy
 ```
 
-force 要求 jarvis-box 容器仍在运行，并要求设置 `JARVIS_DOCKER_UPGRADE_FORCE_STRATEGY` 记录客户认可的取消/恢复策略。脚本会把策略和受影响 Run 写入 `<deployment-home>/data/upgrade-preflight/` 后再停止 Run、继续服务变更。若容器不可用，先按 Task 的 Continue/Cancel/恢复路径处理，不要用 Docker shutdown 代替 Task 决策。
+原容器必须在运行。脚本保存本次维护收据，在目标容器通过健康检查后自动恢复已暂停的任务。若暂停只完成了一部分，脚本在原容器恢复已经暂停的任务，再结束本次部署。
 
 Docker 同模式升级必须保留完整 deployment home。部署脚本在重建前解析并固定 `data/runtime-hostname`，确保依赖容器机器身份的加密 provider profile 可继续解密；身份缺失、非法或与现存容器冲突时不会执行替换。
 

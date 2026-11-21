@@ -69,12 +69,12 @@ claude auth login
 | 位置 | 允许的内容 |
 | --- | --- |
 | `deployment.env` | 镜像 digest、绑定地址、部署 identity 和 Compose 行为 |
-| `runtime.env` | Jarvis 运行时行为、provider 路由、webhook verification secret 和 Jarvis Box 到 connector 的 shared verification secret；不包含 provider execution token 或 Agent credential |
-| `connector.env` | 仅在启用对应 connector 时的 connector provider-native secrets |
+| `runtime.env` | Jarvis 运行时行为、provider 路由、webhook verification secret 和 Jarvis Box 到 connector 的 verification token；`uvim-external` 的 URL 与唯一 scoped client token 也只在此处；不包含 provider execution token 或 Agent credential |
+| `connector.env` | 仅 managed `uvim` connector 的 provider-native secrets；external profile 不消费它 |
 | 私有 auth bundle | 由 `auth-import` 暂存的可移植身份 |
 | 持久 Agent HOME | 为容器运行时创建或导入的 provider 原生登录状态 |
 
-不要将 GitHub、GitLab、Codex、Claude 或其他 Runtime Agent 的 execution token/API key 放入 `runtime.env`。Docker start 会在启动前迁移路径 A 支持的旧凭据，或在路径 B 检测到任何执行凭据时 fail closed。Webhook secret 和 Jarvis Box 到 connector 的 shared verification token 属于服务端验证配置，可以保存在权限为 `0600` 的 `runtime.env`。发布自动化凭据如 `GH_TOKEN` 和 AWS 凭据属于独立的 release-plane identity，绝不能进入客户部署。
+不要将 GitHub、GitLab、Codex、Claude 或其他 Runtime Agent 的 execution token/API key 放入 `runtime.env`。Docker start 会在启动前迁移路径 A 支持的旧凭据，或在路径 B 检测到任何执行凭据时 fail closed。Webhook secret、managed connector token，以及 `uvim-external` 的 scoped client token 都属于服务端验证配置，可以保存在权限为 `0600` 的 `runtime.env`。发布自动化凭据如 `GH_TOKEN` 和 AWS 凭据属于独立的 release-plane identity，绝不能进入客户部署。
 
 ## 完成检查
 

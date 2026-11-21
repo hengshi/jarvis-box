@@ -1,0 +1,16 @@
+:root {
+  --vp-c-brand-1: #3159b8;
+  --vp-c-brand-2: #416bcc;
+  --vp-c-brand-3: #3159b8;
+  --vp-home-hero-name-color: var(--vp-c-text-1);
+}
+.dark {
+  --vp-c-brand-1: #9cb7ff;
+  --vp-c-brand-2: #b1c6ff;
+  --vp-c-brand-3: #416bcc;
+}
+.vp-doc { line-height: 1.85; }
+.vp-doc h2 { margin-top: 2.5rem; }
+.vp-doc img { height: auto; }
+.workbench-link { margin-left: 16px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.workbench-link:hover { color: var(--vp-c-brand-1); }

@@ -1,12 +1,12 @@
 # GitLab 接入
 
-鉴权及 JSON 校验成功、投递可靠落盘后，Webhook 立即返回 `202 Accepted`，不等待业务读取、Git 操作或 Agent 启动。响应中的 `receipt_id` 只标识投递受理，不表示 Task 已创建；后台处理和重投规则见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
+本页面向负责把 GitLab project 接入 Jarvis Box 的管理员。配置完成后，允许项目中的 issue、MR、note 或明确命令可创建受控 Task；结果由 Jarvis Box 使用服务身份写回原 GitLab subject。
 
-GitLab 是事件、subject 与安全 writeback 的 provider adapter。它不定义客户状态、标签或 workflow 语义。
+完成鉴权、JSON 校验并可靠落盘后，webhook 立即返回 `202 Accepted`。响应的 `receipt_id` 只表示投递已受理，不表示 Task 已经创建、Agent 已经启动或写回已经完成。后台处理和重投见[Webhook 受理与恢复](../storage-model.md#webhook-受理与恢复)。
 
-## 认证与 webhook 协调
+## 1. 准备身份、范围与 webhook
 
-服务身份必须通过 `glab auth status` 且仅拥有批准的项目权限。
+运行 Jarvis Box 的服务身份必须通过 `glab auth status`，并且只具有批准项目的权限。配置并创建/修复 webhook：
 
 ```bash
 GITLAB_TOKEN=<token> jarvis-box setup gitlab --auth-only
@@ -17,57 +17,43 @@ JARVIS_PUBLIC_URL=https://jarvis.example.com \
 jarvis-box setup gitlab --non-interactive
 ```
 
-需要共享 webhook secret 时使用 `GITLAB_WEBHOOK_SECRET` 和 `--rotate-secret`。规范端点为 `https://<public-url>/gitlab-webhook`；`/webhooks/gitlab` 是等价路由。
+需要共享 webhook secret 时设置 `GITLAB_WEBHOOK_SECRET` 并使用 `--rotate-secret`。规范地址为 `https://<public-url>/gitlab-webhook`；`/webhooks/gitlab` 是等价路径。网络暴露与 token 未配置时的行为见 [网络入口](../network-ingress.md)。
 
-## 事件路由
+`GITLAB_PROJECTS` 是事件和 workspace 的 operator allowlist；`REVIEW_GITLAB_PROJECTS` 指定其中要做 MR review 的项目；`JARVIS_GITLAB_COMMAND_ALLOWED_USERS` 可进一步收窄命令作者。Native 直接使用安装用户的 `glab` 身份。Docker 默认在 `start` 时导入当前 Host 用户身份；如设 `JARVIS_AUTH_IMPORT=skip`，在持久 Agent HOME 运行 `glab auth login --hostname <host>`。不要把 token 写进 `runtime.env`。
 
-| 事件 | 产品行为 |
+## 2. 哪些事件会启动或停止工作
+
+| 事件 | 行为 |
 | --- | --- |
-| 允许的 issue/work-item 事件 | 登记精确的 provider subject 并启动配置的入口 workflow |
-| 允许的 MR 事件 | 非草稿 MR 新建、草稿转就绪或源提交变化时启动对应提交的评审；普通标题等元数据更新不启动，重复同一提交不重复评审；close/merge 终止绑定到该精确 subject 的 Task |
-| 允许的 review 项目中的非系统 MR note | 去重后启动通用 MR follow-up |
-| 配置的 command mention | 启动 command lane |
+| allowlist 中的 issue/work-item | 登记精确 provider subject，启动已配置的入口 workflow。 |
+| allowlist 中的 MR | 非草稿 MR 创建、草稿转 ready 或源提交变化时，对该提交启动评审；普通标题/元数据变更不启动；同一提交不重复评审。close/merge 会终止绑定到该精确 subject 的 Task。 |
+| review 项目中的非系统 MR note | 去重后启动通用 MR follow-up。 |
+| 在 Issue 或 MR 评论中使用已配置的触发名 | 处理本条指令。同一发起人在该事项中的后续指令[继续原任务](../execution-model.md#从同一事项继续评论指令)。 |
 
-`GITLAB_PROJECTS` 与 `REVIEW_GITLAB_PROJECTS` 是 operator allowlist。`JARVIS_GITLAB_COMMAND_ALLOWED_USERS` 可选地收窄 command 作者范围。Bot/系统 note 和 jarvis-box writeback 标记被忽略以防止循环。
+Bot/系统 note 以及带 Jarvis Box writeback 标记的 note 被忽略，防止循环。GitLab adapter 不定义客户的状态、标签或 workflow 语义。
 
-Native 部署直接复用安装用户的 `glab` 身份。Docker 可以由 `start` 自动导入宿主机当前用户身份，也可以设置 `JARVIS_AUTH_IMPORT=skip` 后在持久 Agent HOME 中执行 `glab auth login --hostname <host>`；Token 不写入 `runtime.env`。
+## 3. 执行和写回的边界
 
-GitLab command 与 post-check lane 由 Agent 产出 `comment.md`，再由 Jarvis Box 的 `ProviderActionExecutor` 使用服务端 `glab` 身份写回。MR review 保留 review delivery owner，并按每次 Run / head diff append-only 新建 note，避免改写旧 review 的 timeline；follow-up 队列只保存待消费评论，状态评论必须作为 exact Run typed effect 交付。三条路径都消费同一个全局回写开关和服务端 identity。Agent 不接收 provider 评论 endpoint，也不负责生成成功回执。所有写回都必须由同一个 Task/Run 证据链关联到原始 subject。
+MR 评审为每个[配置的评审角度](../configuration.md#configprompts)启动一个独立的 Agent 进程，所有进程检查同一提交。每次完整运行由 Jarvis Box 汇总为一条新增评审评论，通过服务端 `glab` 身份写回，保留历史评论。读取 discussion 时会保留分页回复和 resolved 状态；读取失败不会假装为空历史。所有写回受同一个全局开关和服务身份控制，且都必须能从同一 Task/Run 证据链追溯到原 subject。`JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 只跳过原 subject mutation，不跳过 Agent、workflow result 或本地审计。
 
-## 最终写回时 subject 已不存在
+启动客户 workflow 前，Jarvis Box 写入 v2 `workflow-input.json`，其中有不透明 provider 事件数据、精确 subject identity 与 Task/Run/workspace 句柄。Runtime Agent 写入 `workflow-result.json`；客户结果对 Jarvis Box 不透明。只有已验证的显式 action 会被执行并记录在 `workflow-actions.json`。已支持的 GitLab action 为原 subject 评论、加标签、变更 Work Item Status 和启动子 workflow；schema、artifact path 与精确 subject 都会校验。
 
-Issue、MR、command 和 review 的最终评论如果返回 HTTP 404，Jarvis Box 会用同一个 `glab` 身份查询目标项目。项目仍可访问时，writeback artifact 记录 `subject-not-found / provider-subject-not-found`，TaskService 清理全部登记 Workspace 和 typed external resource 后把 Task 置为 `cancelled`；Agent 已成功完成的 Run 保持 `succeeded`。清理失败或延迟时，Task 保持 `finalizing / retry-finalization`，恢复器完成清理后再提交取消终态。
+若最终评论得到 HTTP 404，Jarvis Box 会用同一 `glab` 身份检查目标项目仍可访问。仅当项目仍可访问时，才把 writeback 记为 `subject-not-found / provider-subject-not-found`，清理已登记 workspace 与 typed external resource，并将 Task 置为 `cancelled`；已成功的 Agent Run 保持 `succeeded`。清理尚未完成时 Task 保持 `finalizing / retry-finalization`。项目查询失败、鉴权错误或配置错误仍是普通 writeback 失败，Status 显示 `needs-attention`。
 
-MR review 不按 marker 更新旧 bot note。新建 review note 返回 404，且目标项目检查成功时，Task 才进入 subject-not-found 终态。目标项目检查失败、鉴权错误和配置错误仍是普通写回失败，Status 会保留 `needs-attention` 供排查。
+Provider terminal event 仅匹配不可变 `task-state.subject` 与 Task 登记的 `workspaces[]`；分支名、artifact path 和目录扫描永远不能建立所有权。
 
-MR follow-up 不限于特定客户 workflow 创建的 MR，也不搜索 `bugfix-result.json`。Runtime Agent 优先通过原生 discovery 采用适用、已验证的客户或 repo-local workflow；缺少这些指导时仍按实际评论、代码与验证入口执行。
+## 4. 验证真实闭环
 
-Provider terminal 事件仅匹配不可变的 `task-state.subject` 元组与 Task 已登记的 `workspaces[]`。分支名、artifact 路径和目录扫描永不建立所有权。
-
-## Workflow Runtime Contract
-
-在启动客户 workflow 之前，jarvis-box 写入 v2 `workflow-input.json`。v2 不再生成 action grants；既有 v1 Run 仅为升级兼容保留读取和原 grant 校验，不用于新写入。input 包含：
-
-- 不透明的 provider 事件数据；
-- 精确的 provider subject identity；
-- Task/Run/Workspace 句柄；
-
-Runtime Agent 写入 `workflow-result.json`。客户定义的结果对 jarvis-box 不透明。仅经验证的显式 action 被执行并记录在 `workflow-actions.json` 中。
-
-受支持的 GitLab action 包括精确 input subject 的评论、标签添加、Work Item Status 变更和子 workflow 启动。Jarvis Box 验证 action schema、artifact 路径和精确 subject；客户状态、标签及 workflow 路由语义仍由 Runtime Foundation 定义。`JARVIS_PROVIDER_WRITEBACK_ENABLED=false` 会跳过所有原 subject provider mutation，但不跳过 Agent、workflow result 或本地审计。
-
-状态变更使用 GitLab 的 provider 操作和实时回读验证。失败或模糊的回读仍为失败 action，并通过其 action 幂等记录重试，不被视为客户 workflow 成功。
-
-## 验证
+可用以下命令创建受控验证：
 
 ```bash
 jarvis-box test 42 open "agent smoke" group/project
 ```
 
-真实 onboarding 证明应使用批准的测试 subject 并确认：
+在批准的测试 subject 上确认：
 
-1. provider delivery 创建了一个 Task 和一个 Run；
-2. Runtime Agent 执行实际任务；存在适用且已验证的客户 workflow 时原生发现并采用，没有 Company 知识时也能直接读取证据完成评估；
-3. `workflow-input.json`、`workflow-result.json` 和 `workflow-actions.json` 指向同一个精确 subject；
-4. 请求的安全 writeback 出现在同一 provider subject 上；
-5. 重放不会重复已完成的 action。
+1. 一次 provider delivery 只创建一个 Task 和一个 Run；
+2. Runtime Agent 完成实际任务；有可用且已验证的客户 workflow 时能原生发现并使用，没有 Company 知识时仍可直接基于证据完成评估；
+3. `workflow-input.json`、`workflow-result.json` 与 `workflow-actions.json` 指向同一精确 subject；
+4. 请求的安全 writeback 出现在同一 GitLab subject；
+5. 重放事件不会重复已完成 action。

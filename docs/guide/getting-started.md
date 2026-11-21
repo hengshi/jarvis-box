@@ -1,31 +1,37 @@
 # 开始使用 Jarvis Box
 
-使用者只需要回答两个问题：是否已经有自己的 Jarvis，以及选择 Native 还是 Docker。
+本指南面向第一次上线 Jarvis Box 的客户。完成后，你应当能确认服务健康、Runtime Agent 可运行，并让一条真实 provider 或 IM 任务完成接收、执行和原处回复。
 
-先打开[下载与安装指引](https://download.hengshi.com/jarvis-box/index.html)：发布包、校验文件和 Docker 镜像包均可从衡石下载站获取，无需访问 GitHub。`install.sh` 和完整使用文档在发布包内。Native 无 GitHub 安装须显式传入已下载的本地文件，命令见[Native 安装步骤](https://download.hengshi.com/jarvis-box/index.html#native)。
+先从[下载与安装指引](https://download.hengshi.com/jarvis-box/index.html)取得发布包、校验文件和 Docker 镜像包。无需访问 GitHub；`install.sh` 和完整使用说明在发布包中。Native 离线安装必须显式传入已下载的本地文件，命令见下载页的 [Native 安装步骤](https://download.hengshi.com/jarvis-box/index.html#native)。
 
-## 1. 还没有 Jarvis
+## 1. 确认是否已有 Jarvis
 
-Company Jarvis 建设与运行时安装分别进行。可访问 GitHub 时，让已经登录并获得授权的 Host Agent 执行：
+### 还没有 Jarvis
+
+Jarvis 建设与 Jarvis Box 运行时安装分开进行。若 Host Agent 已登录并获授权，可给它以下请求：
 
 ```text
 请运行 git clone https://github.com/hengshi-jarvis/create-jarvis create-jarvis，读取本地 create-jarvis/SKILL.md，然后帮我构建并部署一套 Jarvis。
 ```
 
-Host Agent 先收集授权资料位置和连接信息，部署最新稳定版 Jarvis Box 并接通工作系统与 IM；已验证入口即可使用。随后继续建设客户拥有的 Jarvis repo、repo-local skills 与 workflow，再安装并接入 Runtime Foundation。完整知识构建不阻塞普通任务。
+Host Agent 会先收集授权资料位置和连接信息，部署稳定版 Jarvis Box 并接通工作系统与 IM。随后可继续建设客户拥有的 Jarvis repo、repo-local skills 与 workflow，并接入 Runtime Foundation。完整知识建设不阻塞普通任务。
 
-## 2. 已经有 Jarvis
+### 已经有 Jarvis
 
-| 选择 | 何时使用 | 认证方式 |
+选择一种部署模式：
+
+| 选择 | 何时选它 | 身份方式 |
 | --- | --- | --- |
-| Native | 希望最少配置，直接使用当前机器 | 复用安装者当前 OS 用户已有认证 |
-| Docker | 希望隔离、可迁移和独立持久化 | 自动导入当前 Host 用户的必要认证 |
+| Native | 需要最少配置，直接使用当前机器 | 使用安装者当前 OS 用户已有的认证。 |
+| Docker | 需要隔离、可迁移的独立持久环境 | `start` 可窄化导入当前 Host 用户所需认证；也可以在容器的持久 Agent HOME 中直接登录。 |
 
-不需要创建 `jarvis` 用户，不需要把 token 写进文档，也不要复制整个用户 HOME。
+不需要创建 `jarvis` 用户，不要把 token 写进文档，也不要复制整个用户 HOME。
 
-## 3. Native 上线
+## 2. 安装并启动
 
-在已校验的 release bundle 中执行：
+### Native
+
+在已经校验的 release bundle 中执行：
 
 ```bash
 sudo bash install.sh   # Linux
@@ -35,26 +41,26 @@ jarvis-box agent smoke
 jarvis-box status
 ```
 
-安装器使用发起安装的现有 OS 用户。macOS 上 `sudo bash install.sh` 会把 launchd 域与运行时目录落到 root 名下，服务起不来。
+安装器使用发起安装的现有 OS 用户。macOS 使用 `sudo bash install.sh` 会让 launchd 域和运行时目录属于 root，服务无法以预期身份启动。
 
-如果是升级，必须先执行：
+升级前先运行：
 
 ```bash
 jarvis-box stop
 ```
 
-有 active Task 时停服会被阻断。先等待任务完成，或明确继续、取消任务；不要绕过 Task/Run 生命周期直接替换服务。
+有 active Task 时停服会被阻断。等待其完成，或者明确 Continue、取消任务；不要绕过 Task/Run 生命周期直接替换服务。
 
-## 4. Docker 上线
+### Docker
 
-准备 deployment home，填写 release bundle 提供的 `deployment.env`、`runtime.env` 和可选 `connector.env`。首次在 `runtime.env` 启用任务与回写，用户和会话允许名单留空：
+创建一个 deployment home，按 release bundle 填写 `deployment.env`、`runtime.env` 和受管 connector 的可选 `connector.env`。如果连接共享 UVIM hub，使用 `JARVIS_CONNECTOR_PROFILE=uvim-external`，把 hub URL 与本 Box 独有的 scoped client token 写入私有 `runtime.env`，不创建本地 connector；具体步骤见 [IM 接入](../integrations/im.md#管理员-配置-jarvis-box-与-connector)。首次在 `runtime.env` 启用工作项自动检查与 provider 写回；用户和会话允许名单可以留空：
 
 ```dotenv
 JARVIS_ISSUE_POST_CHECK_ENABLED=true
 JARVIS_PROVIDER_WRITEBACK_ENABLED=true
 ```
 
-执行：
+再执行：
 
 ```bash
 ops=/absolute/release/scripts/deploy-production.sh
@@ -64,19 +70,15 @@ home=/absolute/deployment-home
 "$ops" "$home" verify
 ```
 
-`start` 自动导入当前 Host 用户的必要认证。多 GitHub 账号时在 `deployment.env` 选择明确的 machine user；不要进入容器复制 Host credential store。
+`start` 会导入当前 Host 用户必要的认证。若有多个 GitHub 账号，在 `deployment.env` 选择明确的 machine user；不要进入容器复制 Host credential store。更多部署变量见 [部署参考](../deployment.md) 和 [配置参考](../configuration.md)。
 
-验证实际任务执行和原处回复后即可使用。客户知识随后交付，由 Runtime Foundation 完成 bootstrap、sync、doctor 和真实知识 discovery；尚未安装 Foundation 时 prepare hook 留空，缺少 Company 或 repo-local skills 不阻塞普通任务。Company 知识投递使用现有部署，不重建 Jarvis Box。
+## 3. 做一次真正的上线验证
 
-## 5. 什么算真正上线
+在日常使用前，确认下列四件事都成立：
 
-必须同时看到：
+1. `health`、`jarvis-box doctor` 和 Agent smoke 均通过。
+2. Runtime Agent 能执行实际请求；尚未安装 Company 或 repo-local skills 时，也能调查和完成普通任务。
+3. 一条真实 provider 或 IM 任务经过 ingress、Task/Run、workspace、Agent，并把结果写回原对象或原会话。
+4. Task 终态后，workspace 和外部资源按其所有权正确清理。
 
-1. `health`、`jarvis-box doctor` 和 Agent smoke 通过；
-2. Runtime Agent 能执行实际请求；没有 Company/repo-local 知识时也能直接调查和完成任务；
-3. 一条真实 provider 或 IM 任务完成 ingress、Task/Run、workspace、Agent 和 writeback；
-4. Task 终态后 workspace 与外部资源按所有权正确清理。
-
-Generic health 通过不等于任务与回复链路已可用。Company 定制 workflow 的验证另行记录，不冒充完整知识建设已完成。
-
-日常操作见 [运维入口](../operations.md)。Docker 详细合同见 [部署参考](../deployment.md)，变量解释见 [配置参考](../configuration.md)。
+通用 health 通过只证明服务可用，不证明任务和回复链路已上线。Company 定制 workflow 的验证应单独记录，不能把它称为完整知识建设。日常停服、升级、认证、备份与故障处理见 [运维入口](../operations.md)。

@@ -1,261 +1,216 @@
 # IM 与 uv-im-connector
 
-Jarvis Box 不直接持有 IM provider 的原生 credential。IM provider 由 `uv-im-connector` 连接，Jarvis Box 只消费统一事件并通过 connector 写回消息。
+在已经接通的机器人会话中，你可以交办工作、附上材料并继续追问，结果回到原会话。日常操作直接看[在会话中完成任务](#使用者-在会话中完成任务)；管理员先看[接入配置](#管理员-配置-jarvis-box-与-connector)。
 
-## 支持级别
+`uv-im-connector` 是消息连接服务，负责对接飞书、企业微信、钉钉等平台。机器人的平台凭据由它保存，Jarvis Box 通过它接收和回复消息。
 
-- Jarvis Box 认证 adapter 候选：企业微信（WeCom）、飞书/Lark、钉钉（DingTalk）。某个 adapter 只有在对应版本取得 provider-native ingress → Jarvis core → provider-native delivery 的确定性阻塞 E2E 证据后，才可对外宣称为已认证。
-- 统一协议支持：任何与当前锁定 `uv-im-connector` protocol 兼容的 provider 都可以接入 ChatBridge core。
-- Connector capability：锁定版本二进制中存在但未列入认证 adapter 的 provider，只表示 connector 具备实现；在补齐 Jarvis Box 双向闭环、部署和脱敏 evidence 前，不宣称为 Jarvis Box 认证支持。
+## 先确认渠道是否适合你的用法
 
-某套部署的 `UV_IM_PROVIDERS` 是认证集合的运行时子集。provider credential 出现在 `connector.env` 也不自动扩大产品支持边界。
+当前发布版本面向企业微信（WeCom）、飞书/Lark 和钉钉（DingTalk）的日常任务收发。管理员应在目标部署上完成一次真实的“发消息 → 执行 → 原会话收到结果”验收；配置齐全和健康检查通过后，仍需确认实际收发结果。其他兼容 `uv-im-connector` 协议的渠道可能可以连接，但本页面不承诺它们的收发、部署或脱敏行为。
 
-## 为什么 IM 不需要暴露 Jarvis Box 公网 IP
+| 能力 | 飞书/Lark | 企业微信 | 钉钉 |
+| --- | --- | --- | --- |
+| 引用材料 | 富文本、资源、合并转发和有界回复链 | 回调提供的引用文本和附件；没有原消息 ID 时只作为材料 | 保留回调明确的原父消息 ID；无法读取正文会说明，不把诊断文件当材料 |
+| 群背景与搜索 | 当前授权范围内可读取原生讨论 | 只使用机器人已经收到且仍保留的消息 | 只使用机器人已经收到且仍保留的消息 |
+| 完成通知与继续任务 | 支持经核验的私聊通知与会话续接 | 可用已核验的 Run ID；引用材料本身不关联任务 | 可用已核验的 Run ID；卡片实例不作为通知引用 |
+| 问题回答 | 原生卡片、回调和持久更新；不适配时用完整文字 | 最多 6 个固定按钮的模板卡；不适配则完整文字 | 已发布模板的群聊固定按钮卡；单聊、缺模板或不适配则完整文字 |
+| 一次性订阅、本人私聊续接 | 支持，仍须渠道具备主动发送/身份核验能力 | 同左 | 同左；主动私聊须应用机器人凭据 |
 
-很多 IM provider 使用长连接、WebSocket、事件订阅或平台托管 callback。`uv-im-connector` 负责与这些 provider 建立连接、维护认证、接收消息、下载附件和发送回复。
+表中的原生群历史能力适用于单调用方 connector。共享 hub 为隔离调用方，所有渠道的窗口和搜索都只使用归属本 Box、已经收到且仍保留的消息，不查询平台完整历史。企业微信和钉钉即使单独部署，也只提供已收消息。卡片实例不是可引用消息 ID；企微发送请求号、钉钉 `processQueryKey`/`outTrackId` 不能用来关联任务。若某个渠道不满足这里的条件，Jarvis 会用完整文字说明限制，而不会猜测消息、用户或会话。
 
-Jarvis Box 看到的是统一后的事件：
+## 管理员：配置 Jarvis Box 与 connector
 
-```text
-provider + connector + conversation + sender + message + attachments
-```
+把下列值写到当前实例真正生效的环境文件：Native 使用 `JARVIS_ENV_FILE`（默认 `$JARVIS_RUNTIME_ROOT/envs/.env.jarvis-box`）；Docker 使用 deployment home 的 `runtime.env`。provider 原生 secret 放在 connector 的 `connector.env`，不放在 Jarvis Box：
 
-其中 conversation 和 sender 都保留 provider-native 稳定 ID，并可携带 `channel.name`、`user.name` / `user.display_name` 展示快照。Jarvis Box 把名称写入任务运行上下文供 Status 展示和搜索，但 Target 绑定、ACL、排重与回复路由始终只使用稳定 ID。名称查询失败或旧事件没有名称时，任务仍正常执行，Status 回退到带 provider 前缀的 ID。
-
-飞书/Lark 名称由 `uv-im-connector` 使用应用 OpenAPI 做短时、可失败的缓存查询。企业微信 AI Bot 长连接只返回 `userid` / `chatid`，Bot secret 不能查询企业通讯录或群名；需要名称的部署应在 connector 侧配置显式 ID→名称映射，Jarvis Box 不直接持有企业微信目录凭据。
-
-因此 Jarvis Box 不需要知道企业微信或飞书的原生 token，也不需要为每个 IM provider 实现一套 webhook parser。
-
-## 配置 Jarvis Box
-
-以下值写入当前实例实际生效的运行时环境文件：Native 由 `JARVIS_ENV_FILE` 指定，默认 `$JARVIS_RUNTIME_ROOT/envs/.env.jarvis-box`；Docker 使用 deployment home 管理的 `runtime.env`。不要在 `deployment.env` 重复声明 profile：
-
-```bash
+```dotenv
 JARVIS_CONNECTOR_PROFILE=uvim
 JARVIS_UV_IM_CONNECTOR_URL=http://127.0.0.1:19090
-JARVIS_UV_IM_CONNECTOR_TOKEN=<optional-token>
+JARVIS_UV_IM_CONNECTOR_TOKEN=<managed-connector-token>
 JARVIS_CHAT_ALLOWED_USERS=
 JARVIS_CHAT_ALLOWED_CONVERSATIONS=
+JARVIS_CHAT_REQUIRE_MENTION=true
 ```
 
-新部署将两个允许名单留空，允许所有已接通的用户和会话发起任务，无需先收集用户或群聊 ID。群聊唤起、机器人排除和精确会话回复绑定仍保持生效。客户明确需要收窄时，可选的三段式 ACL 主体身份为 `provider:connector:subject`。connector 不是任意渠道名，
-而是 UVIM `/v1/meta` 中该 provider 实际声明的实例；例如默认企业微信实例可能正好是
-`wecom:wecom`。主动通知配置不要求把这两个名字重复书写。
+新 deployment 可以将两个 allowlist 留空，允许所有已经接通的用户和会话发起任务；群聊唤起、机器人排除和精确会话回复仍然生效。需要收窄时，ACL 主体格式为 `provider:connector:subject`。`connector` 是 UVIM `/v1/meta` 中该 provider 实际声明的实例，不是任意渠道名；例如默认企业微信可为 `wecom:wecom`。
 
-`JARVIS_CONNECTOR_PROFILE` 是 IM connector 的唯一启用开关。仅保留 URL 不会启动 ChatBridge connector client；把 profile 设为空并通过正式部署脚本重建，会同时移除旧 connector service。
+`JARVIS_CONNECTOR_PROFILE` 是唯一的 IM 启用开关，只保留 URL 不会启动 ChatBridge client。`uvim` 管理本实例的 connector；清空 profile 并按正式部署脚本重建会移除它。连接管理员维护的共享 hub 时使用 `uvim-external`，将 hub URL 和**本 Box 独有的非空 scoped client token** 写入私有 runtime env。缺少 URL 或 token 时服务拒绝启动；external profile 不读取 `connector.env`，不创建本地 connector，也不管理共享 hub。
 
-它只决定 IM：webhook 派发不看 profile，GitLab、GitHub、Jira 各自由 `GITLAB_HOST`+`GITLAB_PROJECTS`、`GITHUB_REPOSITORIES`、`JIRA_BASE_URL`+`JIRA_PROJECTS` 启用，同一台盒子可以既聊天又接 webhook。没有配置的入口保持未配置（HTTP 501），与 `/health` 的 `providers.*.configured` 同一判据。
+共享 hub 管理员将 token 绑定到稳定调用方及获准的 provider、connector 和会话。Box 不传递 client ID，不读取其他调用方的事件、资源或身份关联；主动发送还须目标已获准。路由移交只改变后续事件的归属，不移交旧历史、回复权限、文件或卡片更新权限。
 
-`JARVIS_BRAND_NAME` 可选，用来替换客户看到的助手显示名（默认 `Jarvis`）。它同时作用于 IM 回执与完成通知、发给 Agent 的提示词、写回 MR/PR 的评论和 Status 页面的助手文案；定时认知任务保留固定产品名称：JARVIS 记忆整理、JARVIS 每日复盘、JARVIS 经验积累。二进制名、镜像、systemd/launchd 单元、安装路径和所有 `JARVIS_*` 变量名不随之改变。改显示名后，群聊里 `@` 的对象也要和 `JARVIS_MENTION_NAMES`（默认 `jarvis,jarvis-box`）保持一致。这个值会被写进 Status 页面的 JavaScript 字符串和 HTML 标记，也会拼进下面几条默认文案的格式串，所以不能包含 `'` `"` `` ` `` `\` `<` `>` `&` `%` 或控制字符；含这些字符时服务启动失败，并在错误里指出是哪个字符。
+profile 只影响 IM：GitLab、GitHub、Jira 等 webhook 是否启用仍分别由自己的配置决定；未配置入口保持 HTTP `501`，与 `/health` 的 `providers.*.configured` 相同。
 
-以下三条模板可选，用来替换 IM 文案，留空即使用默认值：
+启动后 Jarvis Box 会检查 connector 身份和协议是否匹配。常规 verify 应检查 `/health`、经认证的 `/v1/meta` 与版本信息；共享模式的 meta 与事件流只返回本调用方的范围，verify 还应确认本 deployment 没有受管 connector。随后在批准的会话中发送一条 canary 消息，确认结果确实回到原会话。connector 与 Jarvis Box 会在短暂连接故障后自行重连；进程被终止或崩溃仍由部署的 service manager 负责拉起。
 
-| 变量 | 默认 | `%s` 依次替换为 |
+### 品牌与回执文本
+
+`JARVIS_BRAND_NAME` 可替换客户看到的助手名（默认 `Jarvis`），影响 IM 回执/完成通知、Agent 提示词、MR/PR 评论和 Status 文案；二进制名、镜像、服务单元、安装路径及所有 `JARVIS_*` 不变。名称也应与 `JARVIS_MENTION_NAMES`（默认 `jarvis,jarvis-box`）匹配。它会进入 HTML/JavaScript/格式字符串，不能含 `'`、`"`、反引号、`\\`、`<`、`>`、`&`、`%` 或控制字符；出现时服务拒绝启动。
+
+可用以下变量替换回执，留空即用默认：
+
+| 变量 | 默认含义 | `%s` 参数 |
 | --- | --- | --- |
-| `JARVIS_CHAT_LAUNCH_REPLY_TEMPLATE` | `<助手名> 已开始处理。run_id: %s` | run id |
-| `JARVIS_CHAT_QUEUED_REPLY_TEMPLATE` | `<助手名> 已接收任务，%s。task_id: %s` | 等待原因、task id |
-| `JARVIS_CHAT_HELP_REPLY_TEMPLATE` | `<助手名> 未被唤起。请在群聊中 @<助手名>，或用 \`<触发词> ...\` / \`/start ...\` 开始。` | 助手显示名、触发词 |
+| `JARVIS_CHAT_LAUNCH_REPLY_TEMPLATE` | 实际启动后的“<助手名> 已开始处理。run_id: …” | Run ID |
+| `JARVIS_CHAT_QUEUED_REPLY_TEMPLATE` | “<助手名> 已接收任务，<等待原因>。” | 自定义时依次为等待原因、Task ID |
+| `JARVIS_CHAT_HELP_REPLY_TEMPLATE` | 群聊唤起、开始任务和用 Run ID 继续的说明 | 助手显示名、触发词 |
 
-模板中的 `%s` 数量必须符合上表。缺少或多写 `%s`、使用其他格式符都会导致启动失败，并指出配置变量。字面量 `%` 写成 `%%`。
+自定义模板的 `%s` 数量必须匹配；不得使用其他格式符，字面量 `%` 写为 `%%`。`JARVIS_COMMAND_NOTIFY_COMPLETED_TEMPLATE` 例外：它是完成通知首行的纯文本标题（默认“<助手名> 任务已完成”），不做格式替换或 `%s` 校验。
 
-IM 任务开始处理或进入等待时发送回执。Agent 运行期间，完整的助手正文也会回复到原会话；思考、工具执行、错误流和未完成的消息不发送。开始回执不占用助手回应次数。短时间连续输入在首条助手回应开始发送前合并为一次回应，合并期间不重复发送开始回执；已经开始发送后收到的新输入有新的首条回应机会。续话仍沿用 Continue 的执行语义。
+## 使用者：在会话中完成任务
 
-回复方式以当前 connector 声明的能力和本次实际发送路径为准：
+消息通过校验并可靠保存后，Jarvis 先回复“已收到，正在处理”，再准备工作区、下载附件和启动 Agent。若渠道限制回复次数，受理提示使用同一目标的主动发送能力；渠道不支持主动发送时，保留回复额度用于启动结果或准备失败说明。启动后会给出含 Run ID 的开始回执；受理确认本身不表示 Agent 已启动。准备失败、等待衔接或取消时，会按实际结果说明，无需因准备耗时而重复发送。
 
-| 发送能力 | 运行期间的回应 |
+运行期间只把完整助手正文发回原会话；思考、工具执行、错误流和未完成消息不会发送。短时间连续输入在第一段助手正文发出前合并为一次回复，不重复发开始回执。完整进展和交付诊断仍可在 Status 查看。
+
+| 发送内容 | 行为 |
 | --- | --- |
-| 原消息更新 | 把完整助手输出依次加入当前回应，更新原消息；内容较长时继续分页。飞书使用应用自己发送的消息 ID。 |
-| 被动流式回复 | 在原回复流中更新完整正文，任务结束时关闭回复流。企微主动发送不具备这项流式能力。 |
-| 只能追加消息或未声明更新能力 | 每次合并输入后只追加第一条完整助手正文，后续中间输出保留在任务记录中。最终结果和附件仍单独收口。 |
+| `/start <prompt>` | 创建一项新任务并开始处理。空 `/start` 只返回用法。 |
+| `@Jarvis 继续 <Run ID> <新要求>` | 继续当前会话中由当前或历史 Run ID 唯一定位的任务；不改变当前会话的默认任务。旧 `task:v2:` 仍兼容。 |
+| `@Jarvis 任务 [页码]` | 只读列出当前会话可读任务，不开始执行，也不改变默认任务。 |
+| `@Jarvis 关联 <Run ID>` / `解除关联 <Run ID>` | 将当前真实话题与可访问任务关联或解除关联；不开始执行，也不改变默认任务。 |
+| `/bind <业务平台> <账号或原生账号 ID>` | 申请通知账号关联，不开始任务。 |
+| `/unbind <业务平台> <账号或原生账号 ID>` | 解除本人的通知关联，不取消任务。 |
+| 首条普通消息 | 当前会话没有可继续的任务时，开始新任务。 |
+| 后续普通消息 | 依次使用被引用消息的任务、当前真实话题唯一的关联任务或当前会话默认任务。多个关联都可能适用时，Jarvis 会要求明确指定。 |
+| `/cancel`、`/cancel <run-id>`、`/cancel all` | 分别取消引用或默认任务、按 Run ID 指定的任务、当前会话全部尚未结束的任务。`/stop` 是对应新拼写；`/cancel` 保持兼容。 |
 
-更新默认间隔一秒，首条完整正文和最终关闭不额外等待；渠道限流时遵守渠道要求。单页展示预算为 16 KiB（包含补齐的代码围栏），渠道声明更低限制时取更低值。分页保留完整 UTF-8 内容；无法合法分页的回复路径会在能力允许时发送完整 Markdown 文件和简短说明，不静默截断。特别长的最终结果也可作为完整 Markdown 文件交付。
+未识别的 `/命令` 只返回用法，不交给 Agent。群聊中，控制命令和明确 Continue 必须在消息开头提及机器人；若平台已从正文移除 mention，还必须有“首位为本机器人 mention”和“确实发给机器人”的原生事实。普通“任务进展如何”不等于任务列表命令。
 
-已经确认送达的同一条助手输出可作为最终正文的交付凭据，仍保留最终结果与附件的独立回执。文字相同但属于不同输出、Task 或 Run 时不据此跳过发送。取消或新的 Continue 会停止旧运行的新进度发送；已经发出的请求可能完成，其回执仍属于原运行。服务重启不补发此前的进度，结果未知的请求不自动重发；后续真实新输出按当前归属继续处理。未进入自动恢复的失败会在原会话收到简短说明，自动恢复中的失败不会提前宣布任务失败。
+任务属于发起它的渠道和会话。Run ID 只能帮助 Jarvis 找到候选任务，不会授予跨会话访问；身份、会话或来源不符时会明确拒绝。群内的已授权成员可以使用同一会话中的任务引用；其他会话、未知消息或冲突身份不能借用该任务。明确的“继续”优先于消息引用，消息引用优先于已核验的话题关联。关联只能来自 connector 确认的真实原生话题，不能靠标题、正文或猜测建立。
 
-旧 connector 未声明这些新增能力时使用追加模式；消息更新需要同时使用提供 `message.update` 接口的 connector。Status 页面继续提供完整任务进展与交付诊断。
+一个会话可以并发处理多个任务，结果即使乱序抵达也会回到各自的原消息。活动任务中的普通消息会被当作继续要求；无法安全确认上一轮已经停止时，Jarvis 会拒绝而不是并行改写任务。启动、收尾或清理期间的新指令会保存并提示“新指令已保存，正在衔接执行”，无需重复发送。完整的生命周期与权限规则见[执行模型](../execution-model.md)。
 
-`JARVIS_COMMAND_NOTIFY_COMPLETED_TEMPLATE` 不同：它是纯文本标题，不做格式替换，也不做 `%s` 校验，用来替换任务完成通知的首行（默认 `<助手名> 任务已完成`）。
+### 查看与明确继续
 
-启动后 Jarvis Box 会读取 connector 的 `GET /v1/meta`，要求 `service=uv-im-connector` 且 protocol version 兼容。
+`@Jarvis 任务` 每页显示 5 项，按创建时间倒序排列；每项有标题、中文状态和当前 Run ID。没有开始执行的任务显示“准备中”，没有标题时显示“未命名任务”。页码只能是正整数；错误或超出范围时会说明用法或可用范围，不会静默跳页。任务列表只能查看，不能用来取得其他会话的权限。
 
-网络断线后，connector 在进程内对失败的 provider runner 独立持续重试，采用从 1 秒开始、最多 1 分钟并带抖动的指数退避；其他 provider 和 HTTP API 保持运行。WeCom、Lark 及 DingTalk Stream 启动失败使用同一监督入口；DingTalk 已建立 Stream 后的重连由 SDK 负责，webhook provider 继续通过 HTTP 接收事件。`/health` 表示进程存活，各 provider 状态通过 `/v1/meta` 检查。
+需要在多个任务间选择时，复制它的当前或历史 Run ID，发送 `@Jarvis 继续 r_… <新要求>`。任务不存在、已清理、已转移到其他会话、无法唯一识别或不能继续时，Jarvis 会明确拒绝，绝不会改用引用消息或默认任务。只贴 ID 而没有新要求只返回用法。
 
-Jarvis Box 到 connector 的连接同样持续重试，长时间断线只报告降级，不会退出主进程请求 supervisor 重启。进程崩溃或被杀仍需要 service manager 拉起；若 launchd 已抑制 KeepAlive，操作员应核实 service identity 后执行一次 `launchctl kickstart`。进程内重连不能恢复已停止的进程。
+原 IM 任务的创建者也可在另一条当前、已核验的机器人私聊中发送明确的继续要求。新结果只回复这条私聊，不能因此读取原群历史或向原群发消息。换入口续接适用于原创建者本人；已有群内协作继续在原群进行。
 
-## 会话语义
+## 输入材料、引用和群历史
 
-| 消息 | 行为 |
+### 直接附件与引用材料
+
+connector 将附件下载/代理到 Run 启动前的 `attachments/`，并把实际路径与回传方式告诉 Agent。Agent 不需要也不应遍历用户 HOME、其他 Task 或源码仓库找附件；附件读不到时必须说明，不能以同名文件替代。单聊和群聊走同一处理路径。Jarvis Box 不额外限制入站附件数量、单文件大小或单条总大小；平台限制、权限和主机磁盘空间仍适用。以下内容绝不能进入 public artifact：provider 下载 URL/文件密钥、connector `internal://` URL、raw IM payload、reply token、provider-native credential。
+
+飞书/Lark 的显式引用、合并转发可将支持资源带入本次 Run。引用中的 `/cancel` 等文字只是材料，不是控制命令。转发子消息 ID 仅表示材料位置，不授予 Task、会话或权限；同名文件也保持为不同材料。图文保留可用正文、标题、段落、链接、代码语言/空白、被提及者原生 ID 与已有显示名；媒体/文件只在有原生资源依据时下载，文件夹会提示补发 ZIP 或单文件。
+
+在有唯一 ID、精确同会话、未撤回且内容可用的飞书/Lark 引用中，若原消息有 `parent_id`，最多可向前追加 4 个同话题祖先作为参考。查询共用 5 秒只读期限、零重试，参考正文最多 24 KiB，按最近到最早保留完整节点，绝不截断节点或跨会话。祖先的媒体、文件、音视频、转发只显示说明，不下载、不建立 resource ID；参考中的命令不执行、不改变 Task/Run、回复目标或任何权限。读取失败、撤回、身份/会话冲突、环、超时、深度或预算边界会保留已取材料并明确说明截断/不可用。
+
+显式引用缺少同源可用材料，或仅有 error resource 时，系统会说明无法读取引用，创建零 Run，不能把“继续”等正文退回默认 Task。同源、无错误且完整可读的人类引用材料才走普通引用路径。旧材料缺 resource ID 可以保留可读，但不能按文件名、URL 或私有下载定位信息猜关联。
+
+### 群聊近期背景
+
+在已准入的群里，先原生提及机器人再提出请求，Jarvis 才会把触发消息之前的近期讨论作为参考。它不会执行历史消息中的命令，也不会改变本次请求、任务选择或回复去向；单聊、未提及机器人的消息、控制命令和完成通知不会读取群背景。
+
+单调用方的飞书/Lark connector 可在当前授权范围读取原生群消息。企业微信、钉钉，以及共享 hub 中的所有渠道，只使用归属本调用方且仍保留的已收消息；原生读取失败不会改用已收消息。自动补充最多查看 10 条候选、保留最新的完整消息块（正文总计最多 24 KiB），最长等待 5 秒且不重试。它会说明已覆盖的范围、是否还有更多以及无法读取的原因；失败不阻止当前请求或显式附件继续处理。
+
+### 按需回查群历史
+
+需要更早的材料时，Agent 可以在本轮任务内按时间、稳定发言者 ID 和关键词搜索同一已准入的群和话题。一次最多检查 5 页、50 个候选，找到第一页匹配项即停止；每页同样最多等待 5 秒且不重试。无匹配只表示已检查的范围没有匹配，不代表整群不存在材料。搜索不自动下载媒体；不能安全取得文件时，请直接引用或重新发送附件。
+
+群背景和搜索只在当前任务中临时使用，不会建立永久聊天记录，不会让其他会话取得访问权。取消任务、撤销权限或任务结束后，已失效的材料不能继续读取。
+
+## 问题、交付与任务结束
+
+### Agent 需要补充信息时
+
+Agent 可以在一轮工作结束时提出一个具体问题，给出选项、影响或自由输入说明。只有问题已经送达，才会显示为“等待回答”；准备失败、发送失败或发送结果未知都不会假装用户已经收到问题，也不会把任务状态改写成“运行中”。
+
+飞书使用原生消息卡；企微使用固定按钮模板卡（最多 6 个按钮）；钉钉只在模板和权限已具备的群聊使用互动卡。自由输入或整个问题不适配渠道时，一律发完整文字，不删除选项迁就卡片。钉钉须在 connector 生效环境设置 `UV_DINGTALK_CARD_TEMPLATE_ID`，指向同一应用按[连接器模板契约](https://github.com/hengshi/uv-im-connector/blob/main/docs/interactions.md)发布的真实模板并具有卡片权限；未配置模板仍可用完整文字，不猜默认模板。
+
+无论卡片还是文字，只有原请求人能在原会话、原话题回答；群里其他人仍可继续任务，但不能代替请求人作答。回答会继续同一任务，沿用提出问题的 Agent。重复回答不能覆盖第一份已受理答案；旧问题按钮也不能取消或继续之后的任务。“查看当前状态”只查看，取消仍使用普通取消命令。
+
+如果渠道无法可靠地把问题和原生消息关联起来，Jarvis 会在完整文字问题中给出 Run ID。遇到多个任务时，请发送 `@jarvis 继续 <Run ID> <选项 ID 或具体要求>`；不要依赖旧卡片或转发内容猜测关联。已确认送达的卡片操作最长有效 7 日，回答、取消、权限变化或任务清理会更早失效。服务重启会恢复问题记录，但不会重复发送历史问题；企业微信和钉钉目前也不会更新已经送出的卡片。
+
+### 普通回复与附件交付
+
+回复方式取决于 connector 声明和实际发送路径：
+
+| 能力 | 运行中的正文 |
 | --- | --- |
-| `/start <prompt>` | Start：创建新 Task、AgentConversation 和首个 Run。 |
-| 空 `/start` | 返回用法，不改变当前 Target binding。 |
-| `/bind <业务平台> <登录账号或原生账号 ID>` | 申请通知账号关联，返回限时核验指令；不创建 Task/Run，不调用 Agent。 |
-| `/unbind <业务平台> <登录账号或原生账号 ID>` | 解除当前 IM 用户自己的通知关联；不取消任务，不修改会话的默认 Task。 |
-| 未知 `/命令` | 在原消息回复支持的用法，不创建 Task/Run，不交给 Agent 执行。群聊仍遵守唤起要求。 |
-| 首条普通消息 | 当前 Target 尚无 Task 时执行 Start。 |
-| 后续普通消息 | Continue：优先继续引用消息所属 Task，否则继续 Target 的默认 Task。 |
-| `/cancel` | Cancel：取消引用消息所属 Task；未引用消息时取消默认 Task。 |
-| `/cancel <run-id>` | Cancel：只取消当前 Target 中拥有指定 Run 的 Task。 |
-| `/cancel all` | Cancel：取消当前 Target 的所有非终态 Task。 |
+| 原消息更新 | 把完整助手输出加入当前响应并更新原消息；过长则分页。飞书用应用自己发出的 message ID。 |
+| 被动流式回复 | 在原回复流更新完整正文，结束时关闭回复流；企微主动发送不具备该流式能力。 |
+| 仅追加消息或未声明更新 | 每次合并输入后只追加首条完整助手正文；后续中间输出留在任务记录。 |
 
-Target 绑定按 provider、connector 和 conversation 组合隔离。同一个原生 conversation id 出现在不同 workspace 或 connector 中时，不会互相授权。Binding 只保存无明确目标时使用的默认 Task id/dir，不缓存 Run id、Run 状态或 runtime session。
+更新默认间隔 1 秒；首条完整正文和最终关闭不等待。单页最多 16 KiB（含补齐的代码围栏），取渠道声明的更低限制。分页保留完整 UTF-8；若不能合法分页且能力允许，则发送完整 Markdown 文件和简短说明，不静默截断。最终回复使用该 Run 的完整结果；工具记录过大或进度解析失败不阻断交付。服务重启不补发旧进度，未知发送结果不自动重发。
 
-同时带有多个引用时，按 parent、root、thread 顺序查找本会话的消息记录；缺省或未命中时查下一项，重复消息 id 只查一次。命中后的身份冲突必须拒绝。引用续话不会把该 Task 设为默认；显式 `/cancel <run-id>` 优先使用指定 Run，不改用引用或默认 Task。
+发出的文件受渠道大小和图片尺寸限制。超过时，Jarvis 保留原文件，在原会话说明文件名、实际大小/尺寸及渠道限制，并询问可访问的云盘、对象存储等交付位置。Agent 成功且输出有效时 Task 保持完成，附件超限单独记录，不保持等待状态。Agent 链接同一 Task 的公开 `artifacts/` 文件时，Jarvis 可把它作为实际附件；相对链接以该 Run `reply.md` 所在目录解析。符号链接逃逸、私有目录和其他 Task 文件没有发送权限。
 
-同一原生控制消息不会因重投再次取消任务、清空默认选择或重复回复。控制消息的记录不授予 Task 引用，也不表示操作完成或回执已送达；若操作途中进程中断，请查看任务当前状态后发送新的命令，原消息重投不会重新选择后来创建的任务。
+附件发送的结果未知时，系统问原 Run 发起人是否“全部收到”“全部没收到”，或按“未收到的附件：a.txt、b.txt”/“只缺a.txt”给出明确名单。具名名单必须是原交付中唯一文件名、尚未确认文件的非空子集；只补发这些文件，其余按用户明确“只缺”的裁定记为收到。内容变化、重名、未知、不匹配或已确认文件会要求澄清，不重跑 Agent。普通新要求仍是 Continue。其他群成员可继续任务，但不能替原发起人裁定送达。
 
-发送人和会话必须先通过允许清单校验。同一群内已授权成员共享该会话的任务引用；不会因为任务由另一名群成员发起就额外拒绝。普通消息引用另一会话的消息或未知消息时，不能选中外部任务或借用其回复凭据；未命中本会话引用记录的合法普通输入仍继续本会话默认任务，没有默认任务时创建新任务。已经找到的绑定若身份不符则明确拒绝，不回退默认任务。
+### 已授权的 GitHub 原生内容写回
 
-`/cancel` 携带引用时必须找到本会话中该引用所属的任务；找不到时说明原因，不取消默认任务。只有没有引用的 `/cancel` 才使用默认任务。`/cancel <run-id>` 找不到本会话对应 Run 时同样不回退。
+需要把产出写入 GitHub 时，在本次指令中明确给出已接入仓库的分支和 Markdown 文件目标。Jarvis 会在开始执行前核对你的会话、身份和目标权限；Agent 之后不能自行换成另一个仓库、分支或路径。
 
-`/start` 不停止旧 Task。一个单聊、群聊或频道可以并发运行多个 Task；每个 Run 保存自己的原始 message ref，完成后通过该 ref 回复，因此结果可以乱序到达而不会失去归属。`uv-im-connector` 提供 parent/root message id 时，ChatBridge 还会把每个入站消息和机器人回复映射回所属 Task。解析优先级是显式 Run id、引用消息、默认 Task。
+目前每项只能写入不超过 1 MiB 的 Markdown。超限、文件缺失、不可读或内容变化时，Jarvis 会保留原产物并说明不能写入；不会截断、重复发布或把已结束的工作伪装为仍在执行。补充或重新生成文件后，必须提交新的明确要求。
 
-Run id 是 compact canonical id，例如 `r_4P8X6C2N7J5K`。来源 provider、conversation、message、时间、Task 和 sequence 保存在结构化字段中，不编码进 id。
+写入只使用本次任务开始时核验的目标和文件版本。发送结果未知时，系统先有限次查证同一个目标，绝不自动重复发布、重跑 Agent 或把整批文件再发一次；仍无法确认时保留 `unknown` 并说明下一步。只有所有项目都有可核验的已送达结果，原会话才会显示发布完成。IM 回复失败不会改变原生写入结果；重投只使用已封存的回复，不会重新读取 Agent 文件或再次写入对象。精确的恢复与去重规则见[执行模型](../execution-model.md)。
 
-如果普通消息到达时已有 active Run，ChatBridge 在 Continue 内部先解决旧 Run ownership；无法证明旧 owner 已停止时请求 fail closed。Lost-Run recovery 由内部进程证据链收敛旧 Run，不伪装成无输入的 Continue。跨 agent 时不复制 native session id。
+## GitHub Actions 一次性订阅
 
-绑定的 Task 处于 Lost-Run recovery 时，普通消息照样是 Continue：ChatBridge 取回 TaskService 签发的 sealed recovery 计划，在同一条 Task、同一个 Agent、保留原工作区的前提下起新 Run，并先回一句「检测到当前 Run 已失联，正在同一 Task 中继续。」。这条 Run 的指令仍是用户这句话——sealed 计划给的是授权与身份，不是给 Agent 的措辞。
+在原任务的 IM 会话中提及 Jarvis 后发送 `订阅`、`查看订阅` 或 `取消订阅`。当前版本一次订阅一个具体的 GitHub Actions 运行：用 `当前` 选择这项工作已关联的运行，或给出不含 `?`、`#` 后缀的运行详情页链接。PR 号、分支和“最新一次”等说法不能代替具体运行。
 
-拒绝必须说出来，沉默不是答案：Continue 落在不允许继续的状态上时回「当前 Task 状态不允许继续；可从 Status 页面继续或取消。」；落在起飞、准入、收尾这些窗口期（Task 正在动，几秒后自己落地）回「当前 Task 正在启动或收尾，这句话没有被接收；请稍后重发。」——窗口期不能指用户去 Status 页面，那等于叫他取消一条正在正常收尾的 Task；`/cancel` 没取消掉时回「Task 取消失败，最近一次 run_id: <run-id>」。`/cancel all` 例外——它回一条汇总（「已取消 N 个 Task：…；M 个取消失败：…」），不逐 Task 回执。
+管理员需要先完成仓库的 Actions 接入验证：启用 `workflow_run` Webhook，确认一次已完成运行的事件通过签名检查，且 Jarvis 的运行账号能读取同一次运行。修改回调地址或签名设置后要重新验证。具体权限和操作见 [GitHub 接入](github.md#在-im-中订阅一次-actions-运行结果)。
 
-创建任务或续跑被授权校验拒绝时，Jarvis 会通过原消息的回复通道说明原因。未激活时回复「Jarvis 尚未激活，请联系管理员激活后使用。」；授权停用、租约过期或其他授权问题也会提示联系管理员处理。入口授权拒绝不分配 Task/Run；若准备期间授权失效，会保留带拒绝原因的失败 Run，但不启动 Agent。内部路径和原始上游响应不发给聊天用户。
+`@jarvis 订阅 当前` 默认登记 24 小时：指定 run 已结束时立即处理一次，未结束时等待它结束。`@jarvis 订阅 <可信 run 链接> 下一次 2h` 才等待同一 workflow、同一 head SHA 的后续 run/attempt；期限可指定为 1 分钟至 30 天。非失败结果只提醒；失败结果只有在原任务仍允许继续时才会继续。无论哪种情况，提醒只发送给登记时的原会话，不会新建任务、轮询 Agent 或发送到另一会话。
 
-已取消 Task 不可 Continue；后续普通消息会提示使用 `/start <prompt>` 创建新 Task。Agent Run 成功但回复未送达时，Run 仍保持 `succeeded`；IM Task 从该 exact Run 的 typed effect receipt 投影 delivery 结果。definite failed/retryable delivery 显示为 `needs-attention`，Status Continue 使用 sealed writeback strategy 重试同一 Run 的 final reply effect，不创建新 Run、不重放公开 `reply-error.json`。`unknown` 表示结果不可证明，不自动重发；`/cancel` 可以明确放弃剩余 delivery。
+`查看订阅` 显示你自己的订阅对象、订阅引用、状态、期限和最近结果。使用 `取消订阅 <返回的订阅引用>` 停止后续动作，已有结果仍保留。结果未知、来源不可用、权限撤销、到期或取消时，不会自动重发或换一个会话发送。
 
-回复凭据在运行期间自然过期时不延长期限；只有 connector 声明主动发送能力且原目标仍可信，才向该目标发送。目标或能力预检在发送接口调用前失败时，结果明确为 `failed/not-attempted`，保留成功 Run 和原结果；修复条件后可在原 Run 重试交付。已发出请求而结果不明的故障仍为 `unknown`，不能据此安全重发。
+## 外部来源的完成通知
 
-原回复权限证明缺失或损坏时拒绝发送，不从公开任务信息补造权限。恢复原证明后，可以显式 Continue 交付同一成功 Run 的原结果；已有版本将这类发送前失败标为不可重试的历史记录也支持恢复，不改写旧交付事实、不自动发送或重跑 Agent。
+外部平台触发的 `jarvis-command` Task，以及显式启用通知的 `post-check`，在收尾后会向触发人发送 IM 单聊提醒。提醒含状态、项目、目标链接和 Run ID，不改变原平台 writeback。本地手动任务、IM 聊天任务、bot 触发或明确关通知的任务不产生该提醒。
 
-connector 未声明附件上传能力，或未声明支持所需附件类型时，属于发送前的能力预检失败。此时未尝试上传或发送附件，不要求用户确认是否收到；恢复能力后通过 Continue 重试原 Run 的交付，不重新运行 Agent。
+当 connector 能确认该提醒的原生消息定位时，原来源用户可以在已核验的私人单聊中引用完成通知：不带新要求时只查看已发布摘要；带明确新要求时可继续原来源 Task。当前能力仅覆盖有可信初次受理记录的 GitLab/GitHub `jarvis-command` Task。每次都重新核验 private target、identity link、原 source actor、精确 Issue/MR/PR 当前读取权限与 Task Continue policy；群聊、其他收件人、身份/关联版本不符、非 GitLab/GitHub source lane、权限失效或任务变化会明确拒绝，绝不退回当前默认 Task。通知正文、标题、时间和显示名都不能替代原生定位与身份证据。
 
-`POST /v1/message.create` 的外层 HTTP 502 只说明 `uv-im-connector` 没有完成发送，不能据此判断是哪个 provider 返回了 502。Jarvis Box 只消费 response 的 `failure`；`failure.http_status` 才是上游 provider HTTP 状态，`provider_code` 是 provider 业务码。两者缺失时仍有 `category`、`retryable` 和 `delivery_state`，无需读取 connector 日志来决定生命周期。
+`wall-timeout`、`idle-timeout`、`spawn-timeout` 结束时，系统使用同一渠道和执行前固定的收件人发“未完成”提醒，含 timeout 原因、Task ID、Run ID。外部任务 timeout 不受普通完成提醒的任务类型/任务级开关限制，但 `JARVIS_COMMAND_NOTIFY_ENABLED=false` 仍会关闭主动提醒。未发现可信触发人、触发人是 bot、GitHub 原生标为 `Bot` 或关联已撤销时，不猜测或改投其他人。
 
-附件上传失败也保留 connector 对是否发送及能否重试的明确判断。确定未发送且允许重试时，只重试原 Run 的交付；不会因错误包装丢失该判断而要求用户裁定是否收到。交付失败或未知时，用户仍可取消 Task，表示放弃剩余交付，不代表确认送达。
+### 管理员：配置一个通知渠道
 
-送达确认支持「全部收到」「全部未收到」，以及「未收到的附件：a.txt、b.txt」或「只缺a.txt」这样的明确名单。具名选择要求原内容仍与该 Run 的私有交付回执一致、文件名在完整集合中唯一、名单为尚未确认文件的非空子集；只补名单中的文件，其余按原用户明确的“只缺”裁定记为已收到，不新增 Run 或 Agent。未知、重名、不匹配或包含已有确认文件的名单会向原用户澄清并保持等待；普通新指令仍按 Continue 处理。补发前内容变化时不发送，恢复原字节后可在同一 Run 重试，已有确认集合保持。已有原交付回执的文件暂时缺失或不可读时，明确记录未发送；恢复原文件及读取权限后，可以在原 Run 重试交付，不重新执行 Agent，也不重问是否收到。首次发送前文件暂时不可读时，只有系统已保存原回复文本和该 Run 的私有预检凭据，才可在修复文件后通过同一操作交付；系统会重新核实原文本、合法文件和原目标，不把尚未读取的附件当作已封存内容。
+先接通 UVIM、机器人与业务平台事件入口。以下设置写入相同的生效运行时文件（Native 为 `JARVIS_ENV_FILE`，Docker 为 deployment `runtime.env`），IM 原生 credential 仍由 connector 保存：
 
-## 附件
-
-发出的文件受当前 IM 渠道的大小和图片尺寸限制。超限时 Jarvis 保留原文件，在原会话说明文件名、实际大小或尺寸及渠道限制，并询问可访问的云盘、对象存储等交付位置；该 Task 等待用户回复，管理员无需代为处理。
-
-Agent 在回复中链接同一 Task 的公开 `artifacts/` 文件时，Jarvis 会将该文件作为实际附件交付，不要求用户访问主机本地路径。相对链接以该 Run 的 `reply.md` 所在目录解析。符号链接逃逸、私有目录和其他 Task 的文件不获得发送权限。
-
-附件发送超时而无法确认送达时，Jarvis 在原会话询问是否全部收到，不直接重复发送附件。用户明确回复“全部收到”后完成原 Task；明确回复“全部没收到”后只重试原 Run 尚未确认送达的附件，不重新运行 Agent。已处理的送达确认不再回复“已忽略该消息”。只缺部分文件时按上述具名格式回复；符合原回执的名单只重试列出的缺失文件，其余文件按原用户裁定保留，不将名单交给 Agent 重跑。
-
-送达确认仅接受发起该次 Run 的原用户；同群另一名已授权成员可以正常引用和续话，但不能替原用户裁定是否收到。身份依据该 Run 的私有记录校验，不能用群目标或 Task 首创者代替。历史记录未保存且无法可靠恢复发送者时，原结果、文件和普通续话仍保留；可在 Status 核实接收结果后记录送达裁定，在原 Run 收尾或重试，不要求重跑 Agent。等待状态仍属于原用户，Status 裁定是可选补救。
-
-送达确认已处理且该次交付完成后，迟到的明确确认即使带有新的消息ID，也只回复已处理说明，不再执行任务、追加Run或补发文件。具名确认须匹配原交付中可以核实的附件名，“只缺最后一步，请补充计算过程”等新的工作要求仍正常续话。原Task、Run和交付历史保持；这不重新授予送达裁定或补发权限。显式`/start`或`/new`按对应命令处理。
-
-文件类消息由 connector 下载或代理。Jarvis Box 在 Run 启动前把附件保存到该 Run 的 `attachments/` 目录，并把本地路径注入给 agent。
-
-每次聊天执行都向 Agent 明确提供本条消息已准备的附件路径及文件回传方式；续聊和等待恢复使用当前 Run 的资料。Agent 不需要遍历用户主目录、其他任务或源码仓库寻找附件和发送办法。附件不可读时应明确说明，不能用找到的同名文件替代用户上传内容。
-
-单聊与群聊共用附件处理路径。Jarvis Box 不额外限制入站附件数量、单文件大小或单条消息的附件总大小；下载流式写入磁盘，所有附件记录和本地路径都交给 Agent。默认 connector HTTP client 不设置传输总超时，下载响应调用方 context 的取消或 deadline。IM 平台自身的限制、访问权限以及部署主机的可用磁盘空间仍然适用。
-
-这些内容不得进入 public artifact：
-
-- provider 下载 URL；
-- provider 文件密钥；
-- connector `internal://` 资源 URL；
-- raw IM payload；
-- reply token；
-- provider-native credential。
-
-## 完成通知
-
-外部平台触发的 `jarvis-command` 任务，以及显式启用完成通知的 `post-check` 任务，在任务收尾后向触发人发送 IM 单聊提醒。提醒包含运行状态、项目、目标链接和 Run ID；发送提醒不改变原平台的评论写回结果。本地手动任务、IM 聊天任务、机器人触发以及显式关闭通知的任务不会产生这条额外提醒。
-
-### 一条通知流程，按顺序确定收件人
-
-同账号直发和用户核验关联共用通知开关、通知机器人及发送流程，不需要分别启用，也不会各发一条。Jarvis Box 在每次 Run 启动前，按以下规则固定这次通知的收件人：
-
-| 账号关联状态 | 收件人选择 |
-| --- | --- |
-| 触发人的业务账号在所选通知机器人中已有有效关联 | 使用关联记录中的 IM 原生目标。业务账号和 IM userid 可以不同。 |
-| 没有关联，也没有明确解除记录 | 沿用同账号直发：把触发人的业务平台账号直接作为 IM 收件人 ID。 |
-| 用户明确解除过关联 | 停止使用该关联，也不回退同账号直发；重新核验后供后续 Run 使用。 |
-| 无法可靠读取关联，或已关联目标无效 | 不猜测收件人，不改投同名账号；业务任务及原平台结果不因此失败。 |
-
-这里的“自动匹配”指同账号直发，不是搜索通讯录。例如 GitLab 登录账号为 `alice`，企微实际收件人 `userid` 也为 `alice`，就可以直接通知，不需要用户绑定。若企微中只是显示姓名为 Alice，实际 `userid` 为 `employee-42`，则需要由本人核验关联。Jarvis Box 不按姓名或昵称猜人，也不自动同步通讯录。
-
-三个常用渠道的当前行为如下。主动发送能力不等于能用业务用户名寻址：
-
-| IM 渠道 | 能否直接使用业务用户名 | 账号不同时的处理 |
-| --- | --- | --- |
-| 企业微信 | 可以，前提是业务账号与企微实际 `userid` 对应；显示姓名相同不算对应。 | 员工在所选企微机器人中 `/bind`。 |
-| 飞书/Lark | 当前连接器不按用户名查询。主动用户目标要求 `ou_…` 格式的 Open ID，普通业务用户名不符合此要求。 | 员工 `/bind`，使用真实入站消息证明的私人原生目标。 |
-| 钉钉 | 使用钉钉原生 userid，不按 GitLab、禅道用户名查询。 | 员工在所选钉钉机器人中 `/bind`，无需手填 userid。 |
-
-飞书这一限制描述的是当前连接器的发送路径，不能据此推断飞书平台所有 API 只支持 Open ID。其他 UVIM provider 也不能仅凭已接入或具备主动发送能力，就宣称支持业务用户名自动匹配；其原生地址要求仍由对应 adapter 决定。
-
-收件人选择发生在发送之前，不是“先向用户名发送，失败后再尝试绑定地址”。一旦有有效关联就优先使用关联；发送失败不会自动建立关联、改投其他人或补发历史通知。
-
-### 管理员配置一次通知渠道
-
-先按本页的“配置 Jarvis Box”及对应业务平台接入文档，接通 UVIM、IM 机器人和业务平台事件入口。以下设置写入同一个生效的 Jarvis Box 运行时环境文件：Native 使用 `JARVIS_ENV_FILE`，Docker 使用 deployment home 的 `runtime.env`；IM 原生凭据仍由 connector 管理。
-
-企微示例：
-
-```bash
+```dotenv
 JARVIS_COMMAND_NOTIFY_ENABLED=true
 JARVIS_NOTIFY_PROVIDER=wecom
+# 多个该 provider 的 connector 实例时，指定实际实例：
+# JARVIS_NOTIFY_CONNECTOR=<uvim-meta-instance-name>
 ```
 
-钉钉示例使用相同开关，只更换通知 provider：
+`JARVIS_COMMAND_NOTIFY_ENABLED` 默认 `true`；设为 `false` 关闭任务完成提醒。`JARVIS_NOTIFY_PROVIDER` 是该 deployment 共用的一个主动通知 provider，不是每来源/每用户独立选择。UVIM 只有一个该 provider 实例时自动选择；多个时必须给 `JARVIS_NOTIFY_CONNECTOR`，两者必须是 UVIM 实际声明的一对。
 
-```bash
-JARVIS_COMMAND_NOTIFY_ENABLED=true
-JARVIS_NOTIFY_PROVIDER=dingtalk
-```
+收件人在每次 Run 启动前按固定顺序确定：已有触发人业务账号的有效关联时使用该 IM 原生目标；没有关联也没有明确解除时，尝试将业务账号直接作为 IM 收件人 ID；用户明确解除过关联时，停止关联也不回退同账号直发；关联不可读或目标无效时不猜名字/昵称、不改投。企业微信仅在业务账号刚好等于实际 `userid` 时可同账号直发；飞书当前主动用户目标要求 `ou_…` Open ID，不按用户名查找；钉钉使用原生 `userid`，不按 GitLab/禅道用户名查找。其他 provider 也不能仅因可主动发送就假定支持业务用户名寻址。
 
-`JARVIS_COMMAND_NOTIFY_ENABLED` 默认为 `true`，设为 `false` 可关闭任务完成提醒。`JARVIS_NOTIFY_PROVIDER` 为当前部署选定一个主动通知 provider，供已启用的业务来源共用，不是每个业务平台或每个用户分别选择一个渠道。它支持 UVIM 已接入且具备主动私信能力的 provider。
+旧 `JARVIS_NOTIFY_CHANNEL=provider:connector`、`JARVIS_COMMAND_NOTIFY_CHANNEL`、`JARVIS_COMMAND_NOTIFY_CONNECTOR` 仅为迁移 fallback，并在 Status 标记 legacy。新旧配置同时存在时 provider 必须一致，否则服务拒绝启动，避免发给错误渠道。
 
-Jarvis Box 启动时读取 UVIM `/v1/meta`。所选 provider 只有一个实例时自动选择；有多个机器人实例时，在同一运行时文件中增加 `JARVIS_NOTIFY_CONNECTOR=<UVIM 声明的实例名>`，指定实际负责通知的那个。provider 与 connector 必须是 UVIM 实际声明的一对，不能跨 provider 组合。保存后按当前部署的正式流程重启或重建，并在 Status 的系统配置中核对生效的通知 provider 和 connector。
+### 用户：业务账号与 IM 账号不同怎么办
 
-不需要另设“自动匹配”或“手动匹配”开关，也不需要维护逐用户映射环境变量。`JARVIS_COMMAND_NOTIFY_RECIPIENT_MODE` 默认 `trigger_author`；现有 `trigger_author_user_id` 配置继续兼容。这两个值都不启用通讯录查询，也不切换上述收件人选择顺序。已经正常使用同账号通知的部署无需改配置或让员工重新绑定。
+在管理员选定的通知机器人私聊完成自助关联；无需等待通知失败：
 
-### 两端账号不同时，由员工自助核验
+1. 发送 `/bind gitlab alice`，其中 `alice` 是本人的实际 GitLab 登录账号。
+2. 机器人发回有效期 10 分钟的核验指令；用该 GitLab 账号在允许项目评论 `@jarvis /bind <核验码>`。
+3. 原 IM 单聊收到成功确认后，以后的新 Run 使用该私聊的经验证原生目标；无需手填 IM userid。
 
-若两端账号不同，或同账号直发因收件人 ID 不对应而被拒绝，员工在管理员选定的通知机器人单聊中完成以下操作。无需等待一次发送失败；已知账号不同即可提前绑定。网络、凭据或权限故障应先修复对应渠道，绑定本身不能修复这些故障。
+只有选定通知机器人签发核验；其他已接入渠道会指向正确 provider/connector，不会错误宣布成功。禅道、GitHub、Jira、TAPD、飞书项目、云效 Projex/Codeup 使用同一流程，平台名依次为 `zentao`、`github`、`jira`、`tapd`、`feishu-project`、`yunxiao-projex`、`yunxiao-codeup`。平台仍必须有可认证的评论事件入口；此命令不会补齐不支持的原生评论回调。
 
-1. 员工在自己的 IM 单聊发送 `/bind gitlab alice`，其中 `alice` 是本人实际的 GitLab 登录账号。
-2. 机器人返回有效期为 10 分钟的核验指令。员工用这个 GitLab 账号，在允许接入的项目发表评论 `@jarvis /bind <收到的核验码>`；实际提及名沿用部署者配置。
-3. 原 IM 单聊收到成功确认后，后续新 Run 的通知使用该单聊用户经验证的原生目标。例如 GitLab `alice` 可以关联到钉钉 `0433…`，或企微 `employee-42`；员工无需填写 IM userid。
+核验只接受同一来源实例中实际账号与申请相符的事件；显示名不参与。群消息、匿名主体和不能证明私人主动地址的渠道不能用于个人关联。服务重启后未完成申请失效。`/unbind gitlab alice` 只能由原 IM 用户在选定机器人私聊执行；关联不会覆盖给另一用户，必须先解除再重新核验。解除不表示恢复同账号直发。
 
-绑定必须在配置选定的通知机器人中完成。其他已接入渠道收到 `/bind` 或 `/unbind` 时会指明应使用的通知 provider/connector，不签发核验码，也不声称绑定成功。它们仍可按既有配置正常收发聊天任务。
+关联与收件人版本在 Run 开始前固定。绑定只影响之后的新 Run，不补发历史失败通知；解除/换绑可使未开始发送的旧通知被拒绝，但不撤回已发消息。发送前仍会核对任务和运行的实际结束状态；重复回调不重复发送，发送结果未知时不自动重发。
 
-禅道、GitHub、Jira、TAPD、飞书项目、云效 Projex 和 Codeup 使用同一流程，将命令中的平台名替换为 `zentao`、`github`、`jira`、`tapd`、`feishu-project`、`yunxiao-projex` 或 `yunxiao-codeup`；只有原生账号 ID 的平台填写该 ID。业务平台仍需提供已认证的评论事件入口，该命令不会补齐平台尚未提供的原生评论回调。
+## 任务结果通知
 
-核验仅接受同一来源实例、实际账号与申请匹配的事件；显示名不参与认证。群消息、匿名主体或无法证明私人主动地址的渠道不能用于个人关联；Matrix 会实时核对房间成员。服务重启后未完成的核验申请失效，可重新申请。核验、失败核验及解除都不创建 Task/Run，不调用 Agent。
-
-需要解除时，原 IM 用户在所选机器人单聊发送 `/unbind gitlab alice`。账号已关联其他 IM 用户时不会覆盖，需要原用户先解除，再由新用户重新核验。解除表示停止这条通知关联，不表示恢复同账号直发。
-
-### 生效时间、送达与兼容
-
-正式关联仅由连接器在自身 state-dir 持久化，Jarvis 不保存第二份关联表；连接器通过 `/v1/meta` 声明能力，旧连接器会明确提示需要升级。普通 IM 会话回复及会话默认 Task 不受通知关联影响。
-
-收件人和关联版本在 Run 启动前固定。绑定成功只影响之后的新 Run，不补发已经失败的通知，也不改变正在运行任务的通知地址。解除或换绑会使旧引用失效；尚未开始发送的旧通知可能因此被拒绝，但不会改投新用户。已经发出的请求可能完成，解除不撤回已发送的消息。
-
-通知包含状态、目标链接和 Run ID。收到绑定确认只证明关联成功，不证明某条任务通知已送达；绑定后可从原业务平台触发一个新的、允许发送完成通知的任务，核对实际通知及其中的 Run ID。未收到时先在 Status 核对任务结果、通知开关及实际渠道，再区分收件人 ID、关联或渠道故障。原平台结果保留，通知失败不要求重跑已经完成的 Agent。
-
-发送前通过 TaskService 校验完整 Task/Run 身份和终态归属，成功后保存私有投递回执。重复回调不会重复发送；发送中断或响应丢失时保留结果未知，不自动重发。升级前启动、缺少通知来源记录的历史 Run 不补发提醒。
-
-旧的 `JARVIS_NOTIFY_CHANNEL=provider:connector`、`JARVIS_COMMAND_NOTIFY_CHANNEL` 和
-`JARVIS_COMMAND_NOTIFY_CONNECTOR` 只作为迁移期 fallback 保留，并在 Status 中标记为 legacy。
-新旧配置同时存在时 provider 必须一致，否则 Jarvis Box 拒绝启动，避免把消息发到错误渠道。
-
-## JARVIS 经验积累周报
-
-`cognitive-evolution` Task 始终生成本地周报。显式配置通知目标后，成功完成的 Run 会将本次最终回复作为周报主动发送；`memory-consolidation` 和 `daily-reflection` 不发送通知。通知使用独立的目标配置，不受 `JARVIS_COMMAND_NOTIFY_ENABLED` 影响：
+`custom-user-task` 可以提交时直接声明最终答复目标，不受 `JARVIS_COMMAND_NOTIFY_ENABLED` 影响：
 
 ```bash
 JARVIS_NOTIFY_PROVIDER=wecom
-JARVIS_COGNITIVE_EVOLUTION_NOTIFY_TARGET=group:<provider-native-conversation-id>
+jarvis-box tasks start --prompt '<full job prompt>' \
+  --lane custom-user-task --job-id customer-daily-report \
+  --notify-target direct:<provider-native-user-id>
 ```
 
-目标也可以是 `direct:<provider-native-user-id>`。仅发送本次 Run 的非空周报；失败、缺报告或未配置目标时不发送。发送前复验 Task/Run 所有者，启动及周期扫描补处理漏掉的完成回调；已开始的发送结果未知时不自动重发。升级前启动、缺少封存目标的旧 Run 不补发。通知不改变任务结果。
+也支持 `group:<provider-native-conversation-id>`。只有本机 CLI 的内部 Start 接受此参数；Status 公共 prompt 请求不能指定目标。提交会先验证通道与 target type，失败不创建 Task；省略参数不发送，也不从作业名猜收件人。只有成功 Run 的非空、常规、最多 64 KiB 的 `final-message.md` 会投递。失败、缺最终答复或缺封存目标不发；Continue 继承精确来源 Run 路由。发起发送后未知不自动重发，通知不改变任务结果。
 
-从 0.2 升级到 0.3 后，普通消息和引用旧消息继续接续原 Task，不要求用户发送 `/new`。运行时只为具有已登记 0.2 Task 来源的旧绑定补齐 TaskRef：原目录、会话 Target 和绑定创建时间必须与登记事实相符，旧 Run 还须通过精确的 Run ID、sequence 和创建事件验证。可验证的 Codex 原生会话继续使用原会话；新 Run 由 TaskService 正常创建。补齐绑定保留原会话选择与引用关系，不重新处理旧消息。
+## 升级与历史兼容
 
-旧版本在首次 Task 登记前保存的绑定，必须与首个已验证 Run 的原始消息绑定具有相同 Task、目录和精确创建时间，才允许接续。缺少登记来源、部分缺失的现代身份、目录或 Target 冲突，以及无法通过该原始消息证明的提前绑定仍会拒绝自动接续，防止误接被删除重建的任务。`/new` 用于用户主动开启新任务，不是正常升级的必需操作。
+v1.1.7 及更早的 `cognitive-evolution` 仍读取 `JARVIS_COGNITIVE_EVOLUTION_NOTIFY_TARGET`，已有 `cognitive-evolution-report.md` 和私有 receipt 可读，但不补发缺少封存来源的历史 Run。新作业一律使用通用 `--notify-target`。
 
-原 Task 已被历史清理移除时，普通消息按新 Task 处理，无需先发送 `/new`；当前消息、附件及回复目标交给新 Task，不会恢复已移除 Task 的上下文。原 Task 仍存在但登记身份、目录或 Target 不匹配时，继续拒绝自动接续。
+从 0.2 升级到 0.3，普通消息和引用旧消息可继续原 Task，不要求 `/new`。系统仅会为有已登记 0.2 Task 来源且目录、会话 Target、创建时间、精确 Run ID/sequence/创建事件均可验证的旧 binding 补 TaskRef；任何来源、身份、目录或 Target 冲突会拒绝自动接续，防止误接删除重建的 Task。原 Task 已被历史清理时，普通消息正常建立新 Task；原 Task 仍在而证据不一致时继续拒绝。

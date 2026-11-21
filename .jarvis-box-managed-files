@@ -7,6 +7,10 @@ LICENSE
 README.md
 REPOSITORY-MODEL.md
 SECURITY.md
+docs/.gitignore
+docs/.vitepress/config.mts
+docs/.vitepress/theme/custom.css
+docs/.vitepress/theme/index.ts
 docs/README.md
 docs/agent-skills.md
 docs/architecture.md
@@ -19,7 +23,10 @@ docs/deployment.md
 docs/execution-model.md
 docs/guide/getting-started.md
 docs/guide/provider-loop.md
+docs/guide/scenarios.md
 docs/guide/security.md
+docs/images/workflow.svg
+docs/index.md
 docs/integrations/feishu-project.md
 docs/integrations/github.md
 docs/integrations/gitlab.md
@@ -31,6 +38,8 @@ docs/integrations/zentao.md
 docs/multi-instance.md
 docs/network-ingress.md
 docs/operations.md
+docs/package-lock.json
+docs/package.json
 docs/product-overview.md
 docs/runtime-agents.md
 docs/scheduled-jobs.md
@@ -38,6 +47,7 @@ docs/status-api.md
 docs/status-ui.md
 docs/storage-model.md
 docs/task-external-resource-lifecycle.md
+docs/terminal-performance.md
 install-skills.py
 skills/jarvis-box-doctor/SKILL.md
 skills/jarvis-box-init/SKILL.md
